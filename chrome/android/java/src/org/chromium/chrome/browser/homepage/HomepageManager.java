@@ -32,6 +32,8 @@ import org.chromium.chrome.browser.url_constants.UrlConstantResolver;
 import org.chromium.components.embedder_support.util.UrlUtilities;
 import org.chromium.url.GURL;
 
+import org.chromium.base.ContextUtils;
+
 /**
  * Provides information regarding homepage enabled states and URI.
  *
