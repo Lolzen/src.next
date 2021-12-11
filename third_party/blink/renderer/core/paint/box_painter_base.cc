@@ -431,7 +431,7 @@ void BoxPainterBase::PaintInsetBoxShadowWithBorderRect(
     const ComputedStyle& style,
     std::optional<BorderShapeReferenceRects> border_shape_rects,
     PhysicalBoxSides sides_to_include) {
-  if (!style.BoxShadow() || info.context.IsDarkModeEnabled())
+  if (!style.BoxShadow() || style.DarkColorScheme())
     return;
 
   if (style.HasBorderShape()) {
@@ -449,7 +449,7 @@ void BoxPainterBase::PaintInsetBoxShadowWithInnerRect(
     const PaintInfo& info,
     const PhysicalRect& inner_rect,
     const ComputedStyle& style) {
-  if (!style.BoxShadow() || info.context.IsDarkModeEnabled())
+  if (!style.BoxShadow() || style.DarkColorScheme())
     return;
   auto bounds = ContouredBorderGeometry::PixelSnappedContouredBorderWithOutsets(
       style, inner_rect, PhysicalBoxStrut());
@@ -559,7 +559,7 @@ void BoxPainterBase::PaintInsetBoxShadow(const PaintInfo& info,
                                          const ContouredRect& bounds,
                                          const ComputedStyle& style,
                                          PhysicalBoxSides sides_to_include) {
-  if (info.context.IsDarkModeEnabled())
+  if (style.DarkColorScheme())
     return;
   GraphicsContext& context = info.context;
 
