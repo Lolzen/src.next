@@ -87,6 +87,10 @@
 #include "components/captive_portal/content/captive_portal_tab_helper.h"
 #endif
 
+#include "chrome/browser/ui/android/tab_model/tab_model.h"
+#include "chrome/browser/ui/android/tab_model/tab_model_list.h"
+#include "content/public/browser/web_contents.h"
+
 using content::GlobalRequestID;
 using content::NavigationController;
 using content::WebContents;

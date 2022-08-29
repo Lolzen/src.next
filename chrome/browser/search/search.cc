@@ -170,6 +170,7 @@ struct NewTabURLDetails {
       return NewTabURLDetails(GURL(), NEW_TAB_URL_INCOGNITO);
     }
 
+#if 0
 #if BUILDFLAG(IS_ANDROID)
     const GURL local_url;
 #else
@@ -215,7 +216,7 @@ struct NewTabURLDetails {
 
 bool IsRenderedInInstantProcess(content::WebContents* contents,
                                 Profile* profile) {
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) && 0
   return false;
 #else
   content::RenderProcessHost* process_host =
@@ -258,7 +259,12 @@ bool IsNTPURL(const GURL& url) {
       url.host() == chrome::kChromeSearchRemoteNtpHost) {
     return true;
   }
-#if BUILDFLAG(IS_ANDROID)
+  if (url.SchemeIs(chrome::kChromeSearchScheme) &&
+      url.host_piece() == "local-ntp") {
+    return true;
+  }
+
+#if BUILDFLAG(IS_ANDROID) && 0
   return false;
 #else
   return NewTabPageUI::IsNewTabPageOrigin(url) ||
@@ -314,7 +320,7 @@ GURL GetNewTabPageURL(Profile* profile) {
   return NewTabURLDetails::ForProfile(profile).url;
 }
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) || true
 
 bool ShouldAssignURLToInstantRenderer(const GURL& url, Profile* profile) {
   if (url.SchemeIs(chrome::kChromeSearchScheme))

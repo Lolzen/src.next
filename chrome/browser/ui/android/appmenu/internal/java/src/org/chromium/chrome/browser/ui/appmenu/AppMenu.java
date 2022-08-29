@@ -400,6 +400,8 @@ class AppMenu implements OnKeyListener {
                                     : R.style.EndIconMenuAnimBottom));
         }
 
+        if (ContextUtils.getAppSharedPreferences().getBoolean("enable_bottom_toolbar", false)) mPopup.setAnimationStyle(R.style.EndIconMenuAnimBottom);
+
         // Turn off window animations for low end devices.
         if (SysUtils.isLowEndDevice()) popup.setAnimationStyle(0);
 

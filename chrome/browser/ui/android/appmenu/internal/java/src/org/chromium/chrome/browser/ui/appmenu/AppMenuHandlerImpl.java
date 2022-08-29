@@ -61,6 +61,8 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import org.chromium.base.Log;
+
 /**
  * Object responsible for handling the creation, showing, hiding of the AppMenu and notifying the
  * AppMenuObservers about these actions.
@@ -118,6 +120,8 @@ class AppMenuHandlerImpl
     private @Nullable Callback<Integer> mTestOptionsItemSelectedListener;
     private @MonotonicNonNull KeyboardVisibilityDelegate.KeyboardVisibilityListener
             mKeyboardVisibilityListener;
+
+    private ModelList mModelList;
 
     /**
      * The resource id of the menu item to highlight when the menu next opens. A value of {@code
