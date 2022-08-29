@@ -66,6 +66,7 @@ import org.chromium.chrome.browser.ui.desktop_windowing.AppHeaderCoordinator;
 import org.chromium.chrome.browser.ui.device_lock.MissingDeviceLockLauncher;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager.SnackbarManageable;
+import org.chromium.components.browser_ui.accessibility.AccessibilitySettings;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetControllerFactory;
 import org.chromium.components.browser_ui.bottomsheet.ManagedBottomSheetController;
@@ -203,6 +204,9 @@ public class SettingsActivity extends ChromeBaseAppCompatActivity
     private boolean mStartTimeSaved;
 
     private @Nullable AppHeaderCoordinator mAppHeaderCoordinator;
+
+    @Nullable
+    private UiConfig mUiConfig;
 
     @SuppressLint("InlinedApi")
     @Override
@@ -1031,6 +1035,14 @@ public class SettingsActivity extends ChromeBaseAppCompatActivity
                             getOnBackPressedDispatcher(),
                             (BackPressHandler) activeFragment);
         }
+        if (fragment instanceof PrivacySettings) {
+            ((PrivacySettings) fragment).setBottomSheetController(mBottomSheetController);
+            ((PrivacySettings) fragment).setDialogContainer(findViewById(R.id.dialog_container));
+        }
+        if (fragment instanceof AccessibilitySettings) {
+            ((AccessibilitySettings) fragment)
+                    .setDelegate(new ChromeAccessibilitySettingsDelegate());
+        }
     }
 
     private void registerBottomSheetBackPressHandler() {
@@ -1259,5 +1271,10 @@ public class SettingsActivity extends ChromeBaseAppCompatActivity
             assert fragment instanceof SettingsFragment
                     : className + "does not implement SettingsFragment";
         }
+    }
+
+    @Override
+    protected ModalDialogManager createModalDialogManager() {
+        return new ModalDialogManager(new AppModalPresenter(this), ModalDialogType.APP);
     }
 }

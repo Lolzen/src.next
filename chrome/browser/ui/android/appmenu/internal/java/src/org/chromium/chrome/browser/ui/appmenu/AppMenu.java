@@ -935,4 +935,9 @@ class AppMenu implements OnKeyListener {
             return;
         }
     }
+
+    /** @param reporter A means of reporting an exception without crashing. */
+    static void setExceptionReporter(Callback<Throwable> reporter) {
+        sExceptionReporter = reporter;
+    }
 }

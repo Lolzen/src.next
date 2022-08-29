@@ -178,6 +178,10 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
     private final SettableNonNullObservableSupplier<Boolean> mIsActionBarShowingSupplier =
             ObservableSuppliers.createNonNull(false);
 
+    // Supplier of whether action bar is showing now.
+    private final ObservableSupplierImpl<Boolean> mIsActionBarShowingSupplier =
+            new ObservableSupplierImpl<>();
+
     // Bit field for mappings from menu item to a flag indicating it is allowed.
     private int mAllowedMenuItems;
 
@@ -1913,6 +1917,11 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
 
     @Override
     public NonNullObservableSupplier<Boolean> isSelectActionBarShowingSupplier() {
+        return mIsActionBarShowingSupplier;
+    }
+
+    @Override
+    public ObservableSupplier<Boolean> isSelectActionBarShowingSupplier() {
         return mIsActionBarShowingSupplier;
     }
 
