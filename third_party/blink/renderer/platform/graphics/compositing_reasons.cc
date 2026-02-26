@@ -45,6 +45,8 @@ constexpr auto kReasonDescriptionMap = std::to_array<ReasonAndDescription>({
      "Has an active accelerated backdrop filter animation or transition."},
     {CompositingReason::kAffectedByOuterViewportBoundsDelta,
      "Is fixed position affected by outer viewport bounds delta."},
+    {CompositingReason::kAffectedBySafeAreaBottom,
+     "Is fixed position affected by safe area bottom."},
     {CompositingReason::kFixedPosition,
      "Is fixed position in a scrollable view."},
     {CompositingReason::kUndoOverscroll,
@@ -71,6 +73,14 @@ constexpr auto kReasonDescriptionMap = std::to_array<ReasonAndDescription>({
      "Has a will-change: filter compositing hint."},
     {CompositingReason::kWillChangeBackdropFilter,
      "Has a will-change: backdrop-filter compositing hint."},
+    {CompositingReason::kWillChangeClipPath,
+     "Has a will-change: clip-path compositing hint."},
+    {CompositingReason::kWillChangeMixBlendMode,
+     "Has a will-change: mix-blend-mode compositing hint."},
+    {CompositingReason::kWillChangeMask,
+     "Has a will-change: mask compositing hint."},
+    {CompositingReason::kWillChangeMaskImage,
+     "Has a will-change: mask-image compositing hint."},
     {CompositingReason::kWillChangeOther,
      "Has a will-change compositing hint other than transform, opacity, filter"
      " and backdrop-filter."},
@@ -87,7 +97,7 @@ constexpr auto kReasonDescriptionMap = std::to_array<ReasonAndDescription>({
     {CompositingReason::kViewTransitionElement,
      "This element is shared during view transition."},
     {CompositingReason::kViewTransitionPseudoElement,
-     "This element is a part of a pseudo element tree representing the view "
+     "This element is a part of a pseudo-element tree representing the view "
      "transition."},
     {CompositingReason::kViewTransitionElementDescendantWithClipPath,
      "This element's ancestor is shared during view transition and it has a "
@@ -106,6 +116,8 @@ constexpr auto kReasonDescriptionMap = std::to_array<ReasonAndDescription>({
     {CompositingReason::kCanvas,
      "Is an accelerated canvas, or is a display list backed canvas that was "
      "promoted to a layer based on a performance heuristic."},
+    {CompositingReason::kCanvasChild,
+     "Is the direct child of a canvas with 'layoutSubtree' attribute."},
     {CompositingReason::kPlugin, "Is an accelerated plugin."},
     {CompositingReason::kScrollbar, "Is an accelerated scrollbar."},
     {CompositingReason::kLinkHighlight, "Is a tap highlight on a link."},
@@ -155,12 +167,8 @@ std::vector<const char*> CompositingReason::Descriptions(
 
 String CompositingReason::ToString(CompositingReasons reasons) {
   StringBuilder builder;
-  for (const char* name : ShortNames(reasons)) {
-    if (builder.length())
-      builder.Append(',');
-    builder.Append(name);
-  }
-  return builder.ToString();
+  builder.AppendRange(ShortNames(reasons), ",");
+  return builder.ReleaseString();
 }
 
 }  // namespace blink

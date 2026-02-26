@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
 
 import {I18nMixinLit} from '//resources/cr_elements/i18n_mixin_lit.js';
 import {AnchorAlignment} from 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import type {CrActionMenuElement} from 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
-import {assert, assertNotReached} from 'chrome://resources/js/assert.js';
+import {assert, assertNotReached, assertNotReachedCase} from 'chrome://resources/js/assert.js';
 import {sanitizeInnerHtml} from 'chrome://resources/js/parse_html_subset.js';
 import {PluralStringProxyImpl} from 'chrome://resources/js/plural_string_proxy.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
@@ -81,14 +83,14 @@ export class ExtensionsMv2DeprecationPanelElement extends
     };
   }
 
-  extensions: chrome.developerPrivate.ExtensionInfo[] = [];
-  delegate?: ItemDelegate&Mv2DeprecationDelegate;
-  mv2ExperimentStage: Mv2ExperimentStage = Mv2ExperimentStage.NONE;
-  showTitle: boolean = false;
-  protected headerString_: string = '';
-  private subtitleString_: string = '';
-  private extensionWithActionMenuOpened_?:
-      chrome.developerPrivate.ExtensionInfo;
+  accessor extensions: chrome.developerPrivate.ExtensionInfo[] = [];
+  accessor delegate: ItemDelegate&Mv2DeprecationDelegate|undefined;
+  accessor mv2ExperimentStage: Mv2ExperimentStage = Mv2ExperimentStage.NONE;
+  accessor showTitle: boolean = false;
+  protected accessor headerString_: string = '';
+  private accessor subtitleString_: string = '';
+  private accessor extensionWithActionMenuOpened_:
+      chrome.developerPrivate.ExtensionInfo|undefined;
 
   override willUpdate(changedProperties: PropertyValues<this>) {
     super.willUpdate(changedProperties);
@@ -121,7 +123,7 @@ export class ExtensionsMv2DeprecationPanelElement extends
             'p=unsupported_extensions';
         break;
       default:
-        assertNotReached();
+        assertNotReachedCase(this.mv2ExperimentStage);
     }
 
     this.headerString_ =
@@ -130,6 +132,8 @@ export class ExtensionsMv2DeprecationPanelElement extends
     const subtitle = await PluralStringProxyImpl.getInstance().getPluralString(
         subtitleVar, this.extensions.length);
     this.subtitleString_ = subtitle.replace('$1', subtitleLink);
+    this.subtitleString_ =
+        this.subtitleString_.replace('$2', this.i18n('opensInNewTab'));
   }
 
   /**
@@ -156,6 +160,8 @@ export class ExtensionsMv2DeprecationPanelElement extends
       case Mv2ExperimentStage.DISABLE_WITH_REENABLE:
       case Mv2ExperimentStage.UNSUPPORTED:
         return !extension.mustRemainInstalled;
+      default:
+        assertNotReachedCase(this.mv2ExperimentStage);
     }
   }
 
@@ -172,6 +178,8 @@ export class ExtensionsMv2DeprecationPanelElement extends
         return true;
       case Mv2ExperimentStage.UNSUPPORTED:
         return !!extension.recommendationsUrl;
+      default:
+        assertNotReachedCase(this.mv2ExperimentStage);
     }
   }
 
@@ -189,6 +197,8 @@ export class ExtensionsMv2DeprecationPanelElement extends
       case Mv2ExperimentStage.UNSUPPORTED:
         return !!this.extensionWithActionMenuOpened_ &&
             !!this.extensionWithActionMenuOpened_.recommendationsUrl;
+      default:
+        assertNotReachedCase(this.mv2ExperimentStage);
     }
   }
 
@@ -205,6 +215,8 @@ export class ExtensionsMv2DeprecationPanelElement extends
         return true;
       case Mv2ExperimentStage.UNSUPPORTED:
         return false;
+      default:
+        assertNotReachedCase(this.mv2ExperimentStage);
     }
   }
 
@@ -222,6 +234,8 @@ export class ExtensionsMv2DeprecationPanelElement extends
       case Mv2ExperimentStage.DISABLE_WITH_REENABLE:
       case Mv2ExperimentStage.UNSUPPORTED:
         return false;
+      default:
+        assertNotReachedCase(this.mv2ExperimentStage);
     }
   }
 
@@ -247,7 +261,8 @@ export class ExtensionsMv2DeprecationPanelElement extends
    * representation instead of the string since the string holds a link.
    */
   protected getSubtitleString_(): TrustedHTML {
-    return sanitizeInnerHtml(this.subtitleString_);
+    return sanitizeInnerHtml(
+        this.subtitleString_, {attrs: ['aria-description']});
   }
 
   /**
@@ -279,6 +294,8 @@ export class ExtensionsMv2DeprecationPanelElement extends
         chrome.metricsPrivate.recordUserAction(
             'Extensions.Mv2Deprecation.Unsupported.Dismissed');
         break;
+      default:
+        assertNotReachedCase(this.mv2ExperimentStage);
     }
 
     assert(this.delegate);
@@ -317,6 +334,8 @@ export class ExtensionsMv2DeprecationPanelElement extends
         chrome.metricsPrivate.recordUserAction(
             'Extensions.Mv2Deprecation.Unsupported.RemoveExtension');
         break;
+      default:
+        assertNotReachedCase(this.mv2ExperimentStage);
     }
 
     this.$.actionMenu.close();
@@ -355,6 +374,8 @@ export class ExtensionsMv2DeprecationPanelElement extends
         chrome.metricsPrivate.recordUserAction(
             'Extensions.Mv2Deprecation.Unsupported.FindAlternativeForExtension');
         break;
+      default:
+        assertNotReachedCase(this.mv2ExperimentStage);
     }
 
     const recommendationsUrl: string|undefined =
@@ -395,8 +416,9 @@ export class ExtensionsMv2DeprecationPanelElement extends
             'Extensions.Mv2Deprecation.Disabled.DismissedForExtension');
         break;
       case Mv2ExperimentStage.UNSUPPORTED:
-        // TODO(crbug.com/339061151): Handle button for this stage.
         assertNotReached();
+      default:
+        assertNotReachedCase(this.mv2ExperimentStage);
     }
 
     this.$.actionMenu.close();

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -314,7 +313,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionResourceRequestPolicyTest,
       "web_accessible/accessible_link_resource.html"));
   ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
       browser(), accessible_linked_resource, 1);
-  GURL accessible_url = extension->GetResourceURL("/test.png");
+  GURL accessible_url = extension->GetResourceURL("test.png");
   EXPECT_EQ(accessible_url, content::EvalJs(web_contents, "document.URL"));
   EXPECT_EQ(content::PAGE_TYPE_NORMAL,
             controller.GetLastCommittedEntry()->GetPageType());
@@ -785,10 +784,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionResourceRequestPolicyTest,
   expected_error = "This page has been blocked by Chromium";
 #endif
 
-  EXPECT_TRUE(base::Contains(body, expected_error));
-  EXPECT_FALSE(
-      base::Contains(body, "This page has been blocked by an extension"));
-  EXPECT_FALSE(base::Contains(body, "Try disabling your extensions."));
+  EXPECT_TRUE(body.contains(expected_error));
+  EXPECT_FALSE(body.contains("This page has been blocked by an extension"));
+  EXPECT_FALSE(body.contains("Try disabling your extensions."));
 }
 
 }  // namespace extensions

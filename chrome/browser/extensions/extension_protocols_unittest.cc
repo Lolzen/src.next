@@ -52,7 +52,6 @@
 #include "services/network/test/test_url_loader_client.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/loader/referrer_utils.h"
 
 using extensions::ExtensionRegistry;
@@ -99,16 +98,16 @@ scoped_refptr<const Extension> CreateWebStoreExtension(int manifest_version) {
   return ExtensionBuilder("WebStore")
       .SetManifestVersion(manifest_version)
       .SetManifestKey("icons",
-                      base::Value::Dict().Set("16", "webstore_icon_16.png"))
+                      base::DictValue().Set("16", "webstore_icon_16.png"))
       .SetManifestKey(
           "web_accessible_resources",
           manifest_version == 3
-              ? base::Value::List().Append(
-                    base::Value::Dict()
+              ? base::ListValue().Append(
+                    base::DictValue()
                         .Set("resources",
-                             base::Value::List().Append("webstore_icon_16.png"))
-                        .Set("matches", base::Value::List().Append("*://*/*")))
-              : base::Value::List().Append("webstore_icon_16.png"))
+                             base::ListValue().Append("webstore_icon_16.png"))
+                        .Set("matches", base::ListValue().Append("*://*/*")))
+              : base::ListValue().Append("webstore_icon_16.png"))
       .SetPath(path)
       .SetLocation(mojom::ManifestLocation::kComponent)
       .Build();
@@ -116,18 +115,21 @@ scoped_refptr<const Extension> CreateWebStoreExtension(int manifest_version) {
 
 scoped_refptr<const Extension> CreateTestResponseHeaderExtension(
     int manifest_version) {
-  if (manifest_version == 3) {
+  if (manifest_version >= 3) {
     return ExtensionBuilder("An extension with web-accessible resources")
-        .SetManifestVersion(3)
+        .SetManifestVersion(manifest_version)
         .SetManifestKey(
             "web_accessible_resources",
-            base::Value::List().Append(
-                base::Value::Dict()
-                    .Set("resources", base::Value::List().Append("test.dat"))
-                    .Set("matches", base::Value::List().Append("*://*/*"))))
-        .SetManifestKey("background", base::Value::Dict().Set("service_worker",
-                                                              "background.js"))
-        .SetManifestKey("trial_tokens", base::Value::List()
+            base::ListValue().Append(
+                base::DictValue()
+                    .Set("resources",
+                         base::ListValue()
+                             .Append("test.dat")
+                             .Append("mime_type_sniffer_test.gif1"))
+                    .Set("matches", base::ListValue().Append("*://*/*"))))
+        .SetManifestKey("background", base::DictValue().Set("service_worker",
+                                                            "background.js"))
+        .SetManifestKey("trial_tokens", base::ListValue()
                                             .Append(kValidTrialToken1)
                                             .Append(kValidTrialToken2))
         .SetPath(GetTestPath("response_headers"))
@@ -136,11 +138,12 @@ scoped_refptr<const Extension> CreateTestResponseHeaderExtension(
   return ExtensionBuilder("An extension with web-accessible resources")
       .SetManifestVersion(manifest_version)
       .SetManifestKey("web_accessible_resources",
-                      base::Value::List().Append("test.dat"))
-      .SetManifestKey(
-          "background",
-          base::Value::Dict().Set("scripts",
-                                  base::Value::List().Append("background.js")))
+                      base::ListValue()
+                          .Append("test.dat")
+                          .Append("mime_type_sniffer_test.gif1"))
+      .SetManifestKey("background",
+                      base::DictValue().Set(
+                          "scripts", base::ListValue().Append("background.js")))
       .SetPath(GetTestPath("response_headers"))
       .Build();
 }
@@ -149,7 +152,7 @@ scoped_refptr<const Extension> CreateTestModuleResponseHeaderExtension(
     int manifest_version) {
   return ExtensionBuilder("A module extension")
       .SetManifestVersion(manifest_version)
-      .SetManifestKey("export", base::Value::Dict())
+      .SetManifestKey("export", base::DictValue())
       .SetPath(GetTestPath("response_headers"))
       .Build();
 }
@@ -157,13 +160,13 @@ scoped_refptr<const Extension> CreateTestModuleResponseHeaderExtension(
 scoped_refptr<const Extension> CreateTestModuleImporterResponseHeaderExtension(
     int manifest_version,
     const std::string& module_extension_id) {
-  if (manifest_version == 3) {
+  if (manifest_version >= 3) {
     return ExtensionBuilder("A module importer extension")
-        .SetManifestVersion(3)
+        .SetManifestVersion(manifest_version)
         .SetManifestKey("import",
-                        base::Value::List().Append(
-                            base::Value::Dict().Set("id", module_extension_id)))
-        .SetManifestKey("trial_tokens", base::Value::List()
+                        base::ListValue().Append(
+                            base::DictValue().Set("id", module_extension_id)))
+        .SetManifestKey("trial_tokens", base::ListValue()
                                             .Append(kValidTrialToken1)
                                             .Append(kValidTrialToken2))
         .SetPath(GetTestPath("response_headers"))
@@ -171,9 +174,8 @@ scoped_refptr<const Extension> CreateTestModuleImporterResponseHeaderExtension(
   }
   return ExtensionBuilder("A module importer extension")
       .SetManifestVersion(manifest_version)
-      .SetManifestKey("import",
-                      base::Value::List().Append(
-                          base::Value::Dict().Set("id", module_extension_id)))
+      .SetManifestKey("import", base::ListValue().Append(base::DictValue().Set(
+                                    "id", module_extension_id)))
       .SetPath(GetTestPath("response_headers"))
       .Build();
 }
@@ -274,6 +276,7 @@ class ExtensionProtocolsTestBase : public testing::Test,
   void TearDown() override {
     loader_factory_.reset();
     content_verifier_->Shutdown();
+    content_verifier_.reset();
     // Shut down the PowerMonitor if initialized.
     base::PowerMonitor::GetInstance()->ShutdownForTesting();
   }
@@ -310,7 +313,7 @@ class ExtensionProtocolsTestBase : public testing::Test,
                    /*incognito_enabled=*/false,
                    /*notifications_disabled=*/false);
     }
-    return RequestOrLoad(extension->GetResourceURL(relative_path),
+    return RequestOrLoad(extension->ResolveExtensionURL(relative_path),
                          network::mojom::RequestDestination::kDocument);
   }
 
@@ -762,9 +765,6 @@ TEST_P(ExtensionProtocolsTest, InvalidBackgroundScriptRequest) {
       network::mojom::RequestDestination::kStyle,
       network::mojom::RequestDestination::kVideo,
   };
-  if (!base::FeatureList::IsEnabled(blink::features::kPlzDedicatedWorker)) {
-    destinations.push_back(network::mojom::RequestDestination::kWorker);
-  }
   for (network::mojom::RequestDestination destination : destinations) {
     auto get_result =
         RequestOrLoad(extension->GetResourceURL("background.js"), destination);
@@ -805,7 +805,7 @@ TEST_P(ExtensionProtocolsTest, AllowFrameRequests) {
 // https://crbug.com/356878412.
 TEST_P(ExtensionProtocolsTest, PathsWithTrailingSeparatorsAreNotAllowed) {
   base::FilePath extension_dir = GetTestPath("simple_with_file");
-  std::string error;
+  std::u16string error;
   scoped_refptr<Extension> extension = file_util::LoadExtension(
       extension_dir, mojom::ManifestLocation::kInternal, Extension::NO_FLAGS,
       &error);
@@ -821,11 +821,36 @@ TEST_P(ExtensionProtocolsTest, PathsWithTrailingSeparatorsAreNotAllowed) {
             DoRequestOrLoad(extension, relative_path.AsUTF8Unsafe()).result());
 }
 
+// Make sure requests for paths ending with a dot or a space aren't resolved to
+// the corresponding file without the ending dot or space, as it normally would
+// on Windows. See https://crbug.com/400119351.
+TEST_P(ExtensionProtocolsTest, PathsWithTrailingDotSpaceAreNotAllowed) {
+  base::FilePath extension_dir = GetTestPath("simple_with_file");
+  std::u16string error;
+  scoped_refptr<Extension> extension = file_util::LoadExtension(
+      extension_dir, mojom::ManifestLocation::kInternal, Extension::NO_FLAGS,
+      &error);
+  ASSERT_NE(extension.get(), nullptr) << "error: " << error;
+
+  // Loading "/file.html" should succeed.
+  EXPECT_EQ(net::OK, DoRequestOrLoad(extension, "file.html").result());
+
+  // Loading "/file.html." and "/file.html " should fail.
+  for (const std::string suffix : {".", "%20"}) {
+    // Add the suffix manually, as `ResolveExtensionURL` strips trailing spaces.
+    GURL url =
+        GURL(extension->ResolveExtensionURL("file.html").spec() + suffix);
+    EXPECT_EQ(net::ERR_FILE_NOT_FOUND,
+              RequestOrLoad(url, network::mojom::RequestDestination::kDocument)
+                  .result());
+  }
+}
+
 // Make sure directories with an index.html file aren't serving the file, i.e.
 // index.html doesn't get any special treatment.
 TEST_P(ExtensionProtocolsTest, DirectoryWithIndexHtml) {
   base::FilePath extension_dir = GetTestPath("simple_with_index_html");
-  std::string error;
+  std::u16string error;
   scoped_refptr<Extension> extension = file_util::LoadExtension(
       extension_dir, mojom::ManifestLocation::kInternal, Extension::NO_FLAGS,
       &error);
@@ -849,7 +874,7 @@ TEST_P(ExtensionProtocolsTest, DirectoryWithIndexHtml) {
 
 TEST_P(ExtensionProtocolsTest, MetadataFolder) {
   base::FilePath extension_dir = GetTestPath("metadata_folder");
-  std::string error;
+  std::u16string error;
   scoped_refptr<Extension> extension = file_util::LoadExtension(
       extension_dir, mojom::ManifestLocation::kInternal, Extension::NO_FLAGS,
       &error);
@@ -1033,7 +1058,7 @@ TEST_P(ExtensionProtocolsTest, MimeTypesForKnownFiles) {
       })";
   const char* kManifest = manifest_version == 3 ? kManifestV3 : kManifestV2;
   test_dir.WriteManifest(kManifest);
-  base::Value::Dict manifest = base::test::ParseJsonDict(kManifest);
+  base::DictValue manifest = base::test::ParseJsonDict(kManifest);
   ASSERT_FALSE(manifest.empty());
 
   test_dir.WriteFile(FILE_PATH_LITERAL("json_file.json"), "{}");
@@ -1076,7 +1101,7 @@ TEST_P(ExtensionProtocolsTest, MimeTypesForKnownFiles) {
 TEST_P(ExtensionProtocolsTest, ExtensionRequestsNotAborted) {
   base::FilePath extension_dir =
       GetTestPath("common").AppendASCII("background_script");
-  std::string error;
+  std::u16string error;
   scoped_refptr<Extension> extension = file_util::LoadExtension(
       extension_dir, mojom::ManifestLocation::kInternal, Extension::NO_FLAGS,
       &error);
@@ -1093,6 +1118,22 @@ TEST_P(ExtensionProtocolsTest, ExtensionRequestsNotAborted) {
   // Request the background.js file. Ensure the request completes successfully.
   EXPECT_EQ(net::OK,
             DoRequestOrLoad(extension.get(), "background.js").result());
+}
+
+// Tests that mime type sniffing is not performed for extension resources.
+TEST_P(ExtensionProtocolsTest, MimeTypeSniffingNotPerformed) {
+  scoped_refptr<const Extension> extension =
+      CreateTestResponseHeaderExtension(GetParam());
+  AddExtension(extension, false, false);
+
+  auto get_result =
+      RequestOrLoad(extension->GetResourceURL("mime_type_sniffer_test.gif1"),
+                    network::mojom::RequestDestination::kDocument);
+  EXPECT_EQ(net::OK, get_result.result());
+
+  // With mime sniffing, the content type would be image/gif.
+  EXPECT_EQ("application/octet-stream",
+            get_result.GetResponseHeaderByName("Content-Type"));
 }
 
 }  // namespace extensions

@@ -14,7 +14,10 @@
 #include "extensions/browser/extension_action_manager.h"
 #include "extensions/browser/extension_event_histogram_value.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/mojom/context_type.mojom.h"
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -78,7 +81,7 @@ void ExtensionActionDispatcher::DispatchExtensionActionClicked(
   }
 
   if (event_name) {
-    base::Value::List args;
+    base::ListValue args;
     // The action APIs (browserAction, pageAction, action) are only available
     // to privileged extension contexts. As such, we deterministically know that
     // the right context type here is privileged.
@@ -133,14 +136,14 @@ void ExtensionActionDispatcher::DispatchEventToExtension(
     const ExtensionId& extension_id,
     events::HistogramValue histogram_value,
     const std::string& event_name,
-    base::Value::List event_args) {
+    base::ListValue event_args) {
   if (!EventRouter::Get(context)) {
     return;
   }
 
   auto event = std::make_unique<Event>(histogram_value, event_name,
                                        std::move(event_args), context);
-  event->user_gesture = EventRouter::USER_GESTURE_ENABLED;
+  event->user_gesture = EventRouter::UserGestureState::kEnabled;
   EventRouter::Get(context)->DispatchEventToExtension(extension_id,
                                                       std::move(event));
 }
@@ -157,8 +160,8 @@ void ExtensionActionDispatcher::OnActionPinnedStateChanged(
   // TODO(crbug.com/360916928): Today, no action APIs are compiled.
   // Unfortunately, this means we miss out on the compiled types, which would be
   // rather helpful here.
-  base::Value::List args;
-  base::Value::Dict change;
+  base::ListValue args;
+  base::DictValue change;
   change.Set("isOnToolbar", is_pinned);
   args.Append(std::move(change));
   DispatchEventToExtension(browser_context_, extension_id,

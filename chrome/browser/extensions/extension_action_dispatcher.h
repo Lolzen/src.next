@@ -12,7 +12,10 @@
 #include "base/scoped_observation.h"
 #include "base/values.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_id.h"
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace content {
 class BrowserContext;
@@ -101,7 +104,7 @@ class ExtensionActionDispatcher : public BrowserContextKeyedAPI {
                                 const ExtensionId& extension_id,
                                 events::HistogramValue histogram_value,
                                 const std::string& event_name,
-                                base::Value::List event_args);
+                                base::ListValue event_args);
 
   // BrowserContextKeyedAPI implementation.
   void Shutdown() override;
