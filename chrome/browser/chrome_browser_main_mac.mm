@@ -15,6 +15,7 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
+#include "base/i18n/rtl.h"
 #include "base/mac/mac_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/path_service.h"
@@ -32,7 +33,7 @@
 #include "chrome/browser/mac/metrics.h"
 #include "chrome/browser/ui/cocoa/main_menu_builder.h"
 #include "chrome/browser/ui/cocoa/renderer_context_menu/chrome_swizzle_services_menu_updater.h"
-#include "chrome/browser/updater/browser_updater_client_util.h"
+#include "chrome/browser/updater/updater.h"
 #include "chrome/common/channel_info.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
@@ -131,7 +132,9 @@ void ChromeBrowserMainPartsMac::PreCreateMainMessageLoop() {
   CHECK_NE(nil, NSApp.delegate);
 
   chrome::BuildMainMenu(NSApp, app_controller,
-                        l10n_util::GetStringUTF16(IDS_PRODUCT_NAME), false);
+                        l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
+                        /*is_pwa=*/false,
+                        /*is_rtl=*/base::i18n::IsRTL());
   [app_controller mainMenuCreated];
 
   ui::WarmScreenCapture();

@@ -4,16 +4,15 @@
 
 #include "extensions/browser/media_capture_util.h"
 
+#include <algorithm>
 #include <string>
 #include <utility>
 
 #include "base/check.h"
 #include "base/functional/callback.h"
-#include "base/ranges/algorithm.h"
 #include "content/public/browser/media_capture_devices.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "third_party/blink/public/mojom/mediastream/media_stream.mojom-shared.h"
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom.h"
 
 using blink::MediaStreamDevice;
@@ -36,8 +35,8 @@ const MediaStreamDevice* GetRequestedDeviceOrDefault(
       continue;
     }
 
-    auto it = base::ranges::find(devices, requested_device_id,
-                                 &MediaStreamDevice::id);
+    auto it =
+        std::ranges::find(devices, requested_device_id, &MediaStreamDevice::id);
     if (it != devices.end()) {
       return &(*it);
     }

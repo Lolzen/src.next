@@ -53,6 +53,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
   std::optional<ResourceRequestBlockedReason> CheckCSPForRequest(
       mojom::blink::RequestContextType,
       network::mojom::RequestDestination request_destination,
+      network::mojom::RequestMode request_mode,
       const KURL&,
       const ResourceLoaderOptions&,
       ReportingDisposition,
@@ -61,6 +62,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
   std::optional<ResourceRequestBlockedReason> CheckAndEnforceCSPForRequest(
       mojom::blink::RequestContextType,
       network::mojom::RequestDestination request_destination,
+      network::mojom::RequestMode request_mode,
       const KURL&,
       const ResourceLoaderOptions&,
       ReportingDisposition,
@@ -94,7 +96,9 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
       const ResourceRequestHead& resource_request,
       base::optional_ref<const KURL> alias_url,
       ResourceType type,
-      const FetchInitiatorInfo& initiator_info) override;
+      const FetchInitiatorInfo& initiator_info,
+      bool scan_stack_for_ads,
+      subresource_filter::ScopedRule* out_rule) override;
 
  protected:
   BaseFetchContext(const DetachableResourceFetcherProperties& properties,
@@ -151,6 +155,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
   std::optional<ResourceRequestBlockedReason> CheckCSPForRequestInternal(
       mojom::blink::RequestContextType,
       network::mojom::RequestDestination request_destination,
+      network::mojom::RequestMode request_mode,
       const KURL&,
       const ResourceLoaderOptions&,
       ReportingDisposition,

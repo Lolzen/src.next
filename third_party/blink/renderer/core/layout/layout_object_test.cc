@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 
 #include "testing/gmock/include/gmock/gmock-matchers.h"
@@ -30,6 +25,7 @@
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/json/json_values.h"
+#include "third_party/skia/include/docs/SkPDFDocument.h"
 #include "ui/gfx/geometry/decomposed_transform.h"
 
 namespace blink {
@@ -87,6 +83,7 @@ TEST_F(LayoutObjectTest, CommonAncestor) {
       </div>
     </div>
   )HTML");
+
   LayoutObject* container = GetLayoutObjectByElementId("container");
   LayoutObject* child1 = GetLayoutObjectByElementId("child1");
   LayoutObject* child1_1 = GetLayoutObjectByElementId("child1_1");
@@ -110,11 +107,39 @@ TEST_F(LayoutObjectTest, CommonAncestor) {
   EXPECT_EQ(child2_1->CommonAncestor(*child1_1), container);
   EXPECT_TRUE(child1_1->IsBeforeInPreOrder(*child2_1));
   EXPECT_FALSE(child2_1->IsBeforeInPreOrder(*child1_1));
-
   EXPECT_EQ(child1_1->CommonAncestor(*child2_1_1), container);
   EXPECT_EQ(child2_1_1->CommonAncestor(*child1_1), container);
   EXPECT_TRUE(child1_1->IsBeforeInPreOrder(*child2_1_1));
   EXPECT_FALSE(child2_1_1->IsBeforeInPreOrder(*child1_1));
+}
+
+TEST_F(LayoutObjectTest, OwnerNodeId) {
+  SetBodyInnerHTML(R"HTML(
+    <div id="root">
+      <div id="-internal-print-header"></div>
+      <div id="-internal-print-footer"></div>
+      <div id="-internal-print-page-number"></div>
+    </div>
+  )HTML");
+  DisplayItemClient* root = GetLayoutObjectByElementId("root");
+  DisplayItemClient* header =
+      static_cast<LayoutObject*>(root)->SlowFirstChild();
+  DisplayItemClient* footer = static_cast<LayoutObject*>(header)->NextSibling();
+  DisplayItemClient* page_number =
+      static_cast<LayoutObject*>(footer)->NextSibling();
+
+  const DOMNodeId root_node_id = DOMNodeIds::IdForNode(GetElementById("root"));
+  EXPECT_EQ(root_node_id, root->OwnerNodeId(true));
+  EXPECT_EQ(root_node_id, root->OwnerNodeId(false));
+
+  EXPECT_EQ(SkPDF::NodeID::PaginationHeaderArtifact, header->OwnerNodeId(true));
+  EXPECT_EQ(root_node_id + 1, header->OwnerNodeId(false));
+
+  EXPECT_EQ(SkPDF::NodeID::PaginationFooterArtifact, footer->OwnerNodeId(true));
+  EXPECT_EQ(root_node_id + 2, footer->OwnerNodeId(false));
+
+  EXPECT_EQ(SkPDF::NodeID::PaginationArtifact, page_number->OwnerNodeId(true));
+  EXPECT_EQ(root_node_id + 3, page_number->OwnerNodeId(false));
 }
 
 TEST_F(LayoutObjectTest, LayoutDecoratedNameCalledWithPositionedObject) {
@@ -1397,7 +1422,7 @@ TEST_F(LayoutObjectTest, NeedsScrollableOverflowRecalc) {
   EXPECT_FALSE(other->NeedsScrollableOverflowRecalc());
 
   auto* target_element = GetElementById("target");
-  target_element->setInnerHTML("baz");
+  target_element->SetInnerHTMLWithoutTrustedTypes("baz");
   UpdateAllLifecyclePhasesForTest();
 
   EXPECT_FALSE(wrapper->NeedsScrollableOverflowRecalc());
@@ -1498,7 +1523,8 @@ TEST_F(LayoutObjectTest, LocalToAncestoRectViewIgnoreAncestorScroll) {
 
   LayoutObject* target = GetLayoutObjectByElementId("target");
   GetDocument().View()->LayoutViewport()->SetScrollOffset(
-      ScrollOffset(0, 100), mojom::blink::ScrollType::kProgrammatic);
+      ScrollOffset(0, 100), mojom::blink::ScrollType::kProgrammatic,
+      cc::ScrollSourceType::kNone);
   UpdateAllLifecyclePhasesForTest();
 
   PhysicalRect rect(0, 0, 100, 100);
@@ -1558,7 +1584,8 @@ TEST_F(LayoutObjectTest,
   LayoutBoxModelObject* intermediate =
       To<LayoutBoxModelObject>(GetLayoutObjectByElementId("intermediate"));
   GetDocument().View()->LayoutViewport()->SetScrollOffset(
-      ScrollOffset(0, 100), mojom::blink::ScrollType::kProgrammatic);
+      ScrollOffset(0, 100), mojom::blink::ScrollType::kProgrammatic,
+      cc::ScrollSourceType::kNone);
   intermediate->GetScrollableArea()->ScrollBy(ScrollOffset(0, 100),
                                               mojom::blink::ScrollType::kUser);
   UpdateAllLifecyclePhasesForTest();
@@ -1643,13 +1670,13 @@ TEST_F(LayoutObjectTestWithCompositing,
   target->setAttribute(html_names::kStyleAttr,
                        AtomicString(kTransformsWith3D[0]));
   UpdateAllLifecyclePhasesForTest();
-  target->scrollIntoView();
+  target->scrollIntoViewForTesting();
   EXPECT_FALSE(
       GetDocument().IsUseCounted(WebFeature::kDifferentPerspectiveCBOrParent));
 
   target->setAttribute(html_names::kStyleAttr, AtomicString(kPreserve3D));
   UpdateAllLifecyclePhasesForTest();
-  target->scrollIntoView();
+  target->scrollIntoViewForTesting();
   EXPECT_FALSE(
       GetDocument().IsUseCounted(WebFeature::kDifferentPerspectiveCBOrParent));
 
@@ -1672,14 +1699,14 @@ TEST_F(LayoutObjectTestWithCompositing,
   target->setAttribute(html_names::kStyleAttr,
                        AtomicString(kTransformWithout3D));
   UpdateAllLifecyclePhasesForTest();
-  target->scrollIntoView();
+  target->scrollIntoViewForTesting();
   EXPECT_FALSE(
       GetDocument().IsUseCounted(WebFeature::kDifferentPerspectiveCBOrParent));
 
   target->setAttribute(html_names::kStyleAttr,
                        AtomicString(kTransformsWith3D[0]));
   UpdateAllLifecyclePhasesForTest();
-  target->scrollIntoView();
+  target->scrollIntoViewForTesting();
   EXPECT_TRUE(
       GetDocument().IsUseCounted(WebFeature::kDifferentPerspectiveCBOrParent));
   GetDocument().ClearUseCounterForTesting(
@@ -1691,7 +1718,7 @@ TEST_F(LayoutObjectTestWithCompositing,
   target->setAttribute(html_names::kStyleAttr,
                        AtomicString(kTransformsWith3D[1]));
   UpdateAllLifecyclePhasesForTest();
-  target->scrollIntoView();
+  target->scrollIntoViewForTesting();
   EXPECT_TRUE(
       GetDocument().IsUseCounted(WebFeature::kDifferentPerspectiveCBOrParent));
   GetDocument().ClearUseCounterForTesting(
@@ -1699,7 +1726,7 @@ TEST_F(LayoutObjectTestWithCompositing,
 
   target->setAttribute(html_names::kStyleAttr, AtomicString(kPreserve3D));
   UpdateAllLifecyclePhasesForTest();
-  target->scrollIntoView();
+  target->scrollIntoViewForTesting();
   EXPECT_TRUE(
       GetDocument().IsUseCounted(WebFeature::kDifferentPerspectiveCBOrParent));
   GetDocument().ClearUseCounterForTesting(
@@ -1802,9 +1829,10 @@ TEST_F(LayoutObjectTest, ScrollOffsetMapping) {
 
   Element* scroller = GetElementById("scroller");
   ASSERT_TRUE(scroller);
-  scroller->scrollTo(100, 200);
+  scroller->scrollToForTesting(100, 200);
   GetDocument().View()->LayoutViewport()->SetScrollOffset(
-      ScrollOffset(10, 20), mojom::blink::ScrollType::kProgrammatic);
+      ScrollOffset(10, 20), mojom::blink::ScrollType::kProgrammatic,
+      cc::ScrollSourceType::kNone);
   UpdateAllLifecyclePhasesForTest();
   LayoutObject* inner = GetLayoutObjectByElementId("inner");
   ASSERT_TRUE(inner);
@@ -1846,7 +1874,7 @@ TEST_F(LayoutObjectTest, QuadsInAncestor_Block) {
 
   Element* scroller_elm = GetElementById("scroller");
   ASSERT_TRUE(scroller_elm);
-  scroller_elm->scrollTo(110, 220);
+  scroller_elm->scrollToForTesting(110, 220);
   UpdateAllLifecyclePhasesForTest();
 
   const LayoutBox* scroller = GetLayoutBoxByElementId("scroller");
@@ -1909,7 +1937,7 @@ TEST_F(LayoutObjectTest, QuadsInAncestor_Inline) {
 
   Element* scroller_elm = GetElementById("scroller");
   ASSERT_TRUE(scroller_elm);
-  scroller_elm->scrollTo(110, 220);
+  scroller_elm->scrollToForTesting(110, 220);
   UpdateAllLifecyclePhasesForTest();
 
   const LayoutBox* scroller = GetLayoutBoxByElementId("scroller");
@@ -1940,6 +1968,70 @@ TEST_F(LayoutObjectTest, QuadsInAncestor_Inline) {
   EXPECT_EQ(quads[0].BoundingBox(), gfx::RectF(210, 240, 60, 20));
   EXPECT_EQ(quads[1].BoundingBox(), gfx::RectF(110, 260, 180, 20));
   EXPECT_EQ(quads[2].BoundingBox(), gfx::RectF(110, 280, 20, 20));
+}
+
+TEST_F(LayoutObjectTest, GeneratingNode) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #pseudo::before { content: "before"; display: block; }
+    </style>
+    <div id="normal">Normal</div>
+    <div id="pseudo"></div>
+    <div id="table" style="display: table">
+      <div id="row" style="display: table-row">
+        Text
+      </div>
+    </div>
+    <div id="table2" style="display: table">
+      Text2
+    </div>
+  )HTML");
+
+  // 1. Normal element
+  LayoutObject* normal = GetLayoutObjectByElementId("normal");
+  EXPECT_EQ(GetElementById("normal"), normal->GeneratingNode());
+
+  // 2. Pseudo element ::before
+  Element* pseudo = GetElementById("pseudo");
+  LayoutObject* pseudo_layout = pseudo->GetLayoutObject();
+  LayoutObject* before = pseudo_layout->SlowFirstChild();
+  ASSERT_TRUE(before);
+  ASSERT_TRUE(before->IsPseudoElement());
+  EXPECT_EQ(pseudo, before->GeneratingNode());
+
+  // 3. Anonymous object
+  // The text node "Text" is inside "row". A table row expects cells.
+  // So an anonymous table cell should be created around the text.
+  // The hierarchy: LayoutTable -> LayoutTableRow -> LayoutTableCell (Anonymous)
+  // -> LayoutText
+  LayoutObject* row = GetLayoutObjectByElementId("row");
+  LayoutObject* anonymous_cell = row->SlowFirstChild();
+  ASSERT_TRUE(anonymous_cell);
+  EXPECT_TRUE(anonymous_cell->IsAnonymous());
+  EXPECT_TRUE(anonymous_cell->IsTableCell());
+
+  // GetNode() is null for anonymous objects, so it recurses up to Parent().
+  // Parent is "row", so it should return the row element.
+  EXPECT_EQ(GetElementById("row"), anonymous_cell->GeneratingNode());
+
+  // 4. Nested Anonymous objects
+  // Hierarchy: LayoutTable -> LayoutTableSection(Anon) -> LayoutTableRow(Anon)
+  // -> LayoutTableCell(Anon) -> LayoutText
+  LayoutObject* table2 = GetLayoutObjectByElementId("table2");
+  LayoutObject* section = table2->SlowFirstChild();
+  ASSERT_TRUE(section);
+  EXPECT_TRUE(section->IsAnonymous());
+  EXPECT_EQ(GetElementById("table2"), section->GeneratingNode());
+
+  LayoutObject* row2 = section->SlowFirstChild();
+  ASSERT_TRUE(row2);
+  EXPECT_TRUE(row2->IsAnonymous());
+  EXPECT_EQ(GetElementById("table2"), row2->GeneratingNode());
+
+  LayoutObject* cell2 = row2->SlowFirstChild();
+  ASSERT_TRUE(cell2);
+  EXPECT_TRUE(cell2->IsAnonymous());
+  EXPECT_EQ(GetElementById("table2"), cell2->GeneratingNode());
 }
 
 }  // namespace blink

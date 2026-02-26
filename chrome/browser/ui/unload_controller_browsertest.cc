@@ -8,7 +8,7 @@
 #include "base/json/json_reader.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
-#include "build/chromeos_buildflags.h"
+#include "chrome/browser/ash/boca/on_task/on_task_locked_controller.h"
 #include "chrome/browser/policy/policy_test_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -76,19 +76,23 @@ IN_PROC_BROWSER_TEST_F(UnloadControllerPreventCloseTest,
   ASSERT_TRUE(browser);
 
   UnloadController unload_controller(browser);
-  EXPECT_EQ(kShouldPreventClose ? BrowserClosingStatus::kDeniedByPolicy
-                                : BrowserClosingStatus::kPermitted,
+  EXPECT_EQ(kShouldPreventClose
+                ? BrowserWindowInterface::ClosingStatus::kDeniedByPolicy
+                : BrowserWindowInterface::ClosingStatus::kPermitted,
             unload_controller.GetBrowserClosingStatus());
 }
 
 // Flaky on IS_CHROMEOS. crbug.com/369817361
 #if BUILDFLAG(IS_CHROMEOS)
-#define MAYBE_PreventCloseEnforcedByPolicyTabbedAppShallBeClosable DISABLED_PreventCloseEnforcedByPolicyTabbedAppShallBeClosable
+#define MAYBE_PreventCloseEnforcedByPolicyTabbedAppShallBeClosable \
+  DISABLED_PreventCloseEnforcedByPolicyTabbedAppShallBeClosable
 #else
-#define MAYBE_PreventCloseEnforcedByPolicyTabbedAppShallBeClosable PreventCloseEnforcedByPolicyTabbedAppShallBeClosable
+#define MAYBE_PreventCloseEnforcedByPolicyTabbedAppShallBeClosable \
+  PreventCloseEnforcedByPolicyTabbedAppShallBeClosable
 #endif
-IN_PROC_BROWSER_TEST_F(UnloadControllerPreventCloseTest,
-                       MAYBE_PreventCloseEnforcedByPolicyTabbedAppShallBeClosable) {
+IN_PROC_BROWSER_TEST_F(
+    UnloadControllerPreventCloseTest,
+    MAYBE_PreventCloseEnforcedByPolicyTabbedAppShallBeClosable) {
   const absl::Cleanup policy_cleanup = [this] {
     SetPolicies(/*web_app_settings=*/"[]", /*web_app_install_force_list=*/"[]");
   };
@@ -103,11 +107,11 @@ IN_PROC_BROWSER_TEST_F(UnloadControllerPreventCloseTest,
   ASSERT_TRUE(browser);
 
   UnloadController unload_controller(browser);
-  EXPECT_EQ(BrowserClosingStatus::kPermitted,
+  EXPECT_EQ(BrowserWindowInterface::ClosingStatus::kPermitted,
             unload_controller.GetBrowserClosingStatus());
 }
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 
 // Browser tests for verifying `UnloadController` behavior for apps when locked
 // (and not locked) for OnTask. Only relevant for non-web browser scenarios.
@@ -126,7 +130,8 @@ IN_PROC_BROWSER_TEST_F(UnloadControllerWithOnTaskTest,
   webapps::AppId app_id = InstallMockApp();
   Browser* const app_browser =
       web_app::LaunchWebAppBrowser(browser()->profile(), app_id);
-  app_browser->SetLockedForOnTask(true);
+  ash::boca::OnTaskLockedController::From(app_browser)
+      ->set_locked_for_on_task(true);
 
   // Verify tab cannot be closed.
   content::WebContents* const active_web_contents =
@@ -141,7 +146,8 @@ IN_PROC_BROWSER_TEST_F(UnloadControllerWithOnTaskTest,
   webapps::AppId app_id = InstallMockApp();
   Browser* const app_browser =
       web_app::LaunchWebAppBrowser(browser()->profile(), app_id);
-  app_browser->SetLockedForOnTask(false);
+  ash::boca::OnTaskLockedController::From(app_browser)
+      ->set_locked_for_on_task(false);
 
   // Verify tab can be closed.
   content::WebContents* const active_web_contents =

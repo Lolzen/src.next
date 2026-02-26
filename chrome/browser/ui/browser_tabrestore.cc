@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/span.h"
 #include "build/build_config.h"
 #include "chrome/browser/apps/app_service/web_contents_app_id_utils.h"
 #include "chrome/browser/profiles/profile.h"
@@ -17,12 +18,17 @@
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tab_ui_helper.h"
+#include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
-#include "chrome/browser/ui/tabs/tab_group.h"
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui_browser/webui_browser.h"
+#include "chrome/common/buildflags.h"
 #include "components/sessions/content/content_serialized_navigation_builder.h"
 #include "components/tab_groups/tab_group_id.h"
+#include "components/tabs/public/tab_group.h"
+#include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/restore_type.h"
@@ -31,6 +37,10 @@
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/range/range.h"
+
+#if BUILDFLAG(ENABLE_GLIC)
+#include "chrome/browser/glic/glic_tab_restore_helper.h"
+#endif
 
 using content::NavigationEntry;
 using content::RestoreType;
@@ -44,7 +54,7 @@ namespace {
 
 std::unique_ptr<WebContents> CreateRestoredTab(
     Browser* browser,
-    const std::vector<SerializedNavigationEntry>& navigations,
+    base::span<const SerializedNavigationEntry> navigations,
     int selected_navigation,
     const std::string& extension_app_id,
     base::TimeTicks last_active_time_ticks,
@@ -54,7 +64,7 @@ std::unique_ptr<WebContents> CreateRestoredTab(
     const std::map<std::string, std::string>& extra_data,
     bool initially_hidden,
     bool from_session_restore) {
-  GURL restore_url = navigations.at(selected_navigation).virtual_url();
+  GURL restore_url = navigations[selected_navigation].virtual_url();
   // TODO(ajwong): Remove the temporary session_storage_namespace_map when
   // we teach session restore to understand that one tab can have multiple
   // SessionStorageNamespace objects. Also remove the
@@ -74,11 +84,12 @@ std::unique_ptr<WebContents> CreateRestoredTab(
   std::unique_ptr<WebContents> web_contents =
       WebContents::CreateWithSessionStorage(create_params,
                                             session_storage_namespace_map);
-  if (from_session_restore) {
-    SessionRestore::OnWillRestoreTab(web_contents.get());
-  }
   apps::SetAppIdForWebContents(browser->profile(), web_contents.get(),
                                extension_app_id);
+
+#if BUILDFLAG(ENABLE_GLIC)
+  glic::RestoreGlicStateFromExtraData(web_contents.get(), extra_data);
+#endif
 
   std::vector<std::unique_ptr<NavigationEntry>> entries =
       ContentSerializedNavigationBuilder::ToNavigationEntries(
@@ -114,9 +125,13 @@ void LoadRestoredTabIfVisible(Browser* browser,
   // A layout should already have been performed to determine the contents size.
   // The contents size should not be empty, unless the browser size and restored
   // size are also empty.
-  DCHECK(!browser->window()->GetContentsSize().IsEmpty() ||
-         (browser->window()->GetBounds().IsEmpty() &&
-          browser->window()->GetRestoredBounds().IsEmpty()));
+  // WebUI browser's content size is not available until the WebUI page is
+  // loaded.
+  if (!webui_browser::IsWebUIBrowserEnabled()) {
+    DCHECK(!browser->window()->GetContentsSize().IsEmpty() ||
+           (browser->window()->GetBounds().IsEmpty() &&
+            browser->window()->GetRestoredBounds().IsEmpty()));
+  }
   DCHECK_EQ(web_contents->GetSize(), browser->window()->GetContentsSize());
 
   web_contents->GetController().LoadIfNecessary();
@@ -178,6 +193,14 @@ WebContents* AddRestoredTabImpl(std::unique_ptr<WebContents> web_contents,
   } else {
     tab_strip_model->InsertWebContentsAt(tab_index, std::move(web_contents),
                                          add_types, group);
+  }
+
+  if (from_session_restore) {
+    // Indicate that the tab is created by session restore. This is used to hide
+    // the throbber when a background restored tab is loading.
+    tabs::TabInterface* const tab_interface =
+        tabs::TabInterface::GetFromContents(raw_web_contents);
+    TabUIHelper::From(tab_interface)->set_created_by_session_restore(true);
   }
 
   // We set the size of the view here, before Blink does its initial layout.
@@ -248,7 +271,7 @@ WebContents* AddRestoredTabImpl(std::unique_ptr<WebContents> web_contents,
 
 WebContents* AddRestoredTab(
     Browser* browser,
-    const std::vector<SerializedNavigationEntry>& navigations,
+    base::span<const SerializedNavigationEntry> navigations,
     int tab_index,
     int selected_navigation,
     const std::string& extension_app_id,
@@ -275,7 +298,7 @@ WebContents* AddRestoredTab(
 
 WebContents* ReplaceRestoredTab(
     Browser* browser,
-    const std::vector<SerializedNavigationEntry>& navigations,
+    base::span<const SerializedNavigationEntry> navigations,
     int selected_navigation,
     const std::string& extension_app_id,
     content::SessionStorageNamespace* session_storage_namespace,
@@ -294,7 +317,17 @@ WebContents* ReplaceRestoredTab(
   int insertion_index = tab_strip->active_index();
   tab_strip->InsertWebContentsAt(
       insertion_index + 1, std::move(web_contents),
-      AddTabTypes::ADD_ACTIVE | AddTabTypes::ADD_INHERIT_OPENER);
+      AddTabTypes::ADD_ACTIVE | AddTabTypes::ADD_INHERIT_OPENER,
+      tab_strip->GetTabGroupForTab(insertion_index));
+
+  if (from_session_restore) {
+    // Indicate that the tab is created by session restore. This is used to hide
+    // the throbber when a background restored tab is loading.
+    tabs::TabInterface* const tab_interface =
+        tabs::TabInterface::GetFromContents(raw_web_contents);
+    TabUIHelper::From(tab_interface)->set_created_by_session_restore(true);
+  }
+
   tab_strip->CloseWebContentsAt(insertion_index, TabCloseTypes::CLOSE_NONE);
 
   LoadRestoredTabIfVisible(browser, raw_web_contents);

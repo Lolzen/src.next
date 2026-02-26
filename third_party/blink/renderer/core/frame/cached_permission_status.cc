@@ -4,8 +4,8 @@
 
 #include "third_party/blink/renderer/core/frame/cached_permission_status.h"
 
+#include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
-#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
@@ -21,29 +21,33 @@ using mojom::blink::PermissionStatus;
 const char CachedPermissionStatus::kSupplementName[] = "CachedPermissionStatus";
 
 // static
-CachedPermissionStatus* CachedPermissionStatus::From(LocalDOMWindow* window) {
+CachedPermissionStatus* CachedPermissionStatus::From(
+    ExecutionContext* context) {
   CachedPermissionStatus* cache =
-      Supplement<LocalDOMWindow>::From<CachedPermissionStatus>(window);
+      Supplement<ExecutionContext>::From<CachedPermissionStatus>(context);
   if (!cache) {
-    cache = MakeGarbageCollected<CachedPermissionStatus>(window);
-    ProvideTo(*window, cache);
+    cache = MakeGarbageCollected<CachedPermissionStatus>(context);
+    ProvideTo(*context, cache);
   }
   return cache;
 }
 
-CachedPermissionStatus::CachedPermissionStatus(LocalDOMWindow* local_dom_window)
-    : Supplement<LocalDOMWindow>(*local_dom_window),
-      permission_service_(local_dom_window),
-      permission_observer_receivers_(this, local_dom_window) {
-  CHECK(local_dom_window);
-  CHECK(RuntimeEnabledFeatures::PermissionElementEnabled(local_dom_window));
+CachedPermissionStatus::CachedPermissionStatus(ExecutionContext* context)
+    : Supplement<ExecutionContext>(*context),
+      permission_service_(context),
+      permission_observer_receivers_(this, context) {
+  CHECK(context);
+  CHECK(RuntimeEnabledFeatures::PermissionElementEnabled(context) ||
+        RuntimeEnabledFeatures::GeolocationElementEnabled(context) ||
+        RuntimeEnabledFeatures::UserMediaElementEnabled(context) ||
+        RuntimeEnabledFeatures::InstallElementEnabled(context));
 }
 
 void CachedPermissionStatus::Trace(Visitor* visitor) const {
   visitor->Trace(permission_service_);
   visitor->Trace(permission_observer_receivers_);
   visitor->Trace(clients_);
-  Supplement<LocalDOMWindow>::Trace(visitor);
+  Supplement<ExecutionContext>::Trace(visitor);
 }
 
 void CachedPermissionStatus::RegisterClient(
@@ -116,8 +120,16 @@ void CachedPermissionStatus::RegisterPermissionObserver(
 }
 
 void CachedPermissionStatus::OnPermissionStatusChange(PermissionStatus status) {
-  permission_status_map_.Set(permission_observer_receivers_.current_context(),
-                             status);
+  auto permission_name = permission_observer_receivers_.current_context();
+  permission_status_map_.Set(permission_name, status);
+  auto it = clients_.find(permission_name);
+  if (it == clients_.end()) {
+    return;
+  }
+  const auto client_set = it->value;
+  for (auto const& client : client_set) {
+    client->OnPermissionStatusChange(permission_name, status);
+  }
 }
 
 PermissionService* CachedPermissionStatus::GetPermissionService() {

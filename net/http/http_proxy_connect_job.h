@@ -13,6 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/net_error_details.h"
 #include "net/base/net_export.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/proxy_chain.h"
