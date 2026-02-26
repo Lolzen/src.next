@@ -9,6 +9,7 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/memory/shared_memory_switch.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/histogram_shared_memory.h"
@@ -24,12 +25,14 @@
 #include "components/tracing/common/tracing_switches.h"
 #include "components/variations/active_field_trials.h"
 #include "content/browser/child_process_launcher.h"
+#include "content/common/pseudonymization_salt.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_launcher_utils.h"
+#include "content/public/browser/sandboxed_process_launcher_delegate.h"
+#include "content/public/browser/tracing_support.h"
 #include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "mojo/core/configuration.h"
 #include "mojo/public/cpp/platform/platform_channel.h"
 #include "services/tracing/public/cpp/trace_startup.h"
@@ -39,7 +42,8 @@
 #endif
 
 #if BUILDFLAG(IS_IOS)
-#include "base/apple/mach_port_rendezvous.h"
+#include "base/apple/mach_port_rendezvous_ios.h"
+#include "base/files/scoped_temp_dir.h"
 #endif
 
 namespace content {
@@ -68,18 +72,13 @@ void RecordHistogramsOnLauncherThread(base::TimeDelta launch_time) {
 //
 // This function is NOP if the platform does not use Blink.
 void PassHistogramSharedMemoryHandle(
-    [[maybe_unused]] base::UnsafeSharedMemoryRegion histogram_memory_region,
+    [[maybe_unused]] const base::UnsafeSharedMemoryRegion*
+        histogram_memory_region,
     [[maybe_unused]] base::CommandLine* command_line,
     [[maybe_unused]] base::LaunchOptions* launch_options,
     [[maybe_unused]] FileMappedForLaunch* files_to_register) {
-  // TODO(crbug.com/40109064): Once all process types support histogram shared
-  // memory being passed at launch, remove this if.
-  if (!histogram_memory_region.IsValid()) {
-    return;
-  }
-
+#if BUILDFLAG(USE_BLINK)
   CHECK(command_line);
-  CHECK(histogram_memory_region.IsValid());
 #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
   // TODO(crbug.com/40109064): content::FileMappedForLaunch (POSIX) is redundant
   // wrt the base::LaunchOptions::<platform-specific-handles-to-transfer>
@@ -94,12 +93,21 @@ void PassHistogramSharedMemoryHandle(
   base::ScopedFD descriptor_to_transfer;
 #else
   CHECK(launch_options);
-#endif
+#endif  // BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
 
-#if BUILDFLAG(USE_BLINK)
-  DCHECK(histogram_memory_region.IsValid());
+  // TODO(crbug.com/40109064): Once all process types support histogram shared
+  // memory being passed at launch, remove this if.
+  const bool enabled =
+      histogram_memory_region && histogram_memory_region->IsValid();
+  DVLOG(1) << (enabled ? "A" : "Not a")
+           << "dding histogram shared memory launch parameters for "
+           << command_line->GetSwitchValueASCII(::switches::kProcessType)
+           << " process.";
+  if (!enabled) {
+    return;
+  }
   base::HistogramSharedMemory::AddToLaunchParameters(
-      std::move(histogram_memory_region),
+      *histogram_memory_region,
 #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
       /*descriptor_key=*/kHistogramSharedMemoryDescriptor,
       /*descriptor_to_share=*/descriptor_to_transfer,
@@ -123,6 +131,7 @@ void PassFieldTrialSharedMemoryHandle(
     [[maybe_unused]] base::CommandLine* command_line,
     [[maybe_unused]] base::LaunchOptions* launch_options,
     [[maybe_unused]] FileMappedForLaunch* files_to_register) {
+#if BUILDFLAG(USE_BLINK)
   CHECK(command_line);
 #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
   // TODO(crbug.com/40109064): content::FileMappedForLaunch (POSIX) is redundant
@@ -140,7 +149,6 @@ void PassFieldTrialSharedMemoryHandle(
   CHECK(launch_options);
 #endif
 
-#if BUILDFLAG(USE_BLINK)
   variations::PopulateLaunchOptionsWithVariationsInfo(
 #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
       /*descriptor_key=*/kFieldTrialDescriptor,
@@ -158,16 +166,17 @@ void PassFieldTrialSharedMemoryHandle(
 }
 
 void PassStartupTracingConfigSharedMemoryHandle(
-    [[maybe_unused]] base::ReadOnlySharedMemoryRegion read_only_memory_region,
+    [[maybe_unused]] const base::ReadOnlySharedMemoryRegion*
+        read_only_memory_region,
     [[maybe_unused]] base::CommandLine* command_line,
     [[maybe_unused]] base::LaunchOptions* launch_options,
     [[maybe_unused]] FileMappedForLaunch* files_to_register) {
+#if BUILDFLAG(USE_BLINK)
   CHECK(command_line);
-  if (!read_only_memory_region.IsValid()) {
+  if (!read_only_memory_region || !read_only_memory_region->IsValid()) {
     return;
   }
 
-  CHECK(read_only_memory_region.IsValid());
 #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
   CHECK(files_to_register);
   base::ScopedFD descriptor_to_transfer;
@@ -175,12 +184,11 @@ void PassStartupTracingConfigSharedMemoryHandle(
   CHECK(launch_options);
 #endif
 
-#if BUILDFLAG(USE_BLINK)
-  tracing::AddTraceConfigToLaunchParameters(std::move(read_only_memory_region),
+  tracing::AddTraceConfigToLaunchParameters(*read_only_memory_region,
 #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
                                             kTraceConfigSharedMemoryDescriptor,
                                             descriptor_to_transfer,
-#endif
+#endif  // BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
                                             command_line, launch_options);
 
 #if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
@@ -191,6 +199,91 @@ void PassStartupTracingConfigSharedMemoryHandle(
 #endif  // BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
 #endif  // BUILDFLAG(USE_BLINK)
 }
+
+// This function is NOP if the platform does not use Blink.
+void PassStartupOutputSharedMemoryHandle(
+    [[maybe_unused]] const base::UnsafeSharedMemoryRegion*
+        trace_output_memory_region,
+    [[maybe_unused]] base::CommandLine* command_line,
+    [[maybe_unused]] base::LaunchOptions* launch_options,
+    [[maybe_unused]] FileMappedForLaunch* files_to_register) {
+#if BUILDFLAG(USE_BLINK)
+  CHECK(command_line);
+  if (!trace_output_memory_region || !trace_output_memory_region->IsValid()) {
+    return;
+  }
+
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
+  // TODO(crbug.com/40109064): content::FileMappedForLaunch (POSIX) is redundant
+  // wrt the base::LaunchOptions::<platform-specific-handles-to-transfer>
+  // members. Refactor this so that the details of base::Launch vs Zygote on
+  // (some) POSIX platforms is an implementation detail and not exposed here.
+  // I.e., populate launch options (like for all other platforms) then if it's
+  // a Zygote launch pull out the handles to transfer and send them to the
+  // zygote, instead of (for posix only) ignoring the launch-options here,
+  // populating the |files_to_register| param then (if there's no zygote)
+  // filling in |launch_options|
+  CHECK(files_to_register);
+  base::ScopedFD descriptor_to_transfer;
+#else
+  CHECK(launch_options);
+#endif  // BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
+
+  tracing::AddTraceOutputToLaunchParameters(*trace_output_memory_region,
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
+                                            kTraceOutputSharedMemoryDescriptor,
+                                            descriptor_to_transfer,
+#endif  // BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
+                                            command_line, launch_options);
+
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
+  if (descriptor_to_transfer.is_valid()) {
+    files_to_register->Transfer(kTraceOutputSharedMemoryDescriptor,
+                                std::move(descriptor_to_transfer));
+  }
+#endif  // BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
+#endif  // BUILDFLAG(USE_BLINK)
+}
+
+// Passes the pseudonymization salt to child processes via shared memory,
+// ensuring it's available before any Mojo IPCs. See https://crbug.com/40850085.
+#if BUILDFLAG(USE_BLINK)
+void PassPseudonymizationSaltSharedMemoryHandle(
+    base::CommandLine& command_line,
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
+    FileMappedForLaunch& files_to_register) {
+#else
+    base::LaunchOptions& launch_options) {
+#endif
+  // Salt must be initialized in PreCreateThreads() before any child process
+  // launches. See BrowserMainLoop::PreCreateThreads().
+  CHECK(IsSaltInitialized());
+
+  const base::ReadOnlySharedMemoryRegion& salt_region =
+      GetPseudonymizationSaltSharedMemoryRegion();
+  CHECK(salt_region.IsValid());
+
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
+  base::ScopedFD descriptor_to_transfer;
+  base::shared_memory::AddToLaunchParameters(
+      switches::kPseudonymizationSaltHandle, salt_region,
+      kPseudonymizationSaltDescriptor, descriptor_to_transfer, &command_line,
+      /*launch_options=*/nullptr);
+  if (descriptor_to_transfer.is_valid()) {
+    files_to_register.Transfer(kPseudonymizationSaltDescriptor,
+                               std::move(descriptor_to_transfer));
+  }
+#elif BUILDFLAG(IS_APPLE)
+  base::shared_memory::AddToLaunchParameters(
+      switches::kPseudonymizationSaltHandle, salt_region, 'salt', &command_line,
+      &launch_options);
+#else
+  base::shared_memory::AddToLaunchParameters(
+      switches::kPseudonymizationSaltHandle, salt_region, &command_line,
+      &launch_options);
+#endif
+}
+#endif  // BUILDFLAG(USE_BLINK)
 
 }  // namespace
 
@@ -216,19 +309,24 @@ ChildProcessLauncherHelper::Process::Process::operator=(
     ChildProcessLauncherHelper::Process&& other) = default;
 
 ChildProcessLauncherHelper::ChildProcessLauncherHelper(
-    int child_process_id,
+    ChildProcessId child_process_id,
     std::unique_ptr<base::CommandLine> command_line,
     std::unique_ptr<SandboxedProcessLauncherDelegate> delegate,
     const base::WeakPtr<ChildProcessLauncher>& child_process_launcher,
     bool terminate_on_shutdown,
 #if BUILDFLAG(IS_ANDROID)
     bool can_use_warm_up_connection,
+    bool is_spare_renderer,
 #endif
     mojo::OutgoingInvitation mojo_invitation,
     const mojo::ProcessErrorCallback& process_error_callback,
     std::unique_ptr<ChildProcessLauncherFileData> file_data,
-    base::UnsafeSharedMemoryRegion histogram_memory_region,
-    base::ReadOnlySharedMemoryRegion tracing_config_memory_region)
+    scoped_refptr<base::RefCountedData<base::UnsafeSharedMemoryRegion>>
+        histogram_memory_region,
+    scoped_refptr<base::RefCountedData<base::ReadOnlySharedMemoryRegion>>
+        tracing_config_memory_region,
+    scoped_refptr<base::RefCountedData<base::UnsafeSharedMemoryRegion>>
+        tracing_output_memory_region)
     : child_process_id_(child_process_id),
       client_task_runner_(base::SequencedTaskRunner::GetCurrentDefault()),
       command_line_(std::move(command_line)),
@@ -240,9 +338,11 @@ ChildProcessLauncherHelper::ChildProcessLauncherHelper(
       file_data_(std::move(file_data)),
 #if BUILDFLAG(IS_ANDROID)
       can_use_warm_up_connection_(can_use_warm_up_connection),
+      is_spare_renderer_(is_spare_renderer),
 #endif
       histogram_memory_region_(std::move(histogram_memory_region)),
       tracing_config_memory_region_(std::move(tracing_config_memory_region)),
+      tracing_output_memory_region_(std::move(tracing_output_memory_region)),
       init_start_time_(base::TimeTicks::Now()) {
   if (!mojo::core::GetConfiguration().is_broker_process &&
       !command_line_->HasSwitch(switches::kDisableMojoBroker)) {
@@ -260,6 +360,10 @@ ChildProcessLauncherHelper::~ChildProcessLauncherHelper() {
     base::Process::Open(process_id_.value()).ForgetPriority();
   }
 #endif  // BUILDFLAG(IS_CHROMEOS)
+#if BUILDFLAG(IS_IOS)
+  GetProcessLauncherTaskRunner()->DeleteSoon(FROM_HERE,
+                                             std::move(scoped_temp_dir_));
+#endif
 }
 
 void ChildProcessLauncherHelper::StartLaunchOnClientThread() {
@@ -312,16 +416,43 @@ void ChildProcessLauncherHelper::LaunchOnLauncherThread() {
 #endif
   }
 
+  // Propagate the kWaitForDebugger switch to child process if the
+  // kWaitForDebuggerChildren is specified and matches the child process type.
+  const base::CommandLine& current_command_line =
+      *base::CommandLine::ForCurrentProcess();
+  if (current_command_line.HasSwitch(switches::kWaitForDebuggerChildren)) {
+    std::string value = current_command_line.GetSwitchValueASCII(
+        switches::kWaitForDebuggerChildren);
+    if (value.empty() || value == GetProcessType()) {
+      command_line()->AppendSwitch(switches::kWaitForDebugger);
+    }
+  }
+
   // Update the command line and launch options to pass the histogram and
   // field trial shared memory region handles.
-  PassHistogramSharedMemoryHandle(std::move(histogram_memory_region_),
-                                  command_line(), options_ptr,
-                                  files_to_register.get());
+  PassHistogramSharedMemoryHandle(
+      histogram_memory_region_ ? &histogram_memory_region_->data : nullptr,
+      command_line(), options_ptr, files_to_register.get());
   PassFieldTrialSharedMemoryHandle(command_line(), options_ptr,
                                    files_to_register.get());
   PassStartupTracingConfigSharedMemoryHandle(
-      std::move(tracing_config_memory_region_), command_line(), options_ptr,
-      files_to_register.get());
+      tracing_config_memory_region_ ? &tracing_config_memory_region_->data
+                                    : nullptr,
+      command_line(), options_ptr, files_to_register.get());
+  PassStartupOutputSharedMemoryHandle(
+      tracing_output_memory_region_ ? &tracing_output_memory_region_->data
+                                    : nullptr,
+      command_line(), options_ptr, files_to_register.get());
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_APPLE)
+  PassPseudonymizationSaltSharedMemoryHandle(*command_line(),
+                                             *files_to_register);
+#else
+  PassPseudonymizationSaltSharedMemoryHandle(*command_line(), *options_ptr);
+#endif
+
+  auto track = GetChildProcessTracingTrack(child_process_id());
+  command_line_->AppendSwitchASCII(switches::kTraceProcessTrackUuid,
+                                   base::NumberToString(track.uuid));
 
   // Transfer logging switches & handles if necessary.
   PassLoggingSwitches(options_ptr, command_line());
@@ -329,12 +460,12 @@ void ChildProcessLauncherHelper::LaunchOnLauncherThread() {
   // Launch the child process.
   Process process;
   if (BeforeLaunchOnLauncherThread(*files_to_register, options_ptr)) {
-    process =
-        LaunchProcessOnLauncherThread(options_ptr, std::move(files_to_register),
+    process = LaunchProcessOnLauncherThread(
+        options_ptr, std::move(files_to_register),
 #if BUILDFLAG(IS_ANDROID)
-                                      can_use_warm_up_connection_,
+        can_use_warm_up_connection_, is_spare_renderer_,
 #endif
-                                      &is_synchronous_launch, &launch_result);
+        &is_synchronous_launch, &launch_result);
     AfterLaunchOnLauncherThread(process, options_ptr);
   }
 

@@ -56,9 +56,12 @@ PagePopupController::PagePopupController(Page& page,
 }
 
 void PagePopupController::setValueAndClosePopup(int num_value,
-                                                const String& string_value) {
-  if (popup_client_)
-    popup_client_->SetValueAndClosePopup(num_value, string_value);
+                                                const String& string_value,
+                                                bool is_keyboard_event) {
+  if (popup_client_) {
+    popup_client_->SetValueAndClosePopup(num_value, string_value,
+                                         is_keyboard_event);
+  }
 }
 
 void PagePopupController::setValue(const String& value) {
@@ -157,6 +160,10 @@ CSSFontSelector* PagePopupController::CreateCSSFontSelector(
 
   DCHECK(controller->popup_client_);
   return controller->popup_client_->CreateCSSFontSelector(popup_document);
+}
+
+void PagePopupController::debugLog(const String& message) {
+  LOG(ERROR) << message;
 }
 
 }  // namespace blink

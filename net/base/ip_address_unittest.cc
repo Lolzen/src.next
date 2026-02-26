@@ -2,14 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "net/base/ip_address.h"
 
+#include <array>
 #include <optional>
+#include <tuple>
 #include <vector>
 
 #include "base/format_macros.h"
@@ -41,7 +38,7 @@ TEST(IPAddressBytesTest, ConstructEmpty) {
 }
 
 TEST(IPAddressBytesTest, ConstructIPv4) {
-  uint8_t data[] = {192, 168, 1, 1};
+  auto data = std::to_array<uint8_t>({192, 168, 1, 1});
   IPAddressBytes bytes(data);
   ASSERT_EQ(std::size(data), bytes.size());
   size_t i = 0;
@@ -51,7 +48,24 @@ TEST(IPAddressBytesTest, ConstructIPv4) {
 }
 
 TEST(IPAddressBytesTest, ConstructIPv6) {
-  uint8_t data[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+  auto data = std::to_array<uint8_t>({
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+  });
   IPAddressBytes bytes(data);
   ASSERT_EQ(std::size(data), bytes.size());
   size_t i = 0;
@@ -384,21 +398,6 @@ TEST(IPAddressTest, IPAddressToStringWithPort) {
   EXPECT_EQ("", IPAddressToStringWithPort(IPAddress(addr3), 8080));
 }
 
-TEST(IPAddressTest, IPAddressToPackedString) {
-  IPAddress ipv4_address;
-  EXPECT_TRUE(ipv4_address.AssignFromIPLiteral("4.31.198.44"));
-  std::string expected_ipv4_address("\x04\x1f\xc6\x2c", 4);
-  EXPECT_EQ(expected_ipv4_address, IPAddressToPackedString(ipv4_address));
-
-  IPAddress ipv6_address;
-  EXPECT_TRUE(ipv6_address.AssignFromIPLiteral("2001:0700:0300:1800::000f"));
-  std::string expected_ipv6_address(
-      "\x20\x01\x07\x00\x03\x00\x18\x00"
-      "\x00\x00\x00\x00\x00\x00\x00\x0f",
-      16);
-  EXPECT_EQ(expected_ipv6_address, IPAddressToPackedString(ipv6_address));
-}
-
 // Test that invalid IP literals fail to parse.
 TEST(IPAddressTest, AssignFromIPLiteral_FailParse) {
   IPAddress address;
@@ -589,6 +588,47 @@ TEST(IPAddressTest, ParseCIDRBlock_Valid) {
 
   EXPECT_EQ("0,0,0,0,0,0,0,0,0,0,255,255,192,168,0,1",
             DumpIPAddress(ip_address));
+  EXPECT_EQ(112u, prefix_length_in_bits);
+}
+
+// Test parsing invalid CIDR notation literals specific to the URL-Hostname
+// version of this function.
+TEST(IPAddressTest, ParseCIDRBlockNonStandardURLFormat_Invalid) {
+  const char* const bad_literals[] = {"foobar",
+                                      "",
+                                      "192.168.0.1",
+                                      "::1",
+                                      "/",
+                                      "/1",
+                                      "1",
+                                      "192.168.1.1/-1",
+                                      "[192.168.1.1]/16",
+                                      "::1/10"};
+
+  for (auto* bad_literal : bad_literals) {
+    size_t prefix_length_in_bits;
+
+    EXPECT_FALSE(ParseCIDRBlockNonStandardURLFormat(bad_literal,
+                                                    &prefix_length_in_bits));
+  }
+}
+
+// Test parsing a valid CIDR notation literal using the URLHostnameIP version of
+// ParseCIDRBlock.
+TEST(IPAddressTest, ParseCIDRBlockNonStandardURLFormat_Valid) {
+  size_t prefix_length_in_bits;
+
+  auto ip_address = ParseCIDRBlockNonStandardURLFormat("192.168.0.1/11",
+                                                       &prefix_length_in_bits);
+  EXPECT_TRUE(ip_address);
+  EXPECT_EQ("192,168,0,1", DumpIPAddress(*ip_address));
+  EXPECT_EQ(11u, prefix_length_in_bits);
+
+  ip_address = ParseCIDRBlockNonStandardURLFormat("[::ffff:192.168.0.1]/112",
+                                                  &prefix_length_in_bits);
+  EXPECT_TRUE(ip_address);
+  EXPECT_EQ("0,0,0,0,0,0,0,0,0,0,255,255,192,168,0,1",
+            DumpIPAddress(*ip_address));
   EXPECT_EQ(112u, prefix_length_in_bits);
 }
 
@@ -928,6 +968,36 @@ TEST(IPAddressTest, IPv6Mask) {
   EXPECT_EQ("8000::", mask.ToString());
   EXPECT_TRUE(IPAddress::CreateIPv6Mask(&mask, 0));
   EXPECT_EQ("::", mask.ToString());
+}
+
+// Test that IPAddress can be created at compile time.
+template <size_t N>
+constexpr bool VerifyIPBytes(const IPAddress& addr,
+                             const std::array<uint8_t, N> ip_bytes) {
+  return addr.bytes().span() == ip_bytes;
+}
+
+constexpr IPAddress CreateIPAddress(std::string_view ip_address) {
+  IPAddress addr;
+  std::ignore = addr.AssignFromIPLiteral(ip_address);
+  return addr;
+}
+
+constexpr std::array<uint8_t, 4> ipv4_bytes = {192, 168, 2, 3};
+constexpr auto ipv4_address = CreateIPAddress("192.168.2.3");
+static_assert(VerifyIPBytes(ipv4_address, ipv4_bytes));
+
+constexpr auto ipv6_address = CreateIPAddress("2001:0700:0300:1800::000f");
+constexpr std::array<uint8_t, 16> ipv6_bytes = {
+    0x20, 0x01, 0x07, 0x00, 0x03, 0x00, 0x18, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0f};
+static_assert(VerifyIPBytes(ipv6_address, ipv6_bytes));
+
+// This test exists mainly to prevent the compiler from optimizing away
+// the compile-time checks above. All actual validation is done at compile time.
+TEST(IPAddressTest, VerifyIPAddressCreatedAtCompileTime) {
+  EXPECT_TRUE(VerifyIPBytes(ipv4_address, ipv4_bytes));
+  EXPECT_TRUE(VerifyIPBytes(ipv6_address, ipv6_bytes));
 }
 
 }  // anonymous namespace

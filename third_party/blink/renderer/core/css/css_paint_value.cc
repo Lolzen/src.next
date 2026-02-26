@@ -103,7 +103,7 @@ CSSPaintImageGenerator& CSSPaintValue::EnsureGenerator(
 
 scoped_refptr<Image> CSSPaintValue::GetImage(
     const ImageResourceObserver& client,
-    const Document& document,
+    const Node& node,
     const ComputedStyle& style,
     const gfx::SizeF& target_size) {
   // https://crbug.com/835589: early exit when paint target is associated with
@@ -112,6 +112,7 @@ scoped_refptr<Image> CSSPaintValue::GetImage(
     return nullptr;
   }
 
+  const Document& document = node.GetDocument();
   CSSPaintImageGenerator& generator = EnsureGenerator(document);
 
   // If the generator isn't ready yet, we have nothing to paint. Our
@@ -205,15 +206,18 @@ bool CSSPaintValue::ParseInputArguments(const Document& document) {
     return false;
   }
 
-  parsed_input_arguments_ = MakeGarbageCollected<CSSStyleValueVector>();
+  parsed_input_arguments_ = MakeGarbageCollected<GCedCSSStyleValueVector>();
 
   for (wtf_size_t i = 0; i < argument_variable_data_.size(); ++i) {
     // If we are parsing a paint() function, we must be a secure context.
     DCHECK_EQ(SecureContextMode::kSecureContext,
               document.GetExecutionContext()->GetSecureContextMode());
     DCHECK(!argument_variable_data_[i]->NeedsVariableResolution());
+    CSSParserLocalContext local_context =
+        CSSParserLocalContext::CreateWithoutPropertyForPaintValue();
     const CSSValue* parsed_value = argument_variable_data_[i]->ParseForSyntax(
-        input_argument_types[i], SecureContextMode::kSecureContext);
+        input_argument_types[i], SecureContextMode::kSecureContext,
+        local_context);
     if (!parsed_value) {
       input_arguments_invalid_ = true;
       parsed_input_arguments_ = nullptr;
@@ -248,6 +252,10 @@ bool CSSPaintValue::KnownToBeOpaque(const Document& document,
 bool CSSPaintValue::Equals(const CSSPaintValue& other) const {
   return GetName() == other.GetName() &&
          CustomCSSText() == other.CustomCSSText();
+}
+
+bool CSSPaintValue::HasRandomFunctions() const {
+  return name_ && name_->HasRandomFunctions();
 }
 
 void CSSPaintValue::TraceAfterDispatch(blink::Visitor* visitor) const {

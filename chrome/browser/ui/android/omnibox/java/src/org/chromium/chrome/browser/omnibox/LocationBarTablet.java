@@ -6,23 +6,39 @@ package org.chromium.chrome.browser.omnibox;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.res.Resources;
 import android.graphics.Rect;
 import android.util.AttributeSet;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.View.OnLongClickListener;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
 
 import androidx.appcompat.content.res.AppCompatResources;
 
+import org.chromium.build.annotations.NullMarked;
+import org.chromium.chrome.browser.omnibox.fusebox.FuseboxCoordinator.FuseboxState;
+import org.chromium.chrome.browser.omnibox.status.StatusCoordinator;
+import org.chromium.chrome.browser.omnibox.suggestions.AutocompleteCoordinator;
+import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.base.LocalizationUtils;
+import org.chromium.ui.base.ViewUtils;
+import org.chromium.ui.base.WindowAndroid;
+import org.chromium.ui.display.DisplayUtil;
+import org.chromium.ui.widget.Toast;
 
 /** Location bar for tablet form factors. */
-class LocationBarTablet extends LocationBarLayout {
+@NullMarked
+class LocationBarTablet extends LocationBarLayout implements OnLongClickListener {
     // The number of toolbar buttons that can be hidden at small widths (reload, back, forward).
     private static final int HIDEABLE_BUTTON_COUNT = 3;
+    private static final float OVERLAY_Z_TRANSLATION = 1.0f;
+    private static final float NEUTRAL_Z_TRANSLATION = 0.0f;
 
     private View mLocationBarIcon;
     private View mBookmarkButton;
-    private View mSaveOfflineButton;
     private View[] mTargets;
     private final Rect mCachedTargetBounds = new Rect();
 
@@ -35,7 +51,12 @@ class LocationBarTablet extends LocationBarLayout {
     private float mLayoutLeft;
     private float mLayoutRight;
     private int mToolbarStartPaddingDifference;
+    private final int[] mPositionArray = new int[2];
+
+    @SuppressWarnings("HidingField")
     private UrlBar mUrlBar;
+
+    private WindowAndroid mWindowAndroid;
 
     /** Constructor used to inflate from XML. */
     public LocationBarTablet(Context context, AttributeSet attrs) {
@@ -56,7 +77,6 @@ class LocationBarTablet extends LocationBarLayout {
 
         mLocationBarIcon = findViewById(R.id.location_bar_status_icon);
         mBookmarkButton = findViewById(R.id.bookmark_button);
-        mSaveOfflineButton = findViewById(R.id.save_offline_button);
         mUrlBar = findViewById(R.id.url_bar);
 
         mUrlBar.setOnHoverListener(
@@ -79,6 +99,8 @@ class LocationBarTablet extends LocationBarLayout {
                         }
                     }
                 });
+
+        setOnLongClickListener(this);
 
         mTargets = new View[] {mUrlBar, mDeleteButton};
     }
@@ -150,19 +172,13 @@ class LocationBarTablet extends LocationBarLayout {
      * hiding buttons.
      */
     /* package */ void resetValuesAfterAnimation() {
-        mMicButton.setTranslationX(0);
-        mLensButton.setTranslationX(0);
-        mDeleteButton.setTranslationX(0);
-        mBookmarkButton.setTranslationX(0);
-        mSaveOfflineButton.setTranslationX(0);
-        mLocationBarIcon.setTranslationX(0);
+        setLocationBarButtonTranslationForNtpAnimation(0.f);
         mUrlBar.setTranslationX(0);
 
         mMicButton.setAlpha(1.f);
         mLensButton.setAlpha(1.f);
         mDeleteButton.setAlpha(1.f);
         mBookmarkButton.setAlpha(1.f);
-        mSaveOfflineButton.setAlpha(1.f);
     }
 
     /**
@@ -220,11 +236,7 @@ class LocationBarTablet extends LocationBarLayout {
         if (getLayoutDirection() != LAYOUT_DIRECTION_RTL) {
             // When the location bar layout direction is LTR, the buttons at the end (left side)
             // of the location bar need to stick to the left edge.
-            if (mSaveOfflineButton.getVisibility() == View.VISIBLE) {
-                mSaveOfflineButton.setTranslationX(offset);
-            } else {
-                mMicButton.setTranslationX(offset);
-            }
+            mMicButton.setTranslationX(offset);
 
             if (mDeleteButton.getVisibility() == View.VISIBLE) {
                 mDeleteButton.setTranslationX(offset + deleteOffset);
@@ -245,17 +257,9 @@ class LocationBarTablet extends LocationBarLayout {
     }
 
     /* package */ void setBookmarkButtonVisibility(boolean showBookmarkButton) {
+        // The button may be null if this method is called before initialization is finished.
+        if (mBookmarkButton == null) return;
         mBookmarkButton.setVisibility(showBookmarkButton ? View.VISIBLE : View.GONE);
-    }
-
-    /* package */ void setSaveOfflineButtonVisibility(
-            boolean showSaveOfflineButton, boolean isSaveOfflineButtonEnabled) {
-        mSaveOfflineButton.setVisibility(showSaveOfflineButton ? View.VISIBLE : View.GONE);
-        if (showSaveOfflineButton) mSaveOfflineButton.setEnabled(isSaveOfflineButtonEnabled);
-    }
-
-    /* package */ boolean isSaveOfflineButtonVisible() {
-        return mSaveOfflineButton.getVisibility() == VISIBLE;
     }
 
     /* package */ boolean isDeleteButtonVisible() {
@@ -288,15 +292,6 @@ class LocationBarTablet extends LocationBarLayout {
     }
 
     /**
-     * Gets the save offline button view for the purposes of creating an animator that targets it.
-     * Don't use this for any other reason, e.g. to access or modify the view's properties directly.
-     */
-    @Deprecated
-    /* package */ View getSaveOfflineButtonForAnimation() {
-        return mSaveOfflineButton;
-    }
-
-    /**
      * Gets the mic button view for the purposes of creating an animator that targets it. Don't use
      * this for any other reason, e.g. to access or modify the view's properties directly.
      */
@@ -322,5 +317,111 @@ class LocationBarTablet extends LocationBarLayout {
     /* package */ void finishAnimatingWidthChange() {
         mAnimatingWidthChange = false;
         mToolbarStartPaddingDifference = 0;
+    }
+
+    @Override
+    public boolean onLongClick(View v) {
+        String description = null;
+        Context context = getContext();
+        Resources resources = context.getResources();
+
+        if (v == mBookmarkButton) {
+            description = resources.getString(R.string.menu_bookmark);
+        }
+        return Toast.showAnchoredToast(context, v, description);
+    }
+
+    @Override
+    public void initialize(
+            AutocompleteCoordinator autocompleteCoordinator,
+            UrlBarCoordinator urlCoordinator,
+            StatusCoordinator statusCoordinator,
+            LocationBarDataProvider locationBarDataProvider,
+            WindowAndroid windowAndroid) {
+        super.initialize(
+                autocompleteCoordinator,
+                urlCoordinator,
+                statusCoordinator,
+                locationBarDataProvider,
+                windowAndroid);
+        mWindowAndroid = windowAndroid;
+    }
+
+    @Override
+    /* package */ void setLocationBarButtonTranslationForNtpAnimation(float translationX) {
+        super.setLocationBarButtonTranslationForNtpAnimation(translationX);
+        mBookmarkButton.setTranslationX(translationX);
+    }
+
+    @Override
+    public void onFuseboxStateChanged(@FuseboxState int state) {
+        super.onFuseboxStateChanged(state);
+        LinearLayout.LayoutParams layoutParams = (LinearLayout.LayoutParams) getLayoutParams();
+        if (state == FuseboxState.COMPACT || state == FuseboxState.EXPANDED) {
+            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+            int expansionPx =
+                    getResources()
+                            .getDimensionPixelSize(R.dimen.location_bar_tablet_fusebox_popup_inset);
+            layoutParams.topMargin = -expansionPx;
+            setMarginsForWindowWidth(layoutParams, expansionPx);
+            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+            layoutParams.gravity = Gravity.TOP;
+            setPadding(expansionPx, expansionPx, expansionPx, getPaddingBottom());
+            setTranslationZ(OVERLAY_Z_TRANSLATION);
+            ViewUtils.setAncestorsShouldClipToPadding(this, false, View.NO_ID);
+            ViewUtils.setAncestorsShouldClipChildren(this, false, View.NO_ID);
+            setBackgroundResource(
+                    R.drawable.modern_toolbar_tablet_text_box_background_focused_popup);
+        } else {
+            layoutParams.leftMargin = 0;
+            layoutParams.rightMargin = 0;
+            layoutParams.topMargin = 0;
+            layoutParams.height =
+                    getResources()
+                            .getDimensionPixelSize(R.dimen.modern_toolbar_tablet_background_size);
+            layoutParams.gravity = Gravity.CENTER_VERTICAL;
+            setPadding(0, 0, 0, getPaddingBottom());
+            setTranslationZ(NEUTRAL_Z_TRANSLATION);
+            ViewUtils.setAncestorsShouldClipToPadding(this, true, View.NO_ID);
+            ViewUtils.setAncestorsShouldClipChildren(this, true, View.NO_ID);
+            setBackgroundResource(R.drawable.modern_toolbar_tablet_text_box_background);
+        }
+        setLayoutParams(layoutParams);
+    }
+
+    private void setMarginsForWindowWidth(
+            LinearLayout.LayoutParams layoutParams, int minHorizontalExpansionPx) {
+        Resources resources = getResources();
+        int screenWidthDp = resources.getConfiguration().screenWidthDp;
+        int windowWidthPx = DisplayUtil.dpToPx(mWindowAndroid.getDisplay(), screenWidthDp);
+        int measuredWidth = getMeasuredWidth();
+        int minTabletWidthPx = resources.getDimensionPixelSize(R.dimen.fusebox_min_tablet_width);
+        boolean isPhoneWidthScreen = screenWidthDp < DeviceFormFactor.MINIMUM_TABLET_WIDTH_DP;
+        int targetWidthPx =
+                isPhoneWidthScreen
+                        ? windowWidthPx
+                        : Math.max(minTabletWidthPx, measuredWidth + 2 * minHorizontalExpansionPx);
+
+        ViewUtils.getRelativeLayoutPosition(getRootView(), this, mPositionArray);
+        int currentLeft = mPositionArray[0];
+        // Our view is relatively centered already; make it exactly centered when expanded.
+        boolean isViewApproximatelyCentered = windowWidthPx - 2 * currentLeft <= minTabletWidthPx;
+        if (isViewApproximatelyCentered) {
+            int targetLeft = (windowWidthPx - targetWidthPx) / 2;
+            int targetRight = targetLeft + targetWidthPx;
+
+            int currentRight = currentLeft + measuredWidth;
+            int shiftLeft = targetLeft - currentLeft;
+            int shiftRight = targetRight - currentRight;
+
+            layoutParams.leftMargin = shiftLeft;
+            layoutParams.rightMargin = -shiftRight;
+        } else {
+            // Our view is relatively off-center. Leave it that way, expanding symmetrically from
+            // our current position.
+            int expansionPx = (targetWidthPx - measuredWidth) / 2;
+            layoutParams.leftMargin = -expansionPx;
+            layoutParams.rightMargin = -expansionPx;
+        }
     }
 }

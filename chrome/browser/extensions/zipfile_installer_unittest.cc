@@ -22,7 +22,6 @@
 #include "chrome/browser/extensions/chrome_zipfile_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_test_base.h"
-#include "chrome/browser/extensions/load_error_reporter.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_profile.h"
@@ -33,6 +32,7 @@
 #include "extensions/browser/extension_file_task_runner.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_registry_observer.h"
+#include "extensions/browser/load_error_reporter.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_features.h"
@@ -200,7 +200,7 @@ class ZipFileInstallerLocationTest : public ZipFileInstallerTest,
   void SetUp() override {
     ZipFileInstallerTest::SetUp();
     expected_extension_install_directory_ =
-        service()->unpacked_install_directory();
+        registrar()->unpacked_install_directory();
   }
 
   // Install the .zip in the test directory with `zip_name` and `expect_error`
@@ -225,14 +225,14 @@ void ZipFileInstallerLocationTest::RunInstaller(const std::string& zip_name,
   ASSERT_TRUE(base::PathExists(original_zip_path)) << original_zip_path.value();
   zipfile_installer_ = ZipFileInstaller::Create(
       GetExtensionFileTaskRunner(),
-      MakeRegisterInExtensionServiceCallback(service()));
+      MakeRegisterInExtensionServiceCallback(profile()));
 
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&ZipFileInstaller::InstallZipFileToUnpackedExtensionsDir,
                      zipfile_installer_, original_zip_path,
                      unzip_dir_root.empty()
-                         ? service()->unpacked_install_directory()
+                         ? registrar()->unpacked_install_directory()
                          : unzip_dir_root));
   observer_.WaitForInstall(expect_error);
   task_environment()->RunUntilIdle();

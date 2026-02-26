@@ -66,7 +66,6 @@
 #include "third_party/blink/renderer/core/scroll/scroll_into_view_util.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_theme_overlay_mobile.h"
-#include "third_party/blink/renderer/core/scroll/smooth_scroll_sequencer.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_artifact_compositor.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/paint/effect_paint_property_node.h"
@@ -84,8 +83,9 @@ namespace blink {
 namespace {
 
 OverscrollType ComputeOverscrollType() {
-  if (!Platform::Current()->IsElasticOverscrollEnabled())
+  if (!Platform::Current()->IsElasticOverscrollEnabledOnRoot()) {
     return OverscrollType::kNone;
+  }
   return OverscrollType::kTransform;
 }
 
@@ -248,7 +248,7 @@ PaintPropertyChangeType VisualViewport::UpdatePaintPropertyNodesIfNeeded(
   {
     ScrollPaintPropertyNode::State state;
     state.container_rect = gfx::Rect(size_);
-    state.contents_size = ContentsSize();
+    state.contents_rect = gfx::Rect(ContentsSize());
 
     state.user_scrollable_horizontal =
         UserInputScrollable(kHorizontalScrollbar);
@@ -755,19 +755,14 @@ ChromeClient* VisualViewport::GetChromeClient() const {
   return &GetPage().GetChromeClient();
 }
 
-SmoothScrollSequencer* VisualViewport::GetSmoothScrollSequencer() const {
-  if (!IsActiveViewport())
-    return nullptr;
-  return LocalMainFrame().GetSmoothScrollSequencer();
-}
-
-bool VisualViewport::SetScrollOffset(
+bool VisualViewport::SetScrollOffsetInternal(
     const ScrollOffset& offset,
     mojom::blink::ScrollType scroll_type,
+    cc::ScrollSourceType source_type,
     mojom::blink::ScrollBehavior scroll_behavior,
-    ScrollCallback on_finish) {
+    bool targeted_scroll) {
   // We clamp the offset here, because the ScrollAnimator may otherwise be
-  // set to a non-clamped offset by ScrollableArea::setScrollOffset,
+  // set to a non-clamped offset by ScrollableArea::setScrollOffsetInternal,
   // which may lead to incorrect scrolling behavior in RootFrameViewport down
   // the line.
   // TODO(eseckler): Solve this instead by ensuring that ScrollableArea and
@@ -775,16 +770,9 @@ bool VisualViewport::SetScrollOffset(
   // stores fractional offsets and that truncation happens elsewhere, see
   // crbug.com/626315.
   ScrollOffset new_scroll_offset = ClampScrollOffset(offset);
-  return ScrollableArea::SetScrollOffset(new_scroll_offset, scroll_type,
-                                         scroll_behavior, std::move(on_finish));
-}
-
-bool VisualViewport::SetScrollOffset(
-    const ScrollOffset& offset,
-    mojom::blink::ScrollType scroll_type,
-    mojom::blink::ScrollBehavior scroll_behavior) {
-  return SetScrollOffset(offset, scroll_type, scroll_behavior,
-                         ScrollCallback());
+  return ScrollableArea::SetScrollOffsetInternal(new_scroll_offset, scroll_type,
+                                                 source_type, scroll_behavior,
+                                                 /*targeted_scroll=*/false);
 }
 
 PhysicalOffset VisualViewport::LocalToScrollOriginOffset() const {
@@ -804,20 +792,8 @@ PhysicalRect VisualViewport::ScrollIntoView(
           *params->align_y.get()));
 
   if (new_scroll_offset != GetScrollOffset()) {
-    if (params->is_for_scroll_sequence) {
-      if (RuntimeEnabledFeatures::MultiSmoothScrollIntoViewEnabled()) {
-        SetScrollOffset(new_scroll_offset, params->type, params->behavior);
-      } else {
-        DCHECK(params->type == mojom::blink::ScrollType::kProgrammatic ||
-               params->type == mojom::blink::ScrollType::kUser);
-        CHECK(GetSmoothScrollSequencer());
-        GetSmoothScrollSequencer()->QueueAnimation(this, new_scroll_offset,
-                                                   params->behavior);
-      }
-    } else {
-      SetScrollOffset(new_scroll_offset, params->type, params->behavior,
-                      ScrollCallback());
-    }
+    SetScrollOffset(new_scroll_offset, params->type,
+                    cc::ScrollSourceType::kAbsoluteScroll, params->behavior);
   }
 
   return rect_in_absolute;
@@ -957,7 +933,8 @@ mojom::blink::ColorScheme VisualViewport::UsedColorSchemeScrollbars() const {
 }
 
 void VisualViewport::UpdateScrollOffset(const ScrollOffset& position,
-                                        mojom::blink::ScrollType scroll_type) {
+                                        mojom::blink::ScrollType scroll_type,
+                                        cc::ScrollSourceType source_type) {
   if (!DidSetScaleOrLocation(scale_, is_pinch_gesture_active_,
                              gfx::PointAtOffsetFromOrigin(position))) {
     return;

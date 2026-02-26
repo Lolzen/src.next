@@ -16,6 +16,9 @@
 #include "third_party/blink/renderer/core/svg_names.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_artifact_compositor.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
+#include "third_party/skia/include/core/SkRRect.h"
+#include "ui/gfx/geometry/rrect_f.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 
 namespace blink {
 
@@ -1770,8 +1773,11 @@ TEST_P(PaintPropertyTreeUpdateTest, InlineFilterReferenceBoxChange) {
   const auto* properties = PaintPropertiesForElement("span");
   ASSERT_TRUE(properties);
   ASSERT_TRUE(properties->Filter());
+  ASSERT_TRUE(properties->Filter()->Filter());
   EXPECT_EQ(gfx::PointF(0, 20),
-            properties->Filter()->Filter().ReferenceBox().origin());
+            properties->Filter()->Filter()->ReferenceBox().origin());
+  EXPECT_EQ(gfx::Point(-3, 17),
+            properties->Filter()->FilterOutputBounds().origin());
 
   GetDocument()
       .getElementById(AtomicString("spacer"))
@@ -1780,7 +1786,9 @@ TEST_P(PaintPropertyTreeUpdateTest, InlineFilterReferenceBoxChange) {
   UpdateAllLifecyclePhasesForTest();
   ASSERT_EQ(properties, PaintPropertiesForElement("span"));
   EXPECT_EQ(gfx::PointF(0, 100),
-            properties->Filter()->Filter().ReferenceBox().origin());
+            properties->Filter()->Filter()->ReferenceBox().origin());
+  EXPECT_EQ(gfx::Point(-3, 97),
+            properties->Filter()->FilterOutputBounds().origin());
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, StartSVGAnimation) {
@@ -2003,7 +2011,8 @@ TEST_P(PaintPropertyTreeUpdateTest, ChangeMaskOutputClip) {
   SetBodyInnerHTML(R"HTML(
     <div id="container" style="width: 100px; height: 10px; overflow: hidden">
       <div id="masked"
-           style="height: 100px; background: red; -webkit-mask: url()"></div>
+           style="height: 100px; background: red;
+                  -webkit-mask: linear-gradient(red, blue)"></div>
     </div>
   )HTML");
 
@@ -2119,15 +2128,16 @@ TEST_P(PaintPropertyTreeUpdateTest, BackdropFilterBounds) {
   auto* properties = PaintPropertiesForElement("target");
   ASSERT_TRUE(properties);
   ASSERT_TRUE(properties->Effect());
-  EXPECT_EQ(gfx::RRectF(0, 0, 100, 100, 0),
-            properties->Effect()->BackdropFilterBounds());
+  SkRect bounds;
+  EXPECT_TRUE(properties->Effect()->BackdropFilterBounds().isRect(&bounds));
+  EXPECT_EQ(SkRect::MakeXYWH(0, 0, 100, 100), bounds);
 
   GetDocument()
       .getElementById(AtomicString("target"))
       ->SetInlineStyleProperty(CSSPropertyID::kWidth, "200px");
   UpdateAllLifecyclePhasesForTest();
-  EXPECT_EQ(gfx::RRectF(0, 0, 200, 100, 0),
-            properties->Effect()->BackdropFilterBounds());
+  EXPECT_TRUE(properties->Effect()->BackdropFilterBounds().isRect(&bounds));
+  EXPECT_EQ(SkRect::MakeXYWH(0, 0, 200, 100), bounds);
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, UpdatesInLockedDisplayHandledCorrectly) {
@@ -2174,7 +2184,7 @@ TEST_P(PaintPropertyTreeUpdateTest, AnchorPositioningScrollUpdate) {
   // Make sure the scrolling coordinator is active.
   ASSERT_TRUE(GetFrame().GetPage()->GetScrollingCoordinator());
 
-  GetFrame().DomWindow()->scrollBy(0, 300);
+  GetFrame().DomWindow()->scrollByForTesting(0, 300);
 
   // Snapshotted scroll offset update requires animation frame.
   SimulateFrame();
@@ -2189,6 +2199,35 @@ TEST_P(PaintPropertyTreeUpdateTest, AnchorPositioningScrollUpdate) {
   // Anchor positioning scroll update should not require main thread commits.
   EXPECT_EQ(GetFrame().View()->GetPaintArtifactCompositor()->NeedsUpdate(),
             PaintArtifactCompositor::UpdateType::kNone);
+}
+
+TEST_P(PaintPropertyTreeUpdateTest, NeedsEffectFor2DScaleTransformChange) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      #target {
+        width: 100px;
+        height: 100px;
+        transform: scale(2);
+        opacity: 0.5;
+      }
+    </style>
+    <div id='target'></div>
+  )HTML");
+
+  auto* target = GetLayoutObjectByElementId("target");
+  const auto* properties = target->FirstFragment().PaintProperties();
+  EXPECT_TRUE(properties->Effect()->NeedsEffectFor2DScaleTransform());
+
+  // Change transform to a non-2d-scale transform.
+  GetDocument()
+      .getElementById(AtomicString("target"))
+      ->setAttribute(html_names::kStyleAttr,
+                     AtomicString("transform: translate(10px); opacity: 0.5"));
+  UpdateAllLifecyclePhasesForTest();
+
+  // The effect node should still exist (due to opacity), but
+  // NeedsEffectFor2DScaleTransform should be false.
+  EXPECT_FALSE(properties->Effect()->NeedsEffectFor2DScaleTransform());
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, ElementCaptureUpdate) {
@@ -2264,6 +2303,30 @@ TEST_P(PaintPropertyTreeUpdateTest, ElementCaptureUpdate) {
   paint_properties =
       element->GetLayoutObject()->FirstFragment().PaintProperties();
   EXPECT_TRUE(paint_properties && paint_properties->ElementCaptureEffect());
+}
+
+TEST_P(PaintPropertyTreeUpdateTest, RestrictionTargetIdChange) {
+  // Create an initial state.
+  EffectPaintPropertyNode::State state;
+  state.local_transform_space = &TransformPaintPropertyNode::Root();
+  state.output_clip = &ClipPaintPropertyNode::Root();
+  state.restriction_target_id =
+      RestrictionTargetId(base::Token::CreateRandom());
+
+  auto* node = EffectPaintPropertyNode::Create(EffectPaintPropertyNode::Root(),
+                                               std::move(state));
+
+  // Update with a new state having different restriction_target_id.
+  EffectPaintPropertyNode::State new_state;
+  new_state.local_transform_space = &TransformPaintPropertyNode::Root();
+  new_state.output_clip = &ClipPaintPropertyNode::Root();
+  new_state.restriction_target_id =
+      RestrictionTargetId(base::Token::CreateRandom());
+
+  auto change =
+      node->Update(EffectPaintPropertyNode::Root(), std::move(new_state));
+
+  EXPECT_EQ(PaintPropertyChangeType::kChangedOnlyValues, change);
 }
 
 }  // namespace blink

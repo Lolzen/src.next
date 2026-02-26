@@ -43,8 +43,6 @@
 
 namespace blink {
 
-class LayoutMultiColumnFlowThread;
-
 struct InlineNodeData;
 
 // LayoutBlockFlow is the class that implements a block container in CSS 2.1.
@@ -80,30 +78,16 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
                 LayoutObject* before_child = nullptr) override;
   void RemoveChild(LayoutObject*) override;
 
-  void MoveAllChildrenIncludingFloatsTo(LayoutBlock* to_block,
-                                        bool full_remove_insert);
+  bool CanMergeWith(const LayoutBoxModelObject&) const override;
 
   void ChildBecameFloatingOrOutOfFlow(LayoutBox* child);
   void CollapseAnonymousBlockChild(LayoutBlockFlow* child);
 
-  LayoutMultiColumnFlowThread* MultiColumnFlowThread() const {
-    NOT_DESTROYED();
-    return multi_column_flow_thread_.Get();
-  }
-  void ResetMultiColumnFlowThread() {
-    NOT_DESTROYED();
-    multi_column_flow_thread_ = nullptr;
-  }
-
   // Return true if this block establishes a fragmentation context root (e.g. a
   // multicol container).
-  //
-  // Implementation detail: At some point in the future there should be no flow
-  // threads. Callers that only want to know if this is a fragmentation context
-  // root (and don't depend on flow threads) should call this method.
   bool IsFragmentationContextRoot() const override {
     NOT_DESTROYED();
-    return MultiColumnFlowThread();
+    return IsMulticolContainer();
   }
 
   bool IsInitialLetterBox() const override;
@@ -123,23 +107,6 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   PositionWithAffinity PositionForPoint(const PhysicalOffset&) const override;
 
   bool ShouldMoveCaretToHorizontalBoundaryWhenPastTopOrBottom() const;
-
-  // If this is an inline formatting context root, this flag is set if the
-  // inline formatting context *may* (false positives are okay) be
-  // non-contiguous. Sometimes an inline formatting context may start in some
-  // fragmentainer, then skip one or more fragmentainers, and then resume
-  // again. This may happen for instance if a culled inline is preceded by a
-  // tall float that's pushed after (due to size/breaking restrictions) the
-  // contents of the culled inline.
-  void SetMayBeNonContiguousIfc(bool b) {
-    NOT_DESTROYED();
-    may_be_non_contiguous_ifc_ = b;
-  }
-  bool MayBeNonContiguousIfc() const {
-    NOT_DESTROYED();
-    DCHECK(HasFragmentItems());
-    return may_be_non_contiguous_ifc_;
-  }
 
   // Returns the associated `InlineNodeData`, or `nullptr` if `this` doesn't
   // have one (i.e., not an NG inline formatting context.)
@@ -171,16 +138,13 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   virtual void WillCollectInlines() { NOT_DESTROYED(); }
 
  protected:
-  void WillBeDestroyed() override;
-  void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
+  void StyleDidChange(StyleDifference,
+                      const ComputedStyle* old_style,
+                      const StyleChangeContext&) override;
 
   void InvalidateDisplayItemClients(PaintInvalidationReason) const override;
 
   Node* NodeForHitTest() const final;
-  bool HitTestChildren(HitTestResult&,
-                       const HitTestLocation&,
-                       const PhysicalOffset& accumulated_offset,
-                       HitTestPhase) override;
 
   void AddOutlineRects(OutlineRectCollector&,
                        LayoutObject::OutlineInfo*,
@@ -190,8 +154,10 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   void DirtyLinesFromChangedChild(LayoutObject* child) final;
 
  private:
-  void CreateOrDestroyMultiColumnFlowThreadIfNeeded(
-      const ComputedStyle* old_style);
+  void UpdateForMulticol();
+
+  void AddChildBeforeDescendant(LayoutObject* new_child,
+                                LayoutObject* before_descendant);
 
   // Merge children of |sibling_that_may_be_deleted| into this object if
   // possible, and delete |sibling_that_may_be_deleted|. Returns true if we
@@ -214,7 +180,6 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   bool ShouldTruncateOverflowingText() const;
 
  private:
-  Member<LayoutMultiColumnFlowThread> multi_column_flow_thread_;
   Member<InlineNodeData> inline_node_data_;
 
  protected:

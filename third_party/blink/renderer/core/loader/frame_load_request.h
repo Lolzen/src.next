@@ -71,6 +71,7 @@ struct CORE_EXPORT FrameLoadRequest {
   mojom::RequestContextFrameType GetFrameType() const { return frame_type_; }
   void SetFrameType(mojom::RequestContextFrameType frame_type) {
     frame_type_ = frame_type;
+    ResolveBlobURLIfNeeded();
   }
 
   ResourceRequest& GetResourceRequest() { return resource_request_; }
@@ -113,11 +114,9 @@ struct CORE_EXPORT FrameLoadRequest {
     initiator_navigation_state_keep_alive_handle_ = std::move(handle);
   }
 
-  std::unique_ptr<SourceLocation> TakeSourceLocation() {
-    return std::move(source_location_);
-  }
-  void SetSourceLocation(std::unique_ptr<SourceLocation> source_location) {
-    source_location_ = std::move(source_location);
+  SourceLocation* GetSourceLocation() { return source_location_; }
+  void SetSourceLocation(SourceLocation* source_location) {
+    source_location_ = source_location;
   }
 
   HTMLFormElement* Form() const;
@@ -140,7 +139,8 @@ struct CORE_EXPORT FrameLoadRequest {
   // is needed for blob URLs, because the blob URL might be revoked before the
   // actual fetch happens, which would result in incorrect failures to fetch.
   // The token lets the browser process securely resolves the blob URL even
-  // after the url has been revoked.
+  // after the url has been revoked. `ResolveBlobURLIfNeeded()` must have been
+  // called in `SetFrameType()` for the BlobURLToken to be available.
   mojo::PendingRemote<mojom::blink::BlobURLToken> GetBlobURLToken() const {
     if (!blob_url_token_)
       return mojo::NullRemote();
@@ -154,6 +154,8 @@ struct CORE_EXPORT FrameLoadRequest {
   }
 
   base::TimeTicks GetInputStartTime() const { return input_start_time_; }
+
+  base::TimeTicks GetCreationTime() const { return creation_time_; }
 
   const WebWindowFeatures& GetWindowFeatures() const {
     return window_features_;
@@ -211,6 +213,17 @@ struct CORE_EXPORT FrameLoadRequest {
     return force_history_push_;
   }
 
+  mojo::PendingReceiver<mojom::blink::NavigationResumeDeferredCommitListener>
+  TakeResumeDeferredCommitListener() {
+    return std::move(resume_deferred_commit_listener_);
+  }
+
+  void SetResumeDeferredCommitListener(
+      mojo::PendingReceiver<
+          mojom::blink::NavigationResumeDeferredCommitListener> listener) {
+    resume_deferred_commit_listener_ = std::move(listener);
+  }
+
   // This function is meant to be used in HTML/SVG attributes where dangling
   // markup injection occurs. See https://github.com/whatwg/html/pull/9309.
   const AtomicString& CleanNavigationTarget(const AtomicString& target) const;
@@ -230,6 +243,7 @@ struct CORE_EXPORT FrameLoadRequest {
   scoped_refptr<base::RefCountedData<mojo::Remote<mojom::blink::BlobURLToken>>>
       blob_url_token_;
   base::TimeTicks input_start_time_;
+  base::TimeTicks creation_time_;
   mojom::RequestContextFrameType frame_type_ =
       mojom::RequestContextFrameType::kNone;
   WebWindowFeatures window_features_;
@@ -239,7 +253,7 @@ struct CORE_EXPORT FrameLoadRequest {
   std::optional<LocalFrameToken> initiator_frame_token_;
   mojo::PendingRemote<mojom::blink::NavigationStateKeepAliveHandle>
       initiator_navigation_state_keep_alive_handle_;
-  std::unique_ptr<SourceLocation> source_location_;
+  SourceLocation* source_location_ = nullptr;
   KURL requestor_base_url_;
 
   // This is only used for navigations originating in MPArch fenced frames
@@ -254,6 +268,16 @@ struct CORE_EXPORT FrameLoadRequest {
   // Only container-initiated navigations (e.g. iframe change src) report a
   // resource timing entry to the parent.
   bool is_container_initiated_ = false;
+
+  // This listener is non-null when deferPageSwap() was called.
+  // It is triggered when the conditions passed to deferPageSwap() are met.
+  // See NavigationAPICommitDeferringCondition.
+  mojo::PendingReceiver<mojom::blink::NavigationResumeDeferredCommitListener>
+      resume_deferred_commit_listener_;
+
+  // Resolves a Blob URL into a BlobURLToken if the URL is a blob URL, and
+  // otherwise has no effect. It is called after the FrameType has been set.
+  void ResolveBlobURLIfNeeded();
 };
 
 }  // namespace blink

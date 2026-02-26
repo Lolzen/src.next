@@ -27,7 +27,13 @@ this text can be found by Ctrl + F because it isn't hidden. -->
       <span id="name" class="cr-title-text" role="heading" aria-level="1">
         ${this.data.name}
       </span>
-      ${!this.computeDevReloadButtonHidden_() ? html`
+      ${this.showAccountUploadButton_() ? html`
+        <cr-icon-button id="account-upload-button" class="no-overlap"
+            title="$i18n{itemUpload}" aria-label="$i18n{itemUpload}"
+            iron-icon="extensions-icons:extension_cloud_upload"
+            aria-describedby="a11yAssociation" @click="${this.onUploadClick_}">
+        </cr-icon-button>` : ''}
+      ${this.showDevReloadButton_() ? html`
         <cr-icon-button id="dev-reload-button" class="icon-refresh no-overlap"
             title="$i18n{itemReload}" aria-label="$i18n{itemReload}"
             aria-describedby="a11yAssociation" @click="${this.onReloadClick_}">
@@ -121,17 +127,12 @@ this text can be found by Ctrl + F because it isn't hidden. -->
         </cr-tooltip-icon>
         <cr-toggle id="enableToggle"
             aria-label="${this.getEnableToggleAriaLabel_()}"
-            aria-describedby="name enable-toggle-tooltip"
+            aria-describedby="name"
             ?checked="${this.isEnabled_()}"
             @change="${this.onEnableToggleChange_}"
             ?disabled="${!this.isEnableToggleEnabled_()}"
             ?hidden="${!this.showEnableToggle_()}">
         </cr-toggle>
-        <cr-tooltip id="enable-toggle-tooltip" for="enableToggle"
-            position="left" aria-hidden="true" animation-delay="0"
-            fit-to-visible-bounds>
-          ${this.getEnableToggleTooltipText_()}
-        </cr-tooltip>
       </div>
     </div>
     ${this.hasSevereWarnings_() ? html`
@@ -184,6 +185,12 @@ this text can be found by Ctrl + F because it isn't hidden. -->
             ?hidden="${!this.data.disableReasons.publishedInStoreRequired}">
           <cr-icon class="warning-icon" icon="cr:warning"></cr-icon>
           <span>$i18n{publishedInStoreRequiredByPolicy}</span>
+        </div>
+        <div class="cr-row continuation warning"
+            id="unsupported-developer-extension-warning"
+            ?hidden="${!this.shouldShowUnsupportedDeveloperExtensionText_()}">
+          <cr-icon class="warning-icon" icon="cr:warning"></cr-icon>
+          <span>$i18n{itemUnsupportedDeveloperModeDetails}</span>
         </div>
       </div>` : ''}
     ${this.showAllowlistWarning_() ? html`
@@ -312,6 +319,15 @@ this text can be found by Ctrl + F because it isn't hidden. -->
             </extensions-toggle-row>` : ''}
         </div>
       </div>` : ''}
+      ${this.showUserScriptSectionToggle_() ? html`
+        <extensions-toggle-row id="allow-user-scripts"
+        ?checked="${this.data.userScriptsAccess.isActive}" class="hr"
+              @change="${this.onAllowUserScriptsChange_}">
+          <div>
+            <div>$i18n{itemAllowUserScripts}</div>
+            <div class="section-content">$i18n{userScriptInfoWarning}</div>
+          </div>
+        </extensions-toggle-row>` : ''}
     ${this.hasDependentExtensions_() ? html`
       <div class="section hr">
         <div class="section-title" role="heading" aria-level="2">
@@ -341,13 +357,23 @@ this text can be found by Ctrl + F because it isn't hidden. -->
             <div>
               <div>$i18n{itemAllowIncognito}</div>
               <div class="section-content">$i18n{incognitoInfoWarning}</div>
+              <div class="section-content" id="allow-incognito-warning"
+                  ?hidden="${!this.data.incognitoAccessPendingChange}">
+                $i18n{pendingChangeWarning}
+              </div>
             </div>
           </extensions-toggle-row>` : ''}
         ${this.data.fileAccess.isEnabled ? html`
           <extensions-toggle-row id="allow-on-file-urls"
               ?checked="${this.data.fileAccess.isActive}" class="hr"
               @change="${this.onAllowOnFileUrlsChange_}">
-            <span>$i18n{itemAllowOnFileUrls}</span>
+            <div>
+              <div>$i18n{itemAllowOnFileUrls}</div>
+              <div class="section-content" id="allow-on-file-urls-warning"
+                  ?hidden="${!this.data.fileAccessPendingChange}">
+                $i18n{pendingChangeWarning}</div>
+              </div>
+            </div>
           </extensions-toggle-row>` : ''}
         ${this.data.errorCollection.isEnabled ? html`
           <extensions-toggle-row id="collect-errors"

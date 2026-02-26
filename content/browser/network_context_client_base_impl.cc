@@ -10,11 +10,11 @@
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "components/file_access/scoped_file_access.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/network_context_client_base.h"
+#include "content/public/common/child_process_id.h"
 #include "content/public/common/content_client.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/net_errors.h"
@@ -37,8 +37,10 @@ void HandleFileUploadRequest(
                         (async ? base::File::FLAG_ASYNC : 0);
   ChildProcessSecurityPolicy* cpsp = ChildProcessSecurityPolicy::GetInstance();
   for (const auto& file_path : file_paths) {
+    // TODO(crbug.com/379869738) Remove FromUnsafeValue.
     if (process_id != network::mojom::kBrowserProcessId &&
-        !cpsp->CanReadFile(process_id, file_path)) {
+        !cpsp->CanReadFile(ChildProcessId::FromUnsafeValue(process_id),
+                           file_path)) {
       task_runner->PostTask(
           FROM_HERE, base::BindOnce(std::move(callback), net::ERR_ACCESS_DENIED,
                                     std::vector<base::File>()));
@@ -126,10 +128,6 @@ void NetworkContextClientBase::OnGenerateHttpNegotiateAuthToken(
     OnGenerateHttpNegotiateAuthTokenCallback callback) {
   std::move(callback).Run(net::ERR_FAILED, server_auth_token);
 }
-#endif
-
-#if BUILDFLAG(IS_CHROMEOS)
-void NetworkContextClientBase::OnTrustAnchorUsed() {}
 #endif
 
 #if BUILDFLAG(IS_CT_SUPPORTED)
