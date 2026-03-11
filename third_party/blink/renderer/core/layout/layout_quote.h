@@ -27,9 +27,7 @@
 
 namespace blink {
 
-template <typename T>
-class OrderedScope;
-
+class StyleContainmentScope;
 class LayoutTextFragment;
 class PseudoElement;
 
@@ -44,7 +42,7 @@ class LayoutQuote final : public LayoutInline {
   ~LayoutQuote() override;
   void Trace(Visitor*) const override;
 
-  // Will return nullptr, if this doesn't originate from a pseudo-element, but
+  // Will return nullptr, if this doesn't originate from a pseudo element, but
   // rather an @page margin box.
   PseudoElement* GetOwningPseudo() const {
     NOT_DESTROYED();
@@ -54,11 +52,11 @@ class LayoutQuote final : public LayoutInline {
     NOT_DESTROYED();
     return !!scope_;
   }
-  OrderedScope<LayoutQuote>* GetScope() const {
+  StyleContainmentScope* GetScope() const {
     NOT_DESTROYED();
     return scope_.Get();
   }
-  void SetScope(OrderedScope<LayoutQuote>* scope) {
+  void SetScope(StyleContainmentScope* scope) {
     NOT_DESTROYED();
     scope_ = scope;
   }
@@ -91,9 +89,7 @@ class LayoutQuote final : public LayoutInline {
     NOT_DESTROYED();
     return true;
   }
-  void StyleDidChange(StyleDifference,
-                      const ComputedStyle*,
-                      const StyleChangeContext&) override;
+  void StyleDidChange(StyleDifference, const ComputedStyle*) override;
   void WillBeRemovedFromTree() override;
 
   String ComputeText() const;
@@ -118,7 +114,7 @@ class LayoutQuote final : public LayoutInline {
   Member<PseudoElement> owning_pseudo_;
 
   // The contain style scope this quote belongs to.
-  Member<OrderedScope<LayoutQuote>> scope_;
+  Member<StyleContainmentScope> scope_;
 
   // Cached text for this quote.
   String text_;

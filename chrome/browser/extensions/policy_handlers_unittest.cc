@@ -31,7 +31,6 @@
 #include "components/strings/grit/components_strings.h"
 #include "components/user_manager/scoped_user_manager.h"
 #include "extensions/browser/pref_names.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/mojom/manifest.mojom-shared.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -43,8 +42,6 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
 #endif
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using extensions::mojom::ManifestLocation;
 
@@ -126,7 +123,7 @@ constexpr int kJsonParseOptions =
     base::JSON_PARSE_CHROMIUM_EXTENSIONS | base::JSON_ALLOW_TRAILING_COMMAS;
 
 TEST(ExtensionListPolicyHandlerTest, CheckPolicySettings) {
-  base::ListValue list;
+  base::Value::List list;
   policy::PolicyMap policy_map;
   policy::PolicyErrorMap errors;
   ExtensionListPolicyHandler handler(policy::key::kExtensionInstallBlocklist,
@@ -227,8 +224,8 @@ TEST(ExtensionSettingsPolicyHandlerTest, CheckPolicySettingsURL) {
 }
 
 TEST(ExtensionListPolicyHandlerTest, ApplyPolicySettings) {
-  base::ListValue policy;
-  base::ListValue expected;
+  base::Value::List policy;
+  base::Value::List expected;
   policy::PolicyMap policy_map;
   PrefValueMap prefs;
   base::Value* value = nullptr;
@@ -257,7 +254,7 @@ TEST(ExtensionListPolicyHandlerTest, ApplyPolicySettings) {
 }
 
 TEST(ExtensionInstallForceListPolicyHandlerTest, CheckPolicySettings) {
-  base::ListValue list;
+  base::Value::List list;
   policy::PolicyMap policy_map;
   policy::PolicyErrorMap errors;
   ExtensionInstallForceListPolicyHandler handler;
@@ -314,8 +311,8 @@ TEST(ExtensionInstallForceListPolicyHandlerTest, CheckPolicySettings) {
 }
 
 TEST(ExtensionInstallForceListPolicyHandlerTest, ApplyPolicySettings) {
-  base::ListValue policy;
-  base::DictValue expected;
+  base::Value::List policy;
+  base::Value::Dict expected;
   policy::PolicyMap policy_map;
   PrefValueMap prefs;
   base::Value* value = nullptr;
@@ -381,8 +378,11 @@ TEST(ExtensionInstallForceListPolicyHandlerTest, ApplyPolicySettings) {
   EXPECT_EQ(expected, handler.GetPolicyDict(policy_map));
 }
 
+// TODO(crbug.com/394876083): Support the ExtensionInstallSources policy to
+// enable this test.
+#if !BUILDFLAG(IS_ANDROID)
 TEST(ExtensionURLPatternListPolicyHandlerTest, CheckPolicySettings) {
-  base::ListValue list;
+  base::Value::List list;
   policy::PolicyMap policy_map;
   policy::PolicyErrorMap errors;
   ExtensionURLPatternListPolicyHandler handler(
@@ -440,7 +440,7 @@ TEST(ExtensionURLPatternListPolicyHandlerTest, CheckPolicySettings) {
 }
 
 TEST(ExtensionURLPatternListPolicyHandlerTest, ApplyPolicySettings) {
-  base::ListValue list;
+  base::Value::List list;
   policy::PolicyMap policy_map;
   PrefValueMap prefs;
   base::Value* value = nullptr;
@@ -456,6 +456,7 @@ TEST(ExtensionURLPatternListPolicyHandlerTest, ApplyPolicySettings) {
   ASSERT_TRUE(prefs.GetValue(kTestPref, &value));
   EXPECT_EQ(list, *value);
 }
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 TEST(ExtensionSettingsPolicyHandlerTest, CheckPolicySettings) {
   auto policy_result = base::JSONReader::ReadAndReturnValueWithError(
@@ -482,7 +483,7 @@ TEST(ExtensionSettingsPolicyHandlerTest, CheckPolicySettings) {
   handler.ApplyPolicySettings(policy_map, &prefs);
   base::Value* value = nullptr;
   ASSERT_TRUE(prefs.GetValue(pref_names::kExtensionManagement, &value));
-  base::DictValue empty_value;
+  base::Value::Dict empty_value;
   EXPECT_EQ(empty_value, *value);
 }
 
@@ -676,7 +677,7 @@ TEST_F(ExtensionInstallBlockListPolicyHandlerAshTest,
 
   policy_map.Set(policy_key(), policy::POLICY_LEVEL_MANDATORY,
                  policy::POLICY_SCOPE_USER, policy::POLICY_SOURCE_CLOUD,
-                 base::Value(base::ListValue()
+                 base::Value(base::Value::List()
                                  .Append("abcdefghijklmnopabcdefghijklmnop")
                                  .Append("*")),
                  nullptr);
@@ -688,8 +689,9 @@ TEST_F(ExtensionInstallBlockListPolicyHandlerAshTest,
   EXPECT_TRUE(prefs.GetValue(pref_name(), &value));
   ASSERT_TRUE(value->is_list());
 
-  auto expected =
-      base::ListValue().Append("abcdefghijklmnopabcdefghijklmnop").Append("*");
+  auto expected = base::Value::List()
+                      .Append("abcdefghijklmnopabcdefghijklmnop")
+                      .Append("*");
   ASSERT_EQ(value->GetList(), expected);
 }
 
@@ -701,7 +703,7 @@ TEST_F(ExtensionInstallForceListPolicyHandlerAshTest,
   policy_map.Set(
       policy_key(), policy::POLICY_LEVEL_MANDATORY, policy::POLICY_SCOPE_USER,
       policy::POLICY_SOURCE_CLOUD,
-      base::Value(base::ListValue()
+      base::Value(base::Value::List()
                       // Add an arbitrary extension.
                       .Append(base::StrCat({"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                                             ";", "http://www.example.com/crx"}))
@@ -725,16 +727,16 @@ TEST_F(ExtensionInstallForceListPolicyHandlerAshTest,
 
   // All extensions should be retained.
   auto expected =
-      base::DictValue()
+      base::Value::Dict()
           .Set("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-               base::DictValue().Set(ExternalProviderImpl::kExternalUpdateUrl,
-                                     "http://www.example.com/crx"))
+               base::Value::Dict().Set(ExternalProviderImpl::kExternalUpdateUrl,
+                                       "http://www.example.com/crx"))
           .Set(extension_misc::kAccessibilityCommonExtensionId,
-               base::DictValue().Set(ExternalProviderImpl::kExternalUpdateUrl,
-                                     "http://www.access.com/crx"))
+               base::Value::Dict().Set(ExternalProviderImpl::kExternalUpdateUrl,
+                                       "http://www.access.com/crx"))
           .Set(extension_misc::kGnubbyAppId,
-               base::DictValue().Set(ExternalProviderImpl::kExternalUpdateUrl,
-                                     "http://www.gnubby.com/crx"));
+               base::Value::Dict().Set(ExternalProviderImpl::kExternalUpdateUrl,
+                                       "http://www.gnubby.com/crx"));
 
   ASSERT_EQ(value->GetDict(), expected);
 }

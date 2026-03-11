@@ -21,7 +21,7 @@ public class MagnifierAnimator {
 
     private static final long DURATION_MS = 100;
 
-    private final MagnifierWrapper mMagnifier;
+    private MagnifierWrapper mMagnifier;
     private ValueAnimator mAnimator;
 
     private boolean mMagnifierIsShowing;

@@ -4,14 +4,11 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.VisibleForTesting;
 
-import org.chromium.build.annotations.MonotonicNonNull;
-import org.chromium.build.annotations.NullMarked;
 import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
@@ -21,10 +18,9 @@ import org.chromium.components.feature_engagement.Tracker;
 import org.chromium.ui.modelutil.PropertyModelChangeProcessor;
 
 /** Coordinator for the Shared Tab Group Notice Bottom Sheet. */
-@NullMarked
 public class TabGroupShareNoticeBottomSheetCoordinator {
 
-    private @MonotonicNonNull TabGroupShareNoticeBottomSheetView mView;
+    private TabGroupShareNoticeBottomSheetView mView;
 
     interface TabGroupShareNoticeBottomSheetCoordinatorDelegate {
         /** Requests to show the bottom sheet content. */
@@ -55,8 +51,8 @@ public class TabGroupShareNoticeBottomSheetCoordinator {
 
     /** Initializes the delegate. */
     @VisibleForTesting
+    @NonNull
     TabGroupShareNoticeBottomSheetCoordinatorDelegate initDelegate() {
-        assumeNonNull(mView);
         return new TabGroupShareNoticeBottomSheetCoordinatorDelegate() {
             @Override
             public boolean requestShowContent() {

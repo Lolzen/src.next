@@ -4,11 +4,11 @@
 
 #include "extensions/common/manifest.h"
 
-#include <algorithm>
 #include <string_view>
 #include <utility>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
@@ -99,29 +99,29 @@ int GetLocationRank(ManifestLocation location) {
   return rank;
 }
 
-int GetManifestVersion(const base::DictValue& manifest_value,
+int GetManifestVersion(const base::Value::Dict& manifest_value,
                        Manifest::Type type) {
   // Platform apps were launched after manifest version 2 was the preferred
   // version, so they default to that.
   return manifest_value.FindInt(keys::kManifestVersion)
-      .value_or(type == Manifest::Type::kPlatformApp ? 2 : 1);
+      .value_or(type == Manifest::TYPE_PLATFORM_APP ? 2 : 1);
 }
 
 // Helper class to filter available values from a manifest.
 class AvailableValuesFilter {
  public:
   // Filters `manifest.values()` removing any unavailable keys.
-  static base::DictValue Filter(const Manifest& manifest) {
+  static base::Value::Dict Filter(const Manifest& manifest) {
     return FilterInternal(manifest, *manifest.value(), "");
   }
 
  private:
-  // Returns a base::DictValue corresponding to |input_dict| for the given
+  // Returns a base::Value::Dict corresponding to |input_dict| for the given
   // |manifest|, with all unavailable keys removed.
-  static base::DictValue FilterInternal(const Manifest& manifest,
-                                        const base::DictValue& input_dict,
-                                        std::string current_path) {
-    base::DictValue output_dict;
+  static base::Value::Dict FilterInternal(const Manifest& manifest,
+                                          const base::Value::Dict& input_dict,
+                                          std::string current_path) {
+    base::Value::Dict output_dict;
     DCHECK(CanAccessFeature(manifest, current_path));
 
     for (auto it : input_dict) {
@@ -206,30 +206,31 @@ ManifestLocation Manifest::GetHigherPriorityLocation(ManifestLocation loc1,
 }
 
 // static
-Manifest::Type Manifest::GetTypeFromManifestValue(const base::DictValue& value,
-                                                  bool for_login_screen) {
-  Type type = Type::kUnknown;
+Manifest::Type Manifest::GetTypeFromManifestValue(
+    const base::Value::Dict& value,
+    bool for_login_screen) {
+  Type type = TYPE_UNKNOWN;
   if (value.Find(keys::kTheme)) {
-    type = Type::kTheme;
+    type = TYPE_THEME;
   } else if (value.Find(api::shared_module::ManifestKeys::kExport)) {
-    type = Type::kSharedModule;
+    type = TYPE_SHARED_MODULE;
   } else if (value.Find(keys::kApp)) {
     if (value.FindByDottedPath(keys::kWebURLs) ||
         value.FindByDottedPath(keys::kLaunchWebURL)) {
-      type = Type::kHostedApp;
+      type = TYPE_HOSTED_APP;
     } else if (value.FindByDottedPath(keys::kPlatformAppBackground)) {
-      type = Type::kPlatformApp;
+      type = TYPE_PLATFORM_APP;
     } else {
-      type = Type::kLegacyPackagedApp;
+      type = TYPE_LEGACY_PACKAGED_APP;
     }
   } else if (value.Find(keys::kChromeOSSystemExtension)) {
-    type = Type::kChromeOSSystemExtension;
+    type = TYPE_CHROMEOS_SYSTEM_EXTENSION;
   } else if (for_login_screen) {
-    type = Type::kLoginScreenExtension;
+    type = TYPE_LOGIN_SCREEN_EXTENSION;
   } else {
-    type = Type::kExtension;
+    type = TYPE_EXTENSION;
   }
-  DCHECK_NE(type, Type::kUnknown);
+  DCHECK_NE(type, TYPE_UNKNOWN);
 
   return type;
 }
@@ -256,7 +257,7 @@ bool Manifest::ShouldAlwaysLoadExtension(ManifestLocation location,
 // static
 std::unique_ptr<Manifest> Manifest::CreateManifestForLoginScreen(
     ManifestLocation location,
-    base::DictValue value,
+    base::Value::Dict value,
     ExtensionId extension_id) {
   CHECK(IsPolicyLocation(location));
   // Use base::WrapUnique + new because the constructor is private.
@@ -265,12 +266,12 @@ std::unique_ptr<Manifest> Manifest::CreateManifestForLoginScreen(
 }
 
 Manifest::Manifest(ManifestLocation location,
-                   base::DictValue value,
+                   base::Value::Dict value,
                    ExtensionId extension_id)
     : Manifest(location, std::move(value), std::move(extension_id), false) {}
 
 Manifest::Manifest(ManifestLocation location,
-                   base::DictValue value,
+                   base::Value::Dict value,
                    ExtensionId extension_id,
                    bool for_login_screen)
     : extension_id_(std::move(extension_id)),
@@ -310,7 +311,7 @@ void Manifest::ValidateManifest(std::vector<InstallWarning>* warnings) const {
     if (!manifest_feature_provider->GetFeature(item.first)) {
       // There are a set of keys that are not handled by Chrome, but that we
       // explicitly allow. Don't add a warning for those keys.
-      if (std::ranges::contains(keys::kIgnoredUnrecognizedKeys, item.first)) {
+      if (base::Contains(keys::kIgnoredUnrecognizedKeys, item.first)) {
         continue;
       }
 
@@ -348,7 +349,7 @@ const std::string* Manifest::FindStringPath(std::string_view path) const {
   return available_values_.FindStringByDottedPath(path);
 }
 
-const base::DictValue* Manifest::FindDictPath(std::string_view path) const {
+const base::Value::Dict* Manifest::FindDictPath(std::string_view path) const {
   return available_values_.FindDictByDottedPath(path);
 }
 

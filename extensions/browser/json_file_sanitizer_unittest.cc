@@ -12,14 +12,11 @@
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/test/gmock_expected_support.h"
-#include "base/types/expected.h"
 #include "content/public/test/browser_task_environment.h"
 #include "extensions/browser/extension_file_task_runner.h"
+#include "services/data_decoder/public/cpp/data_decoder.h"
+#include "services/data_decoder/public/cpp/test_support/in_process_data_decoder.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-using ::base::test::ErrorIs;
-using ::base::test::HasValue;
 
 namespace extensions {
 
@@ -58,28 +55,35 @@ class JsonFileSanitizerTest : public testing::Test {
 
   void CreateAndStartSanitizer(const std::set<base::FilePath>& file_paths) {
     sanitizer_ = JsonFileSanitizer::CreateAndStart(
-        file_paths,
+        &data_decoder_, file_paths,
         base::BindOnce(&JsonFileSanitizerTest::SanitizationDone,
                        base::Unretained(this)),
         GetExtensionFileTaskRunner());
   }
 
-  base::expected<void, JsonFileSanitizer::Error> last_reported_status() const {
+  JsonFileSanitizer::Status last_reported_status() const {
     return last_status_;
   }
+
+  const std::string& last_reported_error() const { return last_error_; }
 
  private:
   void SetUp() override { ASSERT_TRUE(temp_dir_.CreateUniqueTempDir()); }
 
-  void SanitizationDone(base::expected<void, JsonFileSanitizer::Error> status) {
+  void SanitizationDone(JsonFileSanitizer::Status status,
+                        const std::string& error_msg) {
     last_status_ = status;
+    last_error_ = error_msg;
     if (done_callback_) {
       std::move(done_callback_).Run();
     }
   }
 
   content::BrowserTaskEnvironment task_environment_;
-  base::expected<void, JsonFileSanitizer::Error> last_status_;
+  data_decoder::test::InProcessDataDecoder in_process_data_decoder_;
+  data_decoder::DataDecoder data_decoder_;
+  JsonFileSanitizer::Status last_status_;
+  std::string last_error_;
   base::OnceClosure done_callback_;
   std::unique_ptr<JsonFileSanitizer> sanitizer_;
   base::ScopedTempDir temp_dir_;
@@ -90,7 +94,8 @@ class JsonFileSanitizerTest : public testing::Test {
 TEST_F(JsonFileSanitizerTest, NoFilesProvided) {
   CreateAndStartSanitizer(std::set<base::FilePath>());
   WaitForSanitizationDone();
-  EXPECT_THAT(last_reported_status(), HasValue());
+  EXPECT_EQ(last_reported_status(), JsonFileSanitizer::Status::kSuccess);
+  EXPECT_TRUE(last_reported_error().empty());
 }
 
 TEST_F(JsonFileSanitizerTest, ValidCase) {
@@ -108,7 +113,8 @@ TEST_F(JsonFileSanitizerTest, ValidCase) {
   }
   CreateAndStartSanitizer(paths);
   WaitForSanitizationDone();
-  EXPECT_THAT(last_reported_status(), HasValue());
+  EXPECT_EQ(last_reported_status(), JsonFileSanitizer::Status::kSuccess);
+  EXPECT_TRUE(last_reported_error().empty());
   // Make sure the JSON files are there and non empty.
   for (const auto& path : paths) {
     std::optional<int64_t> file_size = base::GetFileSize(path);
@@ -127,8 +133,7 @@ TEST_F(JsonFileSanitizerTest, MissingJsonFile) {
   base::FilePath invalid_path = CreateFilePath(kNonExistingName);
   CreateAndStartSanitizer({good_path, invalid_path});
   WaitForSanitizationDone();
-  EXPECT_THAT(last_reported_status(),
-              ErrorIs(JsonFileSanitizer::Error::kFileReadError));
+  EXPECT_EQ(last_reported_status(), JsonFileSanitizer::Status::kFileReadError);
 }
 
 TEST_F(JsonFileSanitizerTest, InvalidJson) {
@@ -142,8 +147,8 @@ TEST_F(JsonFileSanitizerTest, InvalidJson) {
   CreateInvalidJsonFile(badd_path);
   CreateAndStartSanitizer({good_path, badd_path});
   WaitForSanitizationDone();
-  EXPECT_THAT(last_reported_status(),
-              ErrorIs(JsonFileSanitizer::Error::kDecodingError));
+  EXPECT_EQ(last_reported_status(), JsonFileSanitizer::Status::kDecodingError);
+  EXPECT_FALSE(last_reported_error().empty());
 }
 
 }  // namespace extensions

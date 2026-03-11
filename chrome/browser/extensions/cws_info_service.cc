@@ -4,14 +4,11 @@
 
 #include "chrome/browser/extensions/cws_info_service.h"
 
-#include <algorithm>
-#include <optional>
-#include <string>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/queue.h"
-#include "base/features.h"
 #include "base/i18n/time_formatting.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
@@ -34,18 +31,14 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/pref_names.h"
-#include "extensions/buildflags/buildflags.h"
 #include "google_apis/common/api_key_request_util.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/load_flags.h"
-#include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace {
 
@@ -167,12 +160,14 @@ namespace extensions {
 
 // Increase the frequency of periodic retrieval of extensions metadata from
 // CWS. This feature is used only for testing purposes.
-BASE_FEATURE(kCWSInfoFastCheck, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kCWSInfoFastCheck,
+             "CWSInfoFastCheck",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 namespace {
 
-base::DictValue GetDictFromStoreMetadataProto(const StoreMetadata* metadata) {
-  base::DictValue dict;
+base::Value::Dict GetDictFromStoreMetadataProto(const StoreMetadata* metadata) {
+  base::Value::Dict dict;
   if (!metadata) {
     dict.Set(kIsPresent, false);
   } else {
@@ -186,7 +181,7 @@ base::DictValue GetDictFromStoreMetadataProto(const StoreMetadata* metadata) {
 
     const auto& proto_labels = metadata->labels();
     for (const auto* label : kLabels) {
-      dict.Set(label, std::ranges::contains(proto_labels, label));
+      dict.Set(label, base::Contains(proto_labels, label));
     }
   }
 
@@ -200,9 +195,9 @@ bool SaveInfoIfChanged(ExtensionPrefs* extension_prefs,
                        const StoreMetadata* new_info) {
   bool saved = false;
 
-  const base::DictValue* saved_dict =
+  const base::Value::Dict* saved_dict =
       extension_prefs->ReadPrefAsDict(id, kCWSInfo);
-  base::DictValue new_dict = GetDictFromStoreMetadataProto(new_info);
+  base::Value::Dict new_dict = GetDictFromStoreMetadataProto(new_info);
   if (!saved_dict || *saved_dict != new_dict) {
     // The metadata is new or is different from that saved in extension prefs.
     saved = true;
@@ -252,7 +247,7 @@ CWSInfoService::CWSInfoService(Profile* profile)
   // option is enabled.
   startup_delay_secs_ = base::FeatureList::IsEnabled(kCWSInfoFastCheck)
                             ? kFastStartupCheckDelaySeconds
-                            : base::RandIntInclusive(/*min=*/30, /*max=*/600);
+                            : base::RandInt(/*min=*/30, /*max=*/600);
   ScheduleCheck(startup_delay_secs_);
 }
 
@@ -265,7 +260,7 @@ void CWSInfoService::Shutdown() {
 
 std::optional<bool> CWSInfoService::IsLiveInCWS(
     const Extension& extension) const {
-  const base::DictValue* cws_info_dict =
+  const base::Value::Dict* cws_info_dict =
       extension_prefs_->ReadPrefAsDict(extension.id(), kCWSInfo);
   if (cws_info_dict == nullptr) {
     return std::nullopt;
@@ -278,7 +273,7 @@ std::optional<bool> CWSInfoService::IsLiveInCWS(
 
 std::optional<CWSInfoService::CWSInfo> CWSInfoService::GetCWSInfo(
     const Extension& extension) const {
-  const base::DictValue* cws_info_dict =
+  const base::Value::Dict* cws_info_dict =
       extension_prefs_->ReadPrefAsDict(extension.id(), kCWSInfo);
   if (cws_info_dict == nullptr) {
     return std::nullopt;
@@ -363,11 +358,6 @@ void CWSInfoService::CheckAndMaybeFetchInfo() {
 }
 
 void CWSInfoService::ScheduleCheck(int seconds) {
-  if (base::features::IsReducePPMsEnabled() && !info_check_timer_.IsRunning()) {
-    info_check_timer_.SetTaskRunner(
-        content::GetUIThreadTaskRunner({base::TaskPriority::BEST_EFFORT}));
-  }
-
   info_check_timer_.Start(FROM_HERE, base::Seconds(seconds), this,
                           &CWSInfoService::CheckAndMaybeFetchInfo);
 }
@@ -450,7 +440,7 @@ void CWSInfoService::SendRequest() {
   info_requests_++;
 }
 
-void CWSInfoService::OnResponseReceived(std::optional<std::string> response) {
+void CWSInfoService::OnResponseReceived(std::unique_ptr<std::string> response) {
   CHECK(url_loader_);
   RecordNetworkHistograms(url_loader_.get());
 
@@ -527,7 +517,7 @@ bool CWSInfoService::MaybeSaveResponseToPrefs(
     }
   }
 
-  // Process any requested ids missing from the response. These ids represent
+  // Process any resquested ids missing from the response. These ids represent
   // extensions that are no longer available from the store.
   for (const auto& id : active_fetch_->requests.front().ids) {
     if (extension_prefs_->HasPrefForExtension(id) == false) {

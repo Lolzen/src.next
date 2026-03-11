@@ -4,7 +4,6 @@
 
 package org.chromium.chrome.browser;
 
-
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -13,8 +12,6 @@ import android.os.Process;
 
 import org.chromium.base.ContextUtils;
 import org.chromium.base.IntentUtils;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 
 /**
  * Kills and (optionally) restarts the main Chrome process, then immediately kills itself.
@@ -27,7 +24,6 @@ import org.chromium.build.annotations.Nullable;
  * process' Activities.  It works around an Android framework issue for alarms set via the
  * AlarmManager, which requires a minimum alarm duration of 5 seconds: https://crbug.com/515919.
  */
-@NullMarked
 public class BrowserRestartActivity extends Activity {
     public static final String EXTRA_MAIN_PID =
             "org.chromium.chrome.browser.BrowserRestartActivity.main_pid";
@@ -51,7 +47,7 @@ public class BrowserRestartActivity extends Activity {
     }
 
     @Override
-    public void onCreate(@Nullable Bundle savedInstanceState) {
+    public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         // Kill the main Chrome process.

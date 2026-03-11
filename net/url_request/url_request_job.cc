@@ -24,7 +24,6 @@
 #include "net/base/network_delegate.h"
 #include "net/base/proxy_chain.h"
 #include "net/base/schemeful_site.h"
-#include "net/base/task/task_runner.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cookies/cookie_setting_override.h"
 #include "net/cookies/cookie_util.h"
@@ -45,18 +44,10 @@ namespace net {
 namespace {
 
 // Callback for TYPE_URL_REQUEST_FILTERS_SET net-internals event.
-base::DictValue SourceStreamSetParams(SourceStream* source_stream) {
-  base::DictValue event_params;
+base::Value::Dict SourceStreamSetParams(SourceStream* source_stream) {
+  base::Value::Dict event_params;
   event_params.Set("filters", source_stream->Description());
   return event_params;
-}
-
-const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunner(
-    net::RequestPriority priority) {
-  if (features::kNetTaskSchedulerURLRequestJob.Get()) {
-    return net::GetTaskRunner(priority);
-  }
-  return base::SingleThreadTaskRunner::GetCurrentDefault();
 }
 
 }  // namespace
@@ -477,8 +468,7 @@ void URLRequestJob::NotifyHeadersComplete() {
     RedirectInfo redirect_info = RedirectInfo::ComputeRedirectInfo(
         request_->method(), request_->url(), request_->site_for_cookies(),
         request_->first_party_url_policy(), request_->referrer_policy(),
-        request_->referrer(), request_->initiator(), http_status_code,
-        new_location,
+        request_->referrer(), http_status_code, new_location,
         net::RedirectUtil::GetReferrerPolicyHeader(
             request_->response_headers()),
         insecure_scheme_was_upgraded, CopyFragmentOnRedirect(new_location));
@@ -517,12 +507,10 @@ void URLRequestJob::NotifyFinalHeadersReceived() {
       // headers, and the response body is not compressed, try to get the
       // expected content size from the headers.
       if (expected_content_size_ == -1 && request_->response_headers()) {
-        // This keeps |expected_content_size_| at its value of -1 if there's no
-        // Content-Length header.
-        std::optional<base::ByteCount> content_length =
-            request_->response_headers()->GetContentLength();
+        // This sets |expected_content_size_| to its previous value of -1 if
+        // there's no Content-Length header.
         expected_content_size_ =
-            content_length ? content_length->InBytes() : -1;
+            request_->response_headers()->GetContentLength();
       }
     } else {
       request_->net_log().AddEvent(
@@ -603,9 +591,9 @@ void URLRequestJob::OnDone(int net_error, bool notify_done) {
   if (notify_done) {
     // Complete this notification later.  This prevents us from re-entering the
     // delegate if we're done because of a synchronous call.
-    TaskRunner(request_->priority())
-        ->PostTask(FROM_HERE, base::BindOnce(&URLRequestJob::NotifyDone,
-                                             weak_factory_.GetWeakPtr()));
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&URLRequestJob::NotifyDone, weak_factory_.GetWeakPtr()));
   }
 }
 

@@ -54,14 +54,14 @@ scoped_refptr<const Extension> CreateApp(const std::string& extension_id,
   scoped_refptr<const Extension> app =
       ExtensionBuilder()
           .SetManifest(
-              base::DictValue()
+              base::Value::Dict()
                   .Set("name", "Test app")
                   .Set("version", version)
                   .Set("manifest_version", 2)
-                  .Set("app", base::DictValue().Set(
+                  .Set("app", base::Value::Dict().Set(
                                   "background",
-                                  base::DictValue().Set(
-                                      "scripts", base::ListValue().Append(
+                                  base::Value::Dict().Set(
+                                      "scripts", base::Value::List().Append(
                                                      "background.js")))))
           .SetID(extension_id)
           .Build();
@@ -74,11 +74,11 @@ scoped_refptr<const Extension> CreateExtension(const std::string& extension_id,
   scoped_refptr<const Extension> extension =
       ExtensionBuilder()
           .SetManifest(
-              base::DictValue()
+              base::Value::Dict()
                   .Set("name", "Test extension")
                   .Set("version", version)
                   .Set("manifest_version", 2)
-                  .Set("background", base::DictValue()
+                  .Set("background", base::Value::Dict()
                                          .Set("page", "background.html")
                                          .Set("persistent", persistent)))
           .SetID(extension_id)

@@ -10,7 +10,6 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "base/compiler_specific.h"
@@ -87,7 +86,7 @@ struct MockTransaction {
   const char* response_headers;
   // If |response_time| is unspecified, the current time will be used.
   base::Time response_time;
-  std::string_view data;
+  const char* data;
   // Any aliases for the requested URL, as read from DNS records. Includes all
   // known aliases, e.g. from A, AAAA, or HTTPS, not just from the address used
   // for the connection, in no particular order.
@@ -106,7 +105,6 @@ struct MockTransaction {
   // Value returned by MockNetworkTransaction::Read (potentially
   // asynchronously if |!(test_mode & TEST_MODE_SYNC_NET_START)|.)
   Error read_return_code;
-  bool is_shared_resource = false;
 };
 
 extern const MockTransaction kSimpleGET_Transaction;
@@ -252,6 +250,7 @@ class MockNetworkTransaction final : public HttpTransaction {
   ConnectionAttempts GetConnectionAttempts() const override;
 
   void CloseConnectionOnDestruction() override;
+  bool IsMdlMatchForMetrics() const override;
 
   CreateHelper* websocket_handshake_stream_create_helper() {
     return websocket_handshake_stream_create_helper_;
@@ -316,7 +315,7 @@ class MockNetworkTransaction final : public HttpTransaction {
   CompletionOnceCallback callback_;
 
   HttpResponseInfo response_;
-  std::vector<uint8_t> data_;
+  std::string data_;
   int64_t data_cursor_ = 0;
   int64_t content_length_ = 0;
   int test_mode_;
@@ -382,8 +381,8 @@ class MockNetworkLayer final : public HttpTransactionFactory {
   }
 
   // HttpTransactionFactory:
-  std::unique_ptr<HttpTransaction> CreateTransaction(
-      RequestPriority priority) override;
+  int CreateTransaction(RequestPriority priority,
+                        std::unique_ptr<HttpTransaction>* trans) override;
   HttpCache* GetCache() override;
   HttpNetworkSession* GetSession() override;
 

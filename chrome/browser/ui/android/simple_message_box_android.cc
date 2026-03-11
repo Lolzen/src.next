@@ -7,34 +7,25 @@
 #include <utility>
 
 #include "base/functional/callback.h"
-#include "base/notimplemented.h"
+#include "base/notreached.h"
 
 namespace chrome {
 
-void ShowWarningMessageBoxAsync(
-    gfx::NativeWindow parent,
-    const std::u16string& title,
-    const std::u16string& message,
-    base::OnceCallback<void(MessageBoxResult)> callback) {
-  NOTIMPLEMENTED();
-  std::move(callback).Run(MESSAGE_BOX_RESULT_NO);
-}
-
-MessageBoxResult ShowWarningMessageBoxSync(gfx::NativeWindow parent,
-                                           const std::u16string& title,
-                                           const std::u16string& message) {
+MessageBoxResult ShowWarningMessageBox(gfx::NativeWindow parent,
+                                       const std::u16string& title,
+                                       const std::u16string& message) {
   NOTIMPLEMENTED();
   return MESSAGE_BOX_RESULT_NO;
 }
 
-MessageBoxResult ShowQuestionMessageBoxSync(gfx::NativeWindow parent,
-                                            const std::u16string& title,
-                                            const std::u16string& message) {
+MessageBoxResult ShowQuestionMessageBox(gfx::NativeWindow parent,
+                                        const std::u16string& title,
+                                        const std::u16string& message) {
   NOTIMPLEMENTED();
   return MESSAGE_BOX_RESULT_NO;
 }
 
-void ShowWarningMessageBoxWithCheckboxAsync(
+void ShowWarningMessageBoxWithCheckbox(
     gfx::NativeWindow parent,
     const std::u16string& title,
     const std::u16string& message,

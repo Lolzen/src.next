@@ -6,10 +6,8 @@
 #define NET_BASE_DIRECTORY_LISTING_H_
 
 #include <stdint.h>
-
 #include <string>
 
-#include "base/byte_count.h"
 #include "net/base/net_export.h"
 
 namespace base {
@@ -37,13 +35,10 @@ NET_EXPORT std::string GetDirectoryListingHeader(const std::u16string& title);
 NET_EXPORT std::string GetDirectoryListingEntry(const std::u16string& name,
                                                 const std::string& raw_bytes,
                                                 bool is_dir,
-                                                base::ByteCount size,
+                                                int64_t size,
                                                 base::Time modified);
 
 NET_EXPORT std::string GetParentDirectoryLink();
-
-// Given a byte count, returns the size string used for listings.
-NET_EXPORT std::string GetSizeStringForTesting(base::ByteCount size);
 
 }  // namespace net
 

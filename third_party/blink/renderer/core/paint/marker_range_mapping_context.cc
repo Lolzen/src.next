@@ -10,22 +10,22 @@
 namespace blink {
 
 MarkerRangeMappingContext::DOMToTextContentOffsetMapper::
-    DOMToTextContentOffsetMapper(const LayoutObject& layout_object) {
-  units_ = GetMappingUnits(layout_object);
+    DOMToTextContentOffsetMapper(const Text& text_node) {
+  units_ = GetMappingUnits(text_node.GetLayoutObject());
   units_begin_ = units_.begin();
   DCHECK(units_.size());
 }
 
 base::span<const OffsetMappingUnit>
 MarkerRangeMappingContext::DOMToTextContentOffsetMapper::GetMappingUnits(
-    const LayoutObject& layout_object) {
+    const LayoutObject* layout_object) {
   const OffsetMapping* const offset_mapping =
-      OffsetMapping::GetFor(&layout_object);
+      OffsetMapping::GetFor(layout_object);
   DCHECK(offset_mapping);
-  if (RuntimeEnabledFeatures::HighlightByLayoutObjectEnabled()) {
-    return offset_mapping->GetMappingUnitsForLayoutObject(layout_object);
+  if (RuntimeEnabledFeatures::PaintHighlightsForFirstLetterEnabled()) {
+    return offset_mapping->GetMappingUnitsForNode(*layout_object->GetNode());
   } else {
-    return offset_mapping->GetMappingUnitsForNode(*layout_object.GetNode());
+    return offset_mapping->GetMappingUnitsForLayoutObject(*layout_object);
   }
 }
 

@@ -4,8 +4,6 @@
 
 #include "third_party/blink/renderer/core/css/font_face_set_worker.h"
 
-#include <optional>
-
 #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
@@ -85,14 +83,10 @@ const Font* FontFaceSetWorker::ResolveFontStyle(const String& font_string) {
   default_font_description.SetSpecifiedSize(FontFaceSet::kDefaultFontSize);
   default_font_description.SetComputedSize(FontFaceSet::kDefaultFontSize);
 
-  std::optional<FontDescription> maybe_description =
-      FontStyleResolver::ComputeFont(*parsed_style,
-                                     GetWorker()->GetFontSelector());
-  if (!maybe_description.has_value()) {
-    return nullptr;
-  }
+  FontDescription description = FontStyleResolver::ComputeFont(
+      *parsed_style, GetWorker()->GetFontSelector());
 
-  return MakeGarbageCollected<Font>(maybe_description.value(),
+  return MakeGarbageCollected<Font>(description,
                                     GetWorker()->GetFontSelector());
 }
 

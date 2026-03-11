@@ -13,6 +13,7 @@
 #include "content/public/browser/media_capture_devices.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "third_party/blink/public/mojom/mediastream/media_stream.mojom-shared.h"
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom.h"
 
 using blink::MediaStreamDevice;

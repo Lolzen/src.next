@@ -127,12 +127,17 @@ this text can be found by Ctrl + F because it isn't hidden. -->
         </cr-tooltip-icon>
         <cr-toggle id="enableToggle"
             aria-label="${this.getEnableToggleAriaLabel_()}"
-            aria-describedby="name"
+            aria-describedby="name enable-toggle-tooltip"
             ?checked="${this.isEnabled_()}"
             @change="${this.onEnableToggleChange_}"
             ?disabled="${!this.isEnableToggleEnabled_()}"
             ?hidden="${!this.showEnableToggle_()}">
         </cr-toggle>
+        <cr-tooltip id="enable-toggle-tooltip" for="enableToggle"
+            position="left" aria-hidden="true" animation-delay="0"
+            fit-to-visible-bounds>
+          ${this.getEnableToggleTooltipText_()}
+        </cr-tooltip>
       </div>
     </div>
     ${this.hasSevereWarnings_() ? html`

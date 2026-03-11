@@ -7,7 +7,6 @@
 #include <stddef.h>
 
 #include <memory>
-#include <string>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -21,9 +20,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/browser_features.h"
 #include "chrome/browser/extensions/extension_install_error_menu_item_id_provider.h"
 #include "chrome/browser/extensions/extension_install_prompt_show_params.h"
 #include "chrome/browser/extensions/extension_management.h"
@@ -44,7 +41,6 @@
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/browser/pref_names.h"
 #include "extensions/browser/uninstall_reason.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -52,7 +48,7 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
-#include "ui/gfx/native_ui_types.h"
+#include "ui/gfx/native_widget_types.h"
 
 namespace extensions {
 
@@ -307,23 +303,6 @@ ExternalInstallErrorDesktop::ExternalInstallErrorDesktop(
       ExtensionInstallPrompt::EXTERNAL_INSTALL_PROMPT);
 
   const Extension* extension = GetExtension();
-
-  if (base::FeatureList::IsEnabled(features::kInitialExternalExtensions) &&
-      extension &&
-      extension->location() == mojom::ManifestLocation::kExternalPrefDownload) {
-    Profile* profile = Profile::FromBrowserContext(browser_context_);
-
-    PrefService* prefs = profile->GetPrefs();
-
-    const base::ListValue& initial_list =
-        prefs->GetList(pref_names::kInitialInstallList);
-
-    if (initial_list.contains(extension_id_)) {
-      prompt_->SetInitialExtensionsProviderName(base::UTF8ToUTF16(
-          prefs->GetString(pref_names::kInitialInstallProviderName)));
-    }
-  }
-
   ExtensionManagement* extension_management =
       ExtensionManagementFactory::GetForBrowserContext(browser_context_);
 

@@ -8,10 +8,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
-#include "extensions/buildflags/buildflags.h"
 #include "url/gurl.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using ExtensionIconSourceTest = extensions::ExtensionApiTest;
 
@@ -22,17 +19,15 @@ IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, IconsLoaded) {
 
   // Test that the icons are loaded and that the chrome://extension-icon
   // parameters work correctly.
-  auto* web_contents = GetActiveWebContents();
   ASSERT_TRUE(NavigateToURL(
-      web_contents,
       GURL("chrome-extension://gbmgkahjioeacddebbnengilkgbkhodg/index.html")));
+  auto* web_contents = GetActiveWebContents();
   ASSERT_TRUE(content::WaitForLoadStop(web_contents));
   EXPECT_EQ(content::EvalJs(web_contents, "document.title"), "Loaded");
 
   // Verify that the an extension can't load chrome://extension-icon icons
   // without the management permission.
   ASSERT_TRUE(NavigateToURL(
-      web_contents,
       GURL("chrome-extension://apocjbpjpkghdepdngjlknfpmabcmlao/index.html")));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents));
   EXPECT_EQ(content::EvalJs(web_contents, "document.title"), "Not Loaded");
@@ -40,9 +35,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, IconsLoaded) {
 
 IN_PROC_BROWSER_TEST_F(ExtensionIconSourceTest, InvalidURL) {
   // Test that navigation to an invalid url works.
+  ASSERT_TRUE(NavigateToURL(GURL("chrome://extension-icon/invalid")));
   auto* web_contents = GetActiveWebContents();
-  ASSERT_TRUE(
-      NavigateToURL(web_contents, GURL("chrome://extension-icon/invalid")));
   ASSERT_TRUE(content::WaitForLoadStop(web_contents));
 
   EXPECT_EQ(content::EvalJs(web_contents, "document.title"),

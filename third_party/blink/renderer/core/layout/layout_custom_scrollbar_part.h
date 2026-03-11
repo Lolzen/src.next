@@ -72,8 +72,10 @@ class CORE_EXPORT LayoutCustomScrollbarPart final : public LayoutReplaced {
 
   // Update the overridden size.
   void SetOverriddenSize(const PhysicalSize& size);
+  // This should not be called.
+  DeprecatedLayoutPoint LocationInternal() const override;
   // Rerturn the overridden size set by SetOverriddenSize();
-  PhysicalSize StitchedSize() const override;
+  PhysicalSize Size() const override;
 
   LayoutUnit MarginTop() const override;
   LayoutUnit MarginBottom() const override;
@@ -95,18 +97,8 @@ class CORE_EXPORT LayoutCustomScrollbarPart final : public LayoutReplaced {
                             bool suppress_use_counters);
 
  private:
-  bool ShouldBeHandledAsInline(const ComputedStyle&) const override {
-    NOT_DESTROYED();
-    return false;
-  }
-  bool ShouldBeHandledAsFloating(const ComputedStyle&) const override {
-    NOT_DESTROYED();
-    return false;
-  }
   void UpdateFromStyle() override;
-  void StyleDidChange(StyleDifference,
-                      const ComputedStyle* old_style,
-                      const StyleChangeContext&) override;
+  void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
   void ImageChanged(WrappedImagePtr, CanDeferInvalidation) override;
 
   // A scrollbar part's PhysicalLocation() is relative to the scrollbar
@@ -145,14 +137,9 @@ class CORE_EXPORT LayoutCustomScrollbarPart final : public LayoutReplaced {
 
   PhysicalNaturalSizingInfo GetNaturalDimensions() const override;
 
-  enum class ScrollbarSizeComputeMode { kThickness, kLength };
-  int ComputeSize(const Length& length,
-                  int container_size,
-                  ScrollbarSizeComputeMode compute_mode) const;
-  int ComputeWidth(int container_width,
-                   ScrollbarSizeComputeMode compute_mode) const;
-  int ComputeHeight(int container_height,
-                    ScrollbarSizeComputeMode compute_mode) const;
+  int ComputeSize(const Length& length, int container_size) const;
+  int ComputeWidth(int container_width) const;
+  int ComputeHeight(int container_height) const;
 
   Member<ScrollableArea> scrollable_area_;
   Member<CustomScrollbar> scrollbar_;

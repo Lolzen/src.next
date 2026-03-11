@@ -131,7 +131,10 @@ FilterEffectBuilder::FilterEffectBuilder(const gfx::RectF& reference_box,
                                          const cc::PaintFlags* fill_flags,
                                          const cc::PaintFlags* stroke_flags)
     : reference_box_(reference_box),
-      viewport_(viewport),
+      viewport_(
+          RuntimeEnabledFeatures::SvgFilterUserSpaceViewportForNonSvgEnabled()
+              ? viewport
+              : std::nullopt),
       zoom_(zoom),
       shorthand_scale_(1),
       current_color_(current_color),
@@ -293,11 +296,9 @@ FilterEffect* FilterEffectBuilder::BuildFilterEffect(
             To<DropShadowFilterOperation>(*filter_operation).Shadow();
         const gfx::Vector2dF offset =
             gfx::ScaleVector2d(shadow.Offset(), shorthand_scale_);
-        // The blur values are stored in sigma form.
-        gfx::SizeF blur =
-            gfx::ScaleSize(shadow.BlurValueXY(), shorthand_scale_);
+        gfx::PointF blur = gfx::ScalePoint(shadow.BlurXY(), shorthand_scale_);
         effect = MakeGarbageCollected<FEDropShadow>(
-            parent_filter, blur.width(), blur.height(), offset.x(), offset.y(),
+            parent_filter, blur.x(), blur.y(), offset.x(), offset.y(),
             shadow.GetColor().Resolve(current_color_, color_scheme_),
             shadow.Opacity());
         if (shadow.GetColor().IsCurrentColor()) {
@@ -395,9 +396,6 @@ CompositorFilterOperations FilterEffectBuilder::BuildFilterOperations(
           if (!paint_filter)
             continue;
           filters.AppendReferenceFilter(std::move(paint_filter));
-          if (filter_effect->OriginTainted()) {
-            filters.SetOriginTainted();
-          }
         }
         reference_operation.SetFilter(reference_filter);
         break;
@@ -471,8 +469,7 @@ CompositorFilterOperations FilterEffectBuilder::BuildFilterOperations(
         const ShadowData& shadow = To<DropShadowFilterOperation>(*op).Shadow();
         const gfx::Vector2d floored_offset = gfx::ToFlooredVector2d(
             gfx::ScaleVector2d(shadow.Offset(), shorthand_scale_));
-        // The blur value is stored in sigma form.
-        float radius = shadow.BlurValue() * shorthand_scale_;
+        float radius = shadow.Blur() * shorthand_scale_;
         filters.AppendDropShadowFilter(
             floored_offset, radius,
             shadow.GetColor().Resolve(current_color_, color_scheme_));
@@ -540,7 +537,12 @@ Filter* FilterEffectBuilder::BuildReferenceFilter(
   // primitives since the behavior in these two cases (no primitives, empty
   // region) should match.
   if (filter_region.IsEmpty()) {
-    return result;
+    // TODO(fs): We rely on the presence of a node map here to opt-in to the
+    // check for an empty filter region. The reason for this is that we lack a
+    // viewport to resolve against for HTML content. This is crbug.com/512453.
+    if (viewport_ || node_map) {
+      return result;
+    }
   }
 
   if (!previous_effect)

@@ -4,7 +4,6 @@
 
 #include "third_party/blink/renderer/core/css/font_face_set.h"
 
-#include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_font_face_set_load_status.h"
 #include "third_party/blink/renderer/core/css/font_face_cache.h"
@@ -30,8 +29,8 @@ void FontFaceSet::HandlePendingEventsAndPromisesSoon() {
       pending_task_queued_ = true;
       context->GetTaskRunner(TaskType::kFontLoading)
           ->PostTask(FROM_HERE,
-                     BindOnce(&FontFaceSet::HandlePendingEventsAndPromises,
-                              WrapPersistent(this)));
+                     WTF::BindOnce(&FontFaceSet::HandlePendingEventsAndPromises,
+                                   WrapPersistent(this)));
     }
   }
 }
@@ -204,7 +203,7 @@ ScriptPromise<IDLSequence<FontFace>> FontFaceSet::load(
         script_state,
         MakeGarbageCollected<DOMException>(
             DOMExceptionCode::kSyntaxError,
-            StrCat({"Could not resolve '", font_string, "' as a font."})));
+            WTF::StrCat({"Could not resolve '", font_string, "' as a font."})));
   }
 
   FontFaceCache* font_face_cache = GetFontSelector()->GetFontFaceCache();
@@ -240,7 +239,7 @@ bool FontFaceSet::check(const String& font_string,
   if (!font) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
-        StrCat({"Could not resolve '", font_string, "' as a font."}));
+        WTF::StrCat({"Could not resolve '", font_string, "' as a font."}));
     return false;
   }
 
@@ -324,7 +323,8 @@ void FontFaceSet::LoadFontPromiseResolver::Trace(Visitor* visitor) const {
 }
 
 bool FontFaceSet::IterationSource::FetchNextItem(ScriptState*,
-                                                 FontFace*& value) {
+                                                 FontFace*& value,
+                                                 ExceptionState&) {
   if (font_faces_.size() <= index_) {
     return false;
   }
@@ -333,7 +333,8 @@ bool FontFaceSet::IterationSource::FetchNextItem(ScriptState*,
 }
 
 FontFaceSetIterable::IterationSource* FontFaceSet::CreateIterationSource(
-    ScriptState*) {
+    ScriptState*,
+    ExceptionState&) {
   // Setlike should iterate each item in insertion order, and items should
   // be keep on up to date. But since blink does not have a way to hook up CSS
   // modification, take a snapshot here, and make it ordered as follows.

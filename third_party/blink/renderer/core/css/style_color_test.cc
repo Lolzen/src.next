@@ -7,10 +7,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/css/css_identifier_value.h"
 #include "third_party/blink/renderer/core/css/css_math_function_value.h"
-#include "third_party/blink/renderer/core/css/css_numeric_literal_value.h"
-#include "third_party/blink/renderer/core/css/css_to_length_conversion_data.h"
-#include "third_party/blink/renderer/core/dom/document.h"
-#include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/geometry/calculation_value.h"
 
 namespace blink {
@@ -29,12 +25,7 @@ CSSValue* CreateCalcAddValue(CSSValueID value_a, CSSValueID value_b) {
 
 }  // namespace
 
-class StyleColorTest : public PageTestBase {
- private:
-  void SetUp() override { PageTestBase::SetUp(gfx::Size()); }
-};
-
-TEST_F(StyleColorTest, ConstructionAndIsCurrentColor) {
+TEST(StyleColorTest, ConstructionAndIsCurrentColor) {
   StyleColor default_value;
   EXPECT_TRUE(default_value.IsCurrentColor());
 
@@ -51,7 +42,7 @@ TEST_F(StyleColorTest, ConstructionAndIsCurrentColor) {
   EXPECT_FALSE(unresolved_mix.IsCurrentColor());
 }
 
-TEST_F(StyleColorTest, Equality) {
+TEST(StyleColorTest, Equality) {
   StyleColor currentcolor_1;
   StyleColor currentcolor_2(CSSValueID::kCurrentcolor);
   EXPECT_EQ(currentcolor_1, currentcolor_2);
@@ -80,23 +71,12 @@ TEST_F(StyleColorTest, Equality) {
           currentcolor_1, red_rgb_1, 0.5, 1.0));
   CSSIdentifierValue* r = CSSIdentifierValue::Create(CSSValueID::kR);
   CSSIdentifierValue* b = CSSIdentifierValue::Create(CSSValueID::kB);
-  UpdateAllLifecyclePhasesForTest();
-  Element* element = GetDocument().documentElement();
-  CSSToLengthConversionData::Flags ignored_flags = 0;
-  CSSToLengthConversionData length_resolver(
-      element->ComputedStyleRef(), element->GetComputedStyle(),
-      element->GetComputedStyle(),
-      CSSToLengthConversionData::ViewportSize(GetDocument().GetLayoutView()),
-      CSSToLengthConversionData::ContainerSizes(element),
-      CSSToLengthConversionData::AnchorData(), 1., ignored_flags, element);
   StyleColor unresolved_relative_1(
       MakeGarbageCollected<StyleColor::UnresolvedRelativeColor>(
-          currentcolor_1, Color::ColorSpace::kSRGB, *r, *r, *r, nullptr,
-          length_resolver));
+          currentcolor_1, Color::ColorSpace::kSRGB, *r, *r, *r, nullptr));
   StyleColor unresolved_relative_2(
       MakeGarbageCollected<StyleColor::UnresolvedRelativeColor>(
-          currentcolor_1, Color::ColorSpace::kSRGB, *b, *b, *b, nullptr,
-          length_resolver));
+          currentcolor_1, Color::ColorSpace::kSRGB, *b, *b, *b, nullptr));
   EXPECT_NE(unresolved_mix_1, unresolved_mix_2);
   EXPECT_NE(unresolved_mix_1, unresolved_relative_1);
   EXPECT_NE(unresolved_relative_1, unresolved_relative_2);
@@ -106,7 +86,7 @@ TEST_F(StyleColorTest, Equality) {
   EXPECT_NE(rgba_transparent, unresolved_mix_1);
 }
 
-TEST_F(StyleColorTest, UnresolvedColorMix_Equality) {
+TEST(StyleColorTest, UnresolvedColorMix_Equality) {
   StyleColor currentcolor;
   StyleColor red_rgb(Color(255, 0, 0));
   StyleColor blue_rgb(Color(0, 0, 255));
@@ -152,7 +132,7 @@ TEST_F(StyleColorTest, UnresolvedColorMix_Equality) {
   EXPECT_NE(*mix_1, *mix_8);
 }
 
-TEST_F(StyleColorTest, UnresolvedRelativeColor_Equality) {
+TEST(StyleColorTest, UnresolvedRelativeColor_Equality) {
   StyleColor currentcolor;
   StyleColor mix(MakeGarbageCollected<StyleColor::UnresolvedColorMix>(
       Color::ColorSpace::kSRGB, Color::HueInterpolationMethod::kShorter,
@@ -167,70 +147,59 @@ TEST_F(StyleColorTest, UnresolvedRelativeColor_Equality) {
   CSSValue* calc_1 = CreateCalcAddValue(CSSValueID::kR, CSSValueID::kG);
   CSSValue* calc_2 = CreateCalcAddValue(CSSValueID::kG, CSSValueID::kB);
 
-  UpdateAllLifecyclePhasesForTest();
-  Element* element = GetDocument().documentElement();
-  CSSToLengthConversionData::Flags ignored_flags = 0;
-  CSSToLengthConversionData length_resolver(
-      element->ComputedStyleRef(), element->GetComputedStyle(),
-      element->GetComputedStyle(),
-      CSSToLengthConversionData::ViewportSize(GetDocument().GetLayoutView()),
-      CSSToLengthConversionData::ContainerSizes(element),
-      CSSToLengthConversionData::AnchorData(), 1., ignored_flags, element);
   using UnresolvedRelativeColor = StyleColor::UnresolvedRelativeColor;
   UnresolvedRelativeColor* relative_1 =
       MakeGarbageCollected<UnresolvedRelativeColor>(
-          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc_1, nullptr,
-          length_resolver);
+          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc_1,
+          nullptr);
   UnresolvedRelativeColor* relative_2 =
       MakeGarbageCollected<UnresolvedRelativeColor>(
-          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc_1, nullptr,
-          length_resolver);
+          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc_1,
+          nullptr);
   EXPECT_EQ(*relative_1, *relative_2);
 
   UnresolvedRelativeColor* relative_3 =
       MakeGarbageCollected<UnresolvedRelativeColor>(
-          mix, Color::ColorSpace::kSRGB, *r, *number, *calc_1, nullptr,
-          length_resolver);
+          mix, Color::ColorSpace::kSRGB, *r, *number, *calc_1, nullptr);
   EXPECT_NE(*relative_1, *relative_3);
 
   UnresolvedRelativeColor* relative_4 =
       MakeGarbageCollected<UnresolvedRelativeColor>(
-          currentcolor, Color::ColorSpace::kHSL, *r, *number, *calc_1, nullptr,
-          length_resolver);
+          currentcolor, Color::ColorSpace::kHSL, *r, *number, *calc_1, nullptr);
   EXPECT_NE(*relative_1, *relative_4);
 
   UnresolvedRelativeColor* relative_5 =
       MakeGarbageCollected<UnresolvedRelativeColor>(
           currentcolor, Color::ColorSpace::kSRGB, *none, *number, *calc_1,
-          nullptr, length_resolver);
+          nullptr);
   EXPECT_NE(*relative_1, *relative_5);
 
   UnresolvedRelativeColor* relative_6 =
       MakeGarbageCollected<UnresolvedRelativeColor>(
           currentcolor, Color::ColorSpace::kSRGB, *r, *percent, *calc_1,
-          nullptr, length_resolver);
+          nullptr);
   EXPECT_NE(*relative_1, *relative_6);
 
   UnresolvedRelativeColor* relative_7 =
       MakeGarbageCollected<UnresolvedRelativeColor>(
-          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc_2, nullptr,
-          length_resolver);
+          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc_2,
+          nullptr);
   EXPECT_NE(*relative_1, *relative_7);
 
   UnresolvedRelativeColor* relative_8 =
       MakeGarbageCollected<UnresolvedRelativeColor>(
-          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc_1, percent,
-          length_resolver);
+          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc_1,
+          percent);
   EXPECT_NE(*relative_1, *relative_8);
 
   UnresolvedRelativeColor* relative_9 =
       MakeGarbageCollected<UnresolvedRelativeColor>(
-          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc_1, percent,
-          length_resolver);
+          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc_1,
+          percent);
   EXPECT_EQ(*relative_8, *relative_9);
 }
 
-TEST_F(StyleColorTest, UnresolvedColorMix_ToCSSValue) {
+TEST(StyleColorTest, UnresolvedColorMix_ToCSSValue) {
   StyleColor currentcolor;
   StyleColor::UnresolvedColorMix* mix =
       MakeGarbageCollected<StyleColor::UnresolvedColorMix>(
@@ -243,7 +212,7 @@ TEST_F(StyleColorTest, UnresolvedColorMix_ToCSSValue) {
             "color-mix(in srgb, currentcolor 75%, rgb(255, 0, 0))");
 }
 
-TEST_F(StyleColorTest, UnresolvedRelativeColor_ToCSSValue) {
+TEST(StyleColorTest, UnresolvedRelativeColor_ToCSSValue) {
   StyleColor currentcolor;
 
   CSSValue* r = CSSIdentifierValue::Create(CSSValueID::kR);
@@ -254,20 +223,10 @@ TEST_F(StyleColorTest, UnresolvedRelativeColor_ToCSSValue) {
       25, CSSPrimitiveValue::UnitType::kPercentage);
   CSSValue* calc = CreateCalcAddValue(CSSValueID::kR, CSSValueID::kG);
 
-  UpdateAllLifecyclePhasesForTest();
-  Element* element = GetDocument().documentElement();
-  CSSToLengthConversionData::Flags ignored_flags = 0;
-  CSSToLengthConversionData length_resolver(
-      element->ComputedStyleRef(), element->GetComputedStyle(),
-      element->GetComputedStyle(),
-      CSSToLengthConversionData::ViewportSize(GetDocument().GetLayoutView()),
-      CSSToLengthConversionData::ContainerSizes(element),
-      CSSToLengthConversionData::AnchorData(), 1., ignored_flags, element);
   using UnresolvedRelativeColor = StyleColor::UnresolvedRelativeColor;
   UnresolvedRelativeColor* relative_1 =
       MakeGarbageCollected<UnresolvedRelativeColor>(
-          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc, nullptr,
-          length_resolver);
+          currentcolor, Color::ColorSpace::kSRGB, *r, *number, *calc, nullptr);
   CSSValue* value_1 = relative_1->ToCSSValue();
   EXPECT_TRUE(value_1->IsRelativeColorValue());
   EXPECT_EQ(value_1->CssText(),
@@ -276,35 +235,25 @@ TEST_F(StyleColorTest, UnresolvedRelativeColor_ToCSSValue) {
   using UnresolvedRelativeColor = StyleColor::UnresolvedRelativeColor;
   UnresolvedRelativeColor* relative_2 =
       MakeGarbageCollected<UnresolvedRelativeColor>(
-          currentcolor, Color::ColorSpace::kSRGB, *r, *percent, *none, nullptr,
-          length_resolver);
+          currentcolor, Color::ColorSpace::kSRGB, *r, *percent, *none, nullptr);
   CSSValue* value_2 = relative_2->ToCSSValue();
   EXPECT_TRUE(value_2->IsRelativeColorValue());
   EXPECT_EQ(value_2->CssText(), "color(from currentcolor srgb r 25% none)");
 }
 
-TEST_F(StyleColorTest, UnresolvedRelativeColor_Resolve) {
+TEST(StyleColorTest, UnresolvedRelativeColor_Resolve) {
   StyleColor currentcolor;
   Color rebeccapurple(102, 51, 153);
 
   // Note: This test compares serializations to allow tolerance for
   // floating-point rounding error.
 
-  UpdateAllLifecyclePhasesForTest();
-  Element* element = GetDocument().documentElement();
-  CSSToLengthConversionData::Flags ignored_flags = 0;
-  CSSToLengthConversionData length_resolver(
-      element->ComputedStyleRef(), element->GetComputedStyle(),
-      element->GetComputedStyle(),
-      CSSToLengthConversionData::ViewportSize(GetDocument().GetLayoutView()),
-      CSSToLengthConversionData::ContainerSizes(element),
-      CSSToLengthConversionData::AnchorData(), 1., ignored_flags, element);
   using UnresolvedRelativeColor = StyleColor::UnresolvedRelativeColor;
   UnresolvedRelativeColor* rgb = MakeGarbageCollected<UnresolvedRelativeColor>(
       currentcolor, Color::ColorSpace::kSRGB,
       *CreateCalcAddValue(CSSValueID::kR, CSSValueID::kG),
       *CSSNumericLiteralValue::Create(0, CSSPrimitiveValue::UnitType::kNumber),
-      *CSSIdentifierValue::Create(CSSValueID::kNone), nullptr, length_resolver);
+      *CSSIdentifierValue::Create(CSSValueID::kNone), nullptr);
   EXPECT_EQ(
       rgb->Resolve(rebeccapurple).SerializeAsCSSColor(),
       Color::FromColorSpace(Color::ColorSpace::kSRGB, 0.6, 0, std::nullopt, 1.0)
@@ -316,7 +265,7 @@ TEST_F(StyleColorTest, UnresolvedRelativeColor_Resolve) {
       *CSSNumericLiteralValue::Create(20,
                                       CSSPrimitiveValue::UnitType::kPercentage),
       *CSSIdentifierValue::Create(CSSValueID::kL),
-      CSSIdentifierValue::Create(CSSValueID::kAlpha), length_resolver);
+      CSSIdentifierValue::Create(CSSValueID::kAlpha));
   EXPECT_EQ(hsl->Resolve(rebeccapurple).SerializeAsCSSColor(),
             Color::FromRGB(102, 82, 122).SerializeAsCSSColor());
   EXPECT_EQ(
@@ -331,7 +280,7 @@ TEST_F(StyleColorTest, UnresolvedRelativeColor_Resolve) {
       *CSSIdentifierValue::Create(CSSValueID::kL),
       *CSSIdentifierValue::Create(CSSValueID::kC),
       *CSSIdentifierValue::Create(CSSValueID::kH),
-      CSSIdentifierValue::Create(CSSValueID::kAlpha), length_resolver);
+      CSSIdentifierValue::Create(CSSValueID::kAlpha));
   EXPECT_EQ(lch->Resolve(Color::FromColorSpace(Color::ColorSpace::kLch, 200,
                                                300, 400, 5))
                 .SerializeAsCSSColor(),

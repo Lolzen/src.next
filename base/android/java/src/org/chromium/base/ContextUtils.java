@@ -30,8 +30,15 @@ public class ContextUtils {
     private static final String TAG = "ContextUtils";
     private static @Nullable Context sApplicationContext;
 
-    // Used to allow test classes to set the command-line before feature list is initialized.
-    public static @Nullable Runnable sDoFeatureListInitHookForTesting;
+    /**
+     * Flag for {@link Context#registerReceiver}: The receiver can receive broadcasts from other
+     * Apps. Has the same behavior as marking a statically registered receiver with "exported=true".
+     *
+     * <p>TODO(mthiesse): Move to ApiHelperForT when we build against T SDK.
+     */
+    public static final int RECEIVER_EXPORTED = 0x2;
+
+    public static final int RECEIVER_NOT_EXPORTED = 0x4;
 
     /** Initialization-on-demand holder. This exists for thread-safe lazy initialization. */
     private static class Holder {
@@ -58,19 +65,9 @@ public class ContextUtils {
     }
 
     /**
-     * A version of getApplicationContext which does not assert non-null.
-     *
-     * <p>Only use in extremely odd cases, for example you are unsure if our Application class has
-     * been instantiated.
-     */
-    public static @Nullable Context getApplicationContextUnsafe() {
-        return sApplicationContext;
-    }
-
-    /**
      * Initializes the java application context.
      *
-     * <p>This should be called exactly once early on during startup, before native is loaded and
+     * This should be called exactly once early on during startup, before native is loaded and
      * before any other clients make use of the application context through this class.
      *
      * @param appContext The application context.
@@ -240,19 +237,14 @@ public class ContextUtils {
     /**
      * Register a broadcast receiver that may accept broadcasts from any UID.
      *
-     * <p>You should (only) use exported receivers when:
-     *
+     * You should (only) use exported receivers when:
+     * <p><ul>
+     * <li>You need to receive unprotected broadcasts from other applications.
+     * <li>Using unprotected sticky broadcasts - either from this application or another.
+     * </ul><p>
+     * Broadcasts received by exported receivers are untrustworthy and must be treated with caution.
      * <p>
-     *
-     * <ul>
-     *   <li>You need to receive unprotected broadcasts from other applications.
-     *   <li>Using unprotected sticky broadcasts - either from this application or another.
-     * </ul>
-     *
-     * <p>Broadcasts received by exported receivers are untrustworthy and must be treated with
-     * caution.
-     *
-     * <p>You can unregister receivers using the normal {@link Context#unregisterReceiver} method.
+     * You can unregister receivers using the normal {@link Context#unregisterReceiver} method.
      */
     public static @Nullable Intent registerExportedBroadcastReceiver(
             Context context,
@@ -260,12 +252,7 @@ public class ContextUtils {
             IntentFilter filter,
             @Nullable String permission) {
         return registerBroadcastReceiver(
-                context,
-                receiver,
-                filter,
-                permission,
-                /* scheduler= */ null,
-                Context.RECEIVER_EXPORTED);
+                context, receiver, filter, permission, /* scheduler= */ null, RECEIVER_EXPORTED);
     }
 
     /**
@@ -308,7 +295,7 @@ public class ContextUtils {
                 filter,
                 /* permission= */ null,
                 /* scheduler= */ null,
-                Context.RECEIVER_NOT_EXPORTED);
+                RECEIVER_NOT_EXPORTED);
     }
 
     public static @Nullable Intent registerNonExportedBroadcastReceiver(
@@ -322,7 +309,7 @@ public class ContextUtils {
                 filter,
                 /* permission= */ null,
                 scheduler,
-                Context.RECEIVER_NOT_EXPORTED);
+                RECEIVER_NOT_EXPORTED);
     }
 
     private static @Nullable Intent registerBroadcastReceiver(

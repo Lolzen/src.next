@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "base/file_version_info_win.h"
 
 #include <windows.h>
@@ -10,8 +15,6 @@
 
 #include <memory>
 
-#include "base/compiler_specific.h"
-#include "base/containers/span.h"
 #include "base/file_version_info.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
@@ -84,7 +87,7 @@ TYPED_TEST(FileVersionInfoTest, HardCodedProperties) {
   const base::FilePath::CharType kDLLName[] =
       FILE_PATH_LITERAL("FileVersionInfoTest1.dll");
 
-  static constexpr std::wstring_view kExpectedValues[15] = {
+  const wchar_t* const kExpectedValues[15] = {
       // FileVersionInfoTest.dll
       L"Goooooogle",                      // company_name
       L"Google",                          // company_short_name
@@ -98,8 +101,6 @@ TYPED_TEST(FileVersionInfoTest, HardCodedProperties) {
       L"1.2.3.4",                         // file_version
   };
 
-  auto expected_span = base::span(kExpectedValues);
-
   FilePath dll_path = GetTestDataPath();
   dll_path = dll_path.Append(kDLLName);
 
@@ -108,25 +109,25 @@ TYPED_TEST(FileVersionInfoTest, HardCodedProperties) {
   ASSERT_TRUE(version_info);
 
   int j = 0;
-  EXPECT_EQ(expected_span[j++],
+  EXPECT_EQ(kExpectedValues[j++],
             base::AsWStringView(version_info->company_name()));
-  EXPECT_EQ(expected_span[j++],
+  EXPECT_EQ(kExpectedValues[j++],
             base::AsWStringView(version_info->company_short_name()));
-  EXPECT_EQ(expected_span[j++],
+  EXPECT_EQ(kExpectedValues[j++],
             base::AsWStringView(version_info->product_name()));
-  EXPECT_EQ(expected_span[j++],
+  EXPECT_EQ(kExpectedValues[j++],
             base::AsWStringView(version_info->product_short_name()));
-  EXPECT_EQ(expected_span[j++],
+  EXPECT_EQ(kExpectedValues[j++],
             base::AsWStringView(version_info->internal_name()));
-  EXPECT_EQ(expected_span[j++],
+  EXPECT_EQ(kExpectedValues[j++],
             base::AsWStringView(version_info->product_version()));
-  EXPECT_EQ(expected_span[j++],
+  EXPECT_EQ(kExpectedValues[j++],
             base::AsWStringView(version_info->special_build()));
-  EXPECT_EQ(expected_span[j++],
+  EXPECT_EQ(kExpectedValues[j++],
             base::AsWStringView(version_info->original_filename()));
-  EXPECT_EQ(expected_span[j++],
+  EXPECT_EQ(kExpectedValues[j++],
             base::AsWStringView(version_info->file_description()));
-  EXPECT_EQ(expected_span[j++],
+  EXPECT_EQ(kExpectedValues[j++],
             base::AsWStringView(version_info->file_version()));
 }
 

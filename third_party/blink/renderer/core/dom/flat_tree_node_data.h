@@ -6,7 +6,6 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_FLAT_TREE_NODE_DATA_H_
 
 #include "base/dcheck_is_on.h"
-#include "third_party/blink/renderer/core/dom/element_rare_data_field.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 
@@ -14,8 +13,7 @@ namespace blink {
 
 class HTMLSlotElement;
 
-class FlatTreeNodeData final : public GarbageCollected<FlatTreeNodeData>,
-                               public ElementRareDataField {
+class FlatTreeNodeData final : public GarbageCollected<FlatTreeNodeData> {
  public:
   FlatTreeNodeData() {}
   FlatTreeNodeData(const FlatTreeNodeData&) = delete;
@@ -26,7 +24,7 @@ class FlatTreeNodeData final : public GarbageCollected<FlatTreeNodeData>,
     next_in_assigned_nodes_ = nullptr;
   }
 
-  void Trace(Visitor*) const override;
+  void Trace(Visitor*) const;
 
 #if DCHECK_IS_ON()
   bool IsCleared() const {

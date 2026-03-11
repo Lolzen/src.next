@@ -15,8 +15,6 @@
 #include "base/memory/raw_ref.h"
 #include "base/pickle.h"
 #include "base/strings/strcat.h"
-#include "base/strings/string_number_conversions.h"
-#include "base/strings/string_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/threading/platform_thread.h"
@@ -141,10 +139,10 @@ class NoVarySearchCacheTest : public ::testing::TestWithParam<bool> {
     return cache.size() == 1u;
   }
 
-  std::string GenerateCachePartitionKey(std::string_view url) {
+  std::string GenerateCacheKey(std::string_view url) {
     const auto request = TestRequest(GURL(url));
     std::optional<std::string> maybe_cache_key =
-        HttpCache::GenerateCachePartitionKeyForRequest(request);
+        HttpCache::GenerateCacheKeyForRequest(&request);
     EXPECT_TRUE(maybe_cache_key);
     return maybe_cache_key.value_or(std::string());
   }
@@ -198,6 +196,8 @@ TEST_P(NoVarySearchCacheTest, MoveConstruct) {
 
   // NOLINTNEXTLINE(bugprone-use-after-move)
   EXPECT_EQ(cache().size(), 0u);
+  // NOLINTNEXTLINE(bugprone-use-after-move)
+  EXPECT_TRUE(cache().IsTopLevelMapEmptyForTesting());
 }
 
 // An asan build will find leaks, but this test works on any build.
@@ -781,7 +781,7 @@ std::optional<NoVarySearchCache> TestPickleRoundTrip(
     const NoVarySearchCache& cache) {
   base::Pickle pickle;
   WriteToPickle(pickle, cache);
-  // The estimate of PickleSize should always be correct.
+  // The estimate of PickeSize should always be correct.
   EXPECT_EQ(EstimatePickleSize(cache), pickle.payload_size());
   auto maybe_cache = ReadValueFromPickle<NoVarySearchCache>(pickle);
   if (!maybe_cache) {
@@ -906,7 +906,6 @@ class ScopedMockJournal : public ScopedJournal {
   MOCK_METHOD(void,
               OnInsert,
               (const std::string&,
-               const std::string&,
                const HttpNoVarySearchData&,
                const std::optional<std::string>&,
                base::Time),
@@ -914,7 +913,6 @@ class ScopedMockJournal : public ScopedJournal {
   MOCK_METHOD(void,
               OnErase,
               (const std::string&,
-               const std::string&,
                const HttpNoVarySearchData&,
                const std::optional<std::string>&),
               (override));
@@ -929,7 +927,9 @@ TEST_P(NoVarySearchCacheTest, JournalNewInsert) {
 
   const base::Time now = base::Time::Now();
 
-  EXPECT_CALL(journal, OnInsert(_, "https://example.com/", IsKeyOrder,
+  // This assumes that cache keys end with the URL as-is, which is currently
+  // true with all partitioning schemes.
+  EXPECT_CALL(journal, OnInsert(EndsWith("https://example.com/"), IsKeyOrder,
                                 Optional(Eq("a=0")), Ge(now)));
 
   Insert("a=0", "key-order");
@@ -943,7 +943,7 @@ TEST_P(NoVarySearchCacheTest, JournalRefresh) {
 
   const base::Time now = base::Time::Now();
 
-  EXPECT_CALL(journal, OnInsert(_, "https://example.com/", IsKeyOrder,
+  EXPECT_CALL(journal, OnInsert(EndsWith("https://example.com/"), IsKeyOrder,
                                 Optional(Eq("a=1")), Ge(now)));
 
   Insert("a=1", "key-order");
@@ -959,7 +959,7 @@ TEST_P(NoVarySearchCacheTest, JournalReplacement) {
 
   const base::Time now = base::Time::Now();
 
-  EXPECT_CALL(journal, OnInsert(_, "https://example.com/", Eq(params_k),
+  EXPECT_CALL(journal, OnInsert(EndsWith("https://example.com/"), Eq(params_k),
                                 Optional(Eq("a=2&k=2")), Ge(now)));
   EXPECT_CALL(journal, OnErase).Times(0);
 
@@ -976,7 +976,7 @@ TEST_P(NoVarySearchCacheTest, JournalErase) {
 
   ScopedMockJournal journal(cache());
 
-  EXPECT_CALL(journal, OnErase(_, "https://example.com/", IsKeyOrder,
+  EXPECT_CALL(journal, OnErase(EndsWith("https://example.com/"), IsKeyOrder,
                                Optional(Eq("a=3"))));
 
   cache().Erase(std::move(erase_handle));
@@ -985,7 +985,7 @@ TEST_P(NoVarySearchCacheTest, JournalErase) {
 TEST_P(NoVarySearchCacheTest, DontJournalEviction) {
   ScopedMockJournal journal(cache());
 
-  EXPECT_CALL(journal, OnInsert(_, "https://example.com/", _, _, _))
+  EXPECT_CALL(journal, OnInsert(EndsWith("https://example.com/"), _, _, _))
       .Times(kMaxSize + 1);
 
   // Eviction does not result in a call to OnErase().
@@ -1035,21 +1035,18 @@ class CloningJournal : public ScopedJournal {
   CloningJournal(NoVarySearchCache& source, NoVarySearchCache& target)
       : ScopedJournal(source), target_(target) {}
 
-  void OnInsert(const std::string& partition_key,
-                const std::string& base_url,
+  void OnInsert(const std::string& base_url_cache_key,
                 const HttpNoVarySearchData& nvs_data,
                 const std::optional<std::string>& query,
                 base::Time update_time) override {
-    target_->ReplayInsert(partition_key, base_url, nvs_data, query,
-                          update_time);
+    target_->ReplayInsert(base_url_cache_key, nvs_data, query, update_time);
   }
 
   // Called when an entry is erased by the Erase() method.
-  void OnErase(const std::string& partition_key,
-               const std::string& base_url,
+  void OnErase(const std::string& base_url_cache_key,
                const HttpNoVarySearchData& nvs_data,
                const std::optional<std::string>& query) override {
-    target_->ReplayErase(partition_key, base_url, nvs_data, query);
+    target_->ReplayErase(base_url_cache_key, nvs_data, query);
   }
 
  private:
@@ -1180,103 +1177,68 @@ TEST_P(NoVarySearchCacheTest, ReplayInsertBadURLs) {
       {"Has ref", "https://example.example/#water"},
   });
   static constexpr std::string_view kRealURL = "https://example.example/test";
-  const std::string partition_key = GenerateCachePartitionKey(kRealURL);
-  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, false);
+  const std::string real_cache_key = GenerateCacheKey(kRealURL);
+  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, true);
   const std::optional<std::string> query = "t=1";
   const base::Time update_time;
   for (const auto& [description, bad_url] : kBadURLs) {
     SCOPED_TRACE(description);
-    cache().ReplayInsert(partition_key, std::string(bad_url), nvs_data, query,
-                         update_time);
+    std::string modified_cache_key = real_cache_key;
+    base::ReplaceFirstSubstringAfterOffset(&modified_cache_key, 0u, kRealURL,
+                                           bad_url);
+    cache().ReplayInsert(modified_cache_key, nvs_data, query, update_time);
     EXPECT_EQ(cache().size(), 0u);
   }
 }
 
 TEST_P(NoVarySearchCacheTest, ReplayInsertBadQuery) {
-  static constexpr std::string_view kUrl = "https://example.example/";
-  const std::string partition_key = GenerateCachePartitionKey(kUrl);
-  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, false);
+  const std::string cache_key = GenerateCacheKey("https://example.example/");
+  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, true);
   const base::Time update_time;
-  cache().ReplayInsert(partition_key, std::string(kUrl), nvs_data, "t=1#what",
-                       update_time);
-  EXPECT_EQ(cache().size(), 0u);
-}
-
-TEST_P(NoVarySearchCacheTest, ReplayEraseSuccess) {
-  static constexpr std::string_view kUrl = "https://example.example/";
-  const std::string partition_key = GenerateCachePartitionKey(kUrl);
-  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, false);
-  const std::optional<std::string> query = "t=1";
-  const base::Time update_time;
-  cache().ReplayInsert(partition_key, std::string(kUrl), nvs_data, query,
-                       update_time);
-
-  cache().ReplayErase(partition_key, std::string(kUrl), nvs_data, query);
+  cache().ReplayInsert(cache_key, nvs_data, "t=1#what", update_time);
   EXPECT_EQ(cache().size(), 0u);
 }
 
 TEST_P(NoVarySearchCacheTest, ReplayEraseOnEmptyCache) {
-  static constexpr std::string_view kUrl = "https://example.example/";
-  const std::string partition_key = GenerateCachePartitionKey(kUrl);
-  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, false);
-  cache().ReplayErase(partition_key, std::string(kUrl), nvs_data, "t=1");
+  const std::string cache_key = GenerateCacheKey("https://example.example/");
+  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, true);
+  cache().ReplayErase(cache_key, nvs_data, "t=1");
   EXPECT_EQ(cache().size(), 0u);
 }
 
-TEST_P(NoVarySearchCacheTest, ReplayEraseMismatchedPartition) {
-  static constexpr std::string_view kUrl = "https://example.example/";
-  const std::string partition_key = GenerateCachePartitionKey(kUrl);
-  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, false);
+TEST_P(NoVarySearchCacheTest, ReplayEraseMismatchedCacheKey) {
+  const std::string cache_key = GenerateCacheKey("https://example.example/");
+  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, true);
   const std::optional<std::string> query = "t=1";
   const base::Time update_time;
-  cache().ReplayInsert(partition_key, std::string(kUrl), nvs_data, query,
-                       update_time);
+  cache().ReplayInsert(cache_key, nvs_data, query, update_time);
 
-  cache().ReplayErase(partition_key + ".", std::string(kUrl), nvs_data, query);
-  EXPECT_EQ(cache().size(), 1u);
-}
-
-TEST_P(NoVarySearchCacheTest, ReplayEraseMismatchedBaseUrl) {
-  static constexpr std::string_view kUrl = "https://example.example/";
-  const std::string partition_key = GenerateCachePartitionKey(kUrl);
-  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, false);
-  const std::optional<std::string> query = "t=1";
-  const base::Time update_time;
-  cache().ReplayInsert(partition_key, std::string(kUrl), nvs_data, query,
-                       update_time);
-
-  cache().ReplayErase(partition_key, std::string(kUrl) + ".", nvs_data, query);
+  cache().ReplayErase(cache_key + ".", nvs_data, query);
   EXPECT_EQ(cache().size(), 1u);
 }
 
 TEST_P(NoVarySearchCacheTest, ReplayEraseMismatchedNVSData) {
-  static constexpr std::string_view kUrl = "https://example.example/";
-  const std::string partition_key = GenerateCachePartitionKey(kUrl);
-  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, false);
+  const std::string cache_key = GenerateCacheKey("https://example.example/");
+  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, true);
   const std::optional<std::string> query = "t=1";
   const base::Time update_time;
-  cache().ReplayInsert(partition_key, std::string(kUrl), nvs_data, query,
-                       update_time);
+  cache().ReplayInsert(cache_key, nvs_data, query, update_time);
 
   const auto mismatched_nvs_data =
       HttpNoVarySearchData::CreateFromNoVaryParams({"z"}, true);
-  cache().ReplayErase(partition_key, std::string(kUrl), mismatched_nvs_data,
-                      query);
+  cache().ReplayErase(cache_key, mismatched_nvs_data, query);
   EXPECT_EQ(cache().size(), 1u);
 }
 
 TEST_P(NoVarySearchCacheTest, ReplayEraseMismatchedQuery) {
-  static constexpr std::string_view kUrl = "https://example.example/";
-  const std::string partition_key = GenerateCachePartitionKey(kUrl);
-  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, false);
+  const std::string cache_key = GenerateCacheKey("https://example.example/");
+  const auto nvs_data = HttpNoVarySearchData::CreateFromNoVaryParams({}, true);
   const std::optional<std::string> query = "t=1";
   const base::Time update_time;
-  cache().ReplayInsert(partition_key, std::string(kUrl), nvs_data, query,
-                       update_time);
+  cache().ReplayInsert(cache_key, nvs_data, query, update_time);
 
   const std::optional<std::string> mismatched_query = "t=2";
-  cache().ReplayErase(partition_key, std::string(kUrl), nvs_data,
-                      mismatched_query);
+  cache().ReplayErase(cache_key, nvs_data, mismatched_query);
   EXPECT_EQ(cache().size(), 1u);
 }
 
@@ -1308,14 +1270,14 @@ TEST_P(NoVarySearchCacheReplayTest, MergeFrom) {
       const GURL& url = to_insert.url;
       std::optional<std::string_view> query;
       if (url.has_query()) {
-        query = url.query();
+        query = url.query_piece();
       }
       std::string base_url = url.spec();
       if (size_t pos = base_url.find('?'); pos != std::string::npos) {
         base_url = base_url.substr(0, pos);
       }
       EXPECT_CALL(journal,
-                  OnInsert(_, Eq(base_url), Eq(expected_nvs_data), Eq(query),
+                  OnInsert(EndsWith(base_url), Eq(expected_nvs_data), Eq(query),
                            AllOf(Ge(before_inserts), Le(after_inserts))));
     }
   }
@@ -1391,71 +1353,6 @@ TEST_P(NoVarySearchCacheReplayTest, LRUOrderPreserved) {
 
   // Evict i=1.
   expect_to_evict(1u);
-}
-
-TEST_P(NoVarySearchCacheTest, SetMaxSizeSame) {
-  Insert("a=1", "key-order");
-  Insert("a=2", "key-order");
-  ASSERT_EQ(cache().size(), 2u);
-  ASSERT_EQ(cache().max_size(), kMaxSize);
-
-  cache().SetMaxSize(kMaxSize);
-
-  EXPECT_EQ(cache().size(), 2u);
-  EXPECT_EQ(cache().max_size(), kMaxSize);
-  EXPECT_TRUE(Exists("a=1"));
-  EXPECT_TRUE(Exists("a=2"));
-}
-
-TEST_P(NoVarySearchCacheTest, SetMaxSizeSmaller) {
-  for (size_t i = 0; i < kMaxSize; ++i) {
-    Insert(QueryWithIParameter(i), "key-order");
-  }
-  ASSERT_EQ(cache().size(), kMaxSize);
-
-  cache().SetMaxSize(kMaxSize - 2);
-
-  EXPECT_EQ(cache().size(), kMaxSize - 2);
-  EXPECT_EQ(cache().max_size(), kMaxSize - 2);
-
-  // The two least recently used items should be evicted.
-  EXPECT_FALSE(Exists("i=0"));
-  EXPECT_FALSE(Exists("i=1"));
-  EXPECT_TRUE(Exists("i=2"));
-  EXPECT_TRUE(Exists("i=3"));
-  EXPECT_TRUE(Exists("i=4"));
-}
-
-TEST_P(NoVarySearchCacheTest, SetMaxSizeLarger) {
-  for (size_t i = 0; i < kMaxSize; ++i) {
-    Insert(QueryWithIParameter(i), "key-order");
-  }
-  ASSERT_EQ(cache().size(), kMaxSize);
-
-  cache().SetMaxSize(kMaxSize + 2);
-
-  EXPECT_EQ(cache().size(), kMaxSize);
-  EXPECT_EQ(cache().max_size(), kMaxSize + 2);
-
-  // All original items should still be there.
-  for (size_t i = 0; i < kMaxSize; ++i) {
-    EXPECT_TRUE(Exists(QueryWithIParameter(i)));
-  }
-
-  // Add two more items.
-  Insert(QueryWithIParameter(kMaxSize), "key-order");
-  Insert(QueryWithIParameter(kMaxSize + 1), "key-order");
-
-  EXPECT_EQ(cache().size(), kMaxSize + 2);
-  EXPECT_TRUE(Exists(QueryWithIParameter(kMaxSize)));
-  EXPECT_TRUE(Exists(QueryWithIParameter(kMaxSize + 1)));
-}
-
-TEST_P(NoVarySearchCacheTest, SetMaxSizeOnEmptyCache) {
-  ASSERT_EQ(cache().size(), 0u);
-  cache().SetMaxSize(kMaxSize + 5);
-  EXPECT_EQ(cache().size(), 0u);
-  EXPECT_EQ(cache().max_size(), kMaxSize + 5);
 }
 
 // TODO(https://crbug.com/390216627): Test the various experiments that affect

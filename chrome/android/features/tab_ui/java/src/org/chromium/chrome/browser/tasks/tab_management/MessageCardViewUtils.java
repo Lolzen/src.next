@@ -9,7 +9,6 @@ import android.widget.TextView;
 
 import androidx.core.widget.ImageViewCompat;
 
-import org.chromium.build.annotations.NullMarked;
 import org.chromium.ui.widget.ButtonCompat;
 import org.chromium.ui.widget.ChromeImageView;
 
@@ -17,7 +16,6 @@ import org.chromium.ui.widget.ChromeImageView;
  * A common utils class for Message cards for updating the look of different UI elements present
  * inside the message card view.
  */
-@NullMarked
 public class MessageCardViewUtils {
     /**
      * Set text appearance for title.

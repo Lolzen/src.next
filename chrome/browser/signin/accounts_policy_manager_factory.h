@@ -26,7 +26,6 @@ class AccountsPolicyManagerFactory : public ProfileKeyedServiceFactory {
   // BrowserContextKeyedServiceFactory:
   std::unique_ptr<KeyedService> BuildServiceInstanceForBrowserContext(
       content::BrowserContext* context) const override;
-  bool ServiceIsCreatedWithBrowserContext() const override;
 };
 
 #endif  // CHROME_BROWSER_SIGNIN_ACCOUNTS_POLICY_MANAGER_FACTORY_H_

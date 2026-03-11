@@ -21,7 +21,7 @@ static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 class Profile;
 
 namespace base {
-class DictValue;
+class Value;
 }  // namespace base
 
 namespace extensions {
@@ -71,7 +71,7 @@ class ExtensionAllowlist : public KeyedService, public ExtensionPrefsObserver {
 
   // Performs action based on Omaha attributes for the extension.
   void PerformActionBasedOnOmahaAttributes(const ExtensionId& extension_id,
-                                           const base::DictValue& attributes);
+                                           const base::Value::Dict& attributes);
 
   // Whether a warning should be displayed for an extension, `true` if the
   // extension is not allowlisted and the allowlist is enforced.

@@ -35,12 +35,12 @@ TEST(PmfUtilsTest, CalculatePrivateMemoryFootprint) {
   base::File status_file(status_path,
                          base::File::FLAG_OPEN | base::File::FLAG_READ);
 
-  std::optional<ByteSize> pmf =
+  std::optional<uint64_t> pmf =
       PmfUtils::CalculatePrivateMemoryFootprintForTesting(statm_file,
                                                           status_file);
 
   EXPECT_TRUE(pmf.has_value());
-  EXPECT_EQ(expected_pmf, pmf.value().InKiB());
+  EXPECT_EQ(expected_pmf, pmf.value() / 1024);
 }
 
 }  // namespace base::android

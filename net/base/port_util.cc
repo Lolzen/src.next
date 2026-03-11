@@ -10,6 +10,7 @@
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
@@ -115,10 +116,8 @@ const int kRestrictedPorts[] = {
     10080,  // Amanda
 };
 
-std::multiset<int>& GetExplicitlyAllowedPorts() {
-  static base::NoDestructor<std::multiset<int>> explicitly_allowed_ports;
-  return *explicitly_allowed_ports;
-}
+base::LazyInstance<std::multiset<int>>::Leaky g_explicitly_allowed_ports =
+    LAZY_INSTANCE_INITIALIZER;
 
 // List of ports which are permitted to be reenabled despite being in
 // kRestrictedList. When adding an port to this list you should also update the
@@ -170,9 +169,8 @@ bool IsPortAllowedForScheme(int port, std::string_view url_scheme) {
     return false;
 
   // Allow explicitly allowed ports for any scheme.
-  if (GetExplicitlyAllowedPorts().count(port) > 0) {
+  if (g_explicitly_allowed_ports.Get().count(port) > 0)
     return true;
-  }
 
   // Finally check against the generic list of restricted ports for all
   // schemes.
@@ -213,7 +211,7 @@ bool IsPortAllowedForIpEndpoint(const IPEndPoint& endpoint) {
   int port = endpoint.port();
 
   // Allow explicitly allowed ports.
-  if (GetExplicitlyAllowedPorts().count(port) > 0) {
+  if (g_explicitly_allowed_ports.Get().count(port) > 0) {
     return true;
   }
 
@@ -228,32 +226,28 @@ bool IsPortAllowedForIpEndpoint(const IPEndPoint& endpoint) {
     g_need_to_reset_restrict_localhost_ports = false;
   }
 
-  if (restrict_localhost_ports->contains(port)) {
-    base::UmaHistogramSparse("Net.RestrictedLocalhostPorts", port);
-    return false;
-  }
-  return true;
+  return !restrict_localhost_ports->contains(port);
 }
 
 size_t GetCountOfExplicitlyAllowedPorts() {
-  return GetExplicitlyAllowedPorts().size();
+  return g_explicitly_allowed_ports.Get().size();
 }
 
 // Specifies a comma separated list of port numbers that should be accepted
 // despite bans. If the string is invalid no allowed ports are stored.
 void SetExplicitlyAllowedPorts(base::span<const uint16_t> allowed_ports) {
   std::multiset<int> ports(allowed_ports.begin(), allowed_ports.end());
-  GetExplicitlyAllowedPorts() = std::move(ports);
+  g_explicitly_allowed_ports.Get() = std::move(ports);
 }
 
 ScopedPortException::ScopedPortException(int port) : port_(port) {
-  GetExplicitlyAllowedPorts().insert(port);
+  g_explicitly_allowed_ports.Get().insert(port);
 }
 
 ScopedPortException::~ScopedPortException() {
-  auto it = GetExplicitlyAllowedPorts().find(port_);
-  if (it != GetExplicitlyAllowedPorts().end()) {
-    GetExplicitlyAllowedPorts().erase(it);
+  auto it = g_explicitly_allowed_ports.Get().find(port_);
+  if (it != g_explicitly_allowed_ports.Get().end()) {
+    g_explicitly_allowed_ports.Get().erase(it);
   } else {
     NOTREACHED();
   }

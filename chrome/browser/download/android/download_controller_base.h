@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/functional/callback.h"
 #include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_start_observer.h"
 #include "content/public/browser/context_menu_params.h"
@@ -69,6 +70,16 @@ class DownloadControllerBase : public download::DownloadItem::Observer,
       const content::ContextMenuParams& params,
       content::WebContents* web_contents,
       bool is_media) = 0;
+
+  // Callback when user permission prompt finishes. Args: whether file access
+  // permission is acquired.
+  using AcquireFileAccessPermissionCallback = base::OnceCallback<void(bool)>;
+
+  // Called to prompt the user for file access permission. When finished,
+  // |callback| will be executed.
+  virtual void AcquireFileAccessPermission(
+      const content::WebContents::Getter& wc_getter,
+      AcquireFileAccessPermissionCallback callback) = 0;
 
   // Called by unit test to approve or disapprove file access request.
   virtual void SetApproveFileAccessRequestForTesting(bool approve) {}

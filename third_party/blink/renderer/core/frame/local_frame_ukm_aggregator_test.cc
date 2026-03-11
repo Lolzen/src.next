@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "third_party/blink/renderer/core/frame/local_frame_ukm_aggregator.h"
 
 #include "base/metrics/statistics_recorder.h"
@@ -869,7 +874,7 @@ TEST_F(LocalFrameUkmAggregatorSimTest, PrePostFCPMetricsWithChildFrameFCP) {
           GetDocument().getElementById(AtomicString("frame")))
           ->contentDocument();
   Element* target = subframe_document->getElementById(AtomicString("target"));
-  target->SetInnerHTMLWithoutTrustedTypes("test1");
+  target->setInnerHTML("test1");
 
   // Do a frame that reaches FCP.
   Compositor().BeginFrame();
@@ -878,7 +883,7 @@ TEST_F(LocalFrameUkmAggregatorSimTest, PrePostFCPMetricsWithChildFrameFCP) {
   histogram_tester.ExpectTotalCount("Blink.MainFrame.UpdateTime.PostFCP", 0);
 
   // Make a change to the subframe that causes another frame.
-  target->SetInnerHTMLWithoutTrustedTypes("test2");
+  target->setInnerHTML("test2");
 
   // Do a post-FCP frame.
   Compositor().BeginFrame();
@@ -1192,7 +1197,7 @@ TEST_P(LocalFrameUkmAggregatorSyncScrollTest, SyncScrollHeuristicRAFSetTop) {
 
   // Cause FCP on the next frame.
   Element* target = GetDocument().getElementById(AtomicString("card"));
-  target->SetInnerHTMLWithoutTrustedTypes("hello world");
+  target->setInnerHTML("hello world");
 
   Compositor().BeginFrame();
 

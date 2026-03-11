@@ -21,6 +21,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/api/tabs.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -79,14 +80,17 @@ IN_PROC_BROWSER_TEST_F(ExtensionLoadingTest,
   ASSERT_TRUE(new_tab_extension);
 
   // Visit the New Tab Page to get a renderer using the extension into history.
-  ASSERT_TRUE(NavigateToURL(GetActiveWebContents(), GURL("chrome://newtab")));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("chrome://newtab")));
 
   // Navigate that tab to a non-extension URL to swap out the extension's
   // renderer.
-  const GURL test_link_from_NTP = embedded_test_server()->GetURL("/README.md");
-  EXPECT_THAT(test_link_from_NTP.spec(), testing::EndsWith("/README.md"))
+  const GURL test_link_from_NTP =
+      embedded_test_server()->GetURL("/README.chromium");
+  EXPECT_THAT(test_link_from_NTP.spec(), testing::EndsWith("/README.chromium"))
       << "Check that the test server started.";
-  EXPECT_TRUE(NavigateInRenderer(GetActiveWebContents(), test_link_from_NTP));
+  EXPECT_TRUE(
+      NavigateInRenderer(browser()->tab_strip_model()->GetActiveWebContents(),
+                         test_link_from_NTP));
 
   // Increase the extension's version.
   extension_dir.WriteManifest(base::StringPrintf(kManifestTemplate, 2));
@@ -136,10 +140,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionLoadingTest,
 
   // Navigate that tab to a non-extension URL to swap out the extension's
   // renderer.
-  const GURL test_link_from_ntp = embedded_test_server()->GetURL("/README.md");
-  EXPECT_THAT(test_link_from_ntp.spec(), testing::EndsWith("/README.md"))
+  const GURL test_link_from_ntp =
+      embedded_test_server()->GetURL("/README.chromium");
+  EXPECT_THAT(test_link_from_ntp.spec(), testing::EndsWith("/README.chromium"))
       << "Check that the test server started.";
-  EXPECT_TRUE(NavigateInRenderer(GetActiveWebContents(), test_link_from_ntp));
+  EXPECT_TRUE(
+      NavigateInRenderer(browser()->tab_strip_model()->GetActiveWebContents(),
+                         test_link_from_ntp));
 
   // Increase the extension's version and add the NTP url override which will
   // add the kNewTabPageOverride permission.

@@ -216,9 +216,8 @@ LayoutCacheStatus CalculateSizeBasedLayoutCacheStatusWithGeometry(
       intrinsic_block_size = layout_result.IntrinsicBlockSize();
     }
 
-    // Grid/flex/fieldset/grid-lanes can have their children calculate their
-    // size based on their parent's final block-size. E.g.
-    //
+    // Grid/flex/fieldset can have their children calculate their size based on
+    // their parent's final block-size. E.g.
     // <div style="display: flex;">
     //   <div style="display: flex;"> <!-- or "display: grid;" -->
     //     <!-- Child will stretch to the parent's block-size -->
@@ -246,19 +245,16 @@ LayoutCacheStatus CalculateSizeBasedLayoutCacheStatusWithGeometry(
     if (old_space.IsFixedBlockSize() ||
         (old_space.IsBlockAutoBehaviorStretch() &&
          style.LogicalHeight().HasAuto())) {
-      if (node.IsFlexibleBox() || node.IsGrid() || node.IsGridLanes() ||
-          node.IsFieldsetContainer()) {
+      if (node.IsFlexibleBox() || node.IsGrid() || node.IsFieldsetContainer())
         intrinsic_block_size = kIndefiniteSize;
-      }
     }
 
-    // Grid/flex/grid-lanes can have their intrinsic block-size depend on the
+    // Grid/flex can have their intrinsic block-size depend on the
     // %-block-size. This occurs when:
     //  - A column flex-box has "max-height: 100%" (or similar) on itself.
     //  - A row flex-box has "height: 100%" (or similar) and children which
     //    stretch to this size.
-    //  - A grid/grid-lanes with "grid-template-rows: repeat(auto-fill, 50px)"
-    //  or similar.
+    //  - A grid with "grid-template-rows: repeat(auto-fill, 50px)" or similar.
     //
     // Similar to above we can't use the |intrinsic_block_size| for determining
     // the new block-size.
@@ -268,9 +264,8 @@ LayoutCacheStatus CalculateSizeBasedLayoutCacheStatusWithGeometry(
     if (physical_fragment.DependsOnPercentageBlockSize() &&
         new_space.PercentageResolutionBlockSize() !=
             old_space.PercentageResolutionBlockSize()) {
-      if (node.IsFlexibleBox() || node.IsGrid() || node.IsGridLanes()) {
+      if (node.IsFlexibleBox() || node.IsGrid())
         intrinsic_block_size = kIndefiniteSize;
-      }
     }
 
     block_size = ComputeBlockSizeForFragment(
@@ -281,8 +276,34 @@ LayoutCacheStatus CalculateSizeBasedLayoutCacheStatusWithGeometry(
       return LayoutCacheStatus::kNeedsLayout;
   }
 
-  if (block_size != fragment.BlockSize()) {
-    return LayoutCacheStatus::kNeedsLayout;
+  bool is_block_size_equal = block_size == fragment.BlockSize();
+
+  if (!is_block_size_equal) {
+    // Only block-flow supports changing the block-size for simplified layout.
+    if (!node.IsBlockFlow() || node.IsCustom()) {
+      return LayoutCacheStatus::kNeedsLayout;
+    }
+
+    // Fieldsets stretch their content to the final block-size, which might
+    // affect scrollbars.
+    if (node.IsFieldsetContainer())
+      return LayoutCacheStatus::kNeedsLayout;
+
+    if (node.IsBlockFlow() && style.AlignContentBlockCenter()) {
+      return LayoutCacheStatus::kNeedsLayout;
+    }
+
+    // If we are the document or body element in quirks mode, changing our size
+    // means that a scrollbar was added/removed. Require full layout.
+    if (node.IsQuirkyAndFillsViewport())
+      return LayoutCacheStatus::kNeedsLayout;
+
+    // If a block (within a formatting-context) changes to/from an empty-block,
+    // margins may collapse through this node, requiring full layout. We
+    // approximate this check by checking if the block-size is/was zero.
+    if (!physical_fragment.IsFormattingContextRoot() &&
+        !block_size != !fragment.BlockSize())
+      return LayoutCacheStatus::kNeedsLayout;
   }
 
   const bool has_descendant_that_depends_on_percentage_block_size =
@@ -293,29 +314,31 @@ LayoutCacheStatus CalculateSizeBasedLayoutCacheStatusWithGeometry(
   // Miss the cache if the initial block-size change from indefinite to
   // definite (or visa-versa), and:
   //  - We have a descendant which depends on the %-block-size.
-  //  - We are a grid/grid-lanes.
+  //  - We are a grid.
   //
-  // TODO(ikilpatrick): There is an "optimization" for grid/grid-lanes which
-  // would involve *always* setting the initial block-size for grid as
-  // indefinite, then re-running computing the grid if we have any "auto" tracks
-  // etc.
+  // TODO(ikilpatrick): There is an "optimization" for grid which would involve
+  // *always* setting the initial block-size for grid as indefinite, then
+  // re-running computing the grid if we have any "auto" tracks etc.
   if (is_old_initial_block_size_indefinite !=
       is_initial_block_size_indefinite) {
-    const bool is_flexbox =
-        RuntimeEnabledFeatures::LayoutFlexCacheFixEnabled() &&
-        node.IsFlexibleBox();
-    if (is_flexbox || node.IsGrid() || node.IsGridLanes() ||
-        has_descendant_that_depends_on_percentage_block_size) {
+    if (node.IsGrid() || has_descendant_that_depends_on_percentage_block_size)
       return LayoutCacheStatus::kNeedsLayout;
-    }
   }
 
   if (has_descendant_that_depends_on_percentage_block_size) {
+    // If our initial block-size is definite, we know that if we change our
+    // block-size we'll affect any descendant that depends on the resulting
+    // percentage block-size.
+    if (!is_block_size_equal && !is_initial_block_size_indefinite)
+      return LayoutCacheStatus::kNeedsLayout;
+
+    DCHECK(is_block_size_equal || is_initial_block_size_indefinite);
+
     // At this point we know that either we have the same block-size for our
-    // fragment.
+    // fragment, or our initial block-size was indefinite.
     //
     // The |PhysicalFragment::DependsOnPercentageBlockSize| flag
-    // will return true if we are in quirks mode, and have a descendant that
+    // will returns true if we are in quirks mode, and have a descendant that
     // depends on a percentage block-size, however it will also return true if
     // the node itself depends on the %-block-size.
     //
@@ -331,42 +354,73 @@ LayoutCacheStatus CalculateSizeBasedLayoutCacheStatusWithGeometry(
     }
   }
 
-  // Determine if we need relayout for an alignment baseline change.
+  // Table-cells with vertical alignment might shift their contents if the
+  // block-size changes.
   if (new_space.IsTableCell()) {
     DCHECK(old_space.IsTableCell());
 
-    if (ComputeContentAlignmentForTableCell(style) ==
-        BlockContentAlignment::kBaseline) {
-      auto new_alignment_baseline = new_space.TableCellAlignmentBaseline();
-      auto old_alignment_baseline = old_space.TableCellAlignmentBaseline();
+    switch (ComputeContentAlignmentForTableCell(style)) {
+      case BlockContentAlignment::kStart:
+        // Do nothing special for 'top' vertical alignment.
+        break;
+      case BlockContentAlignment::kBaseline: {
+        auto new_alignment_baseline = new_space.TableCellAlignmentBaseline();
+        auto old_alignment_baseline = old_space.TableCellAlignmentBaseline();
 
-      // Do nothing if neither alignment baseline is set.
-      if (!new_alignment_baseline && !old_alignment_baseline) {
-        return LayoutCacheStatus::kHit;
-      }
+        // Do nothing if neither alignment baseline is set.
+        if (!new_alignment_baseline && !old_alignment_baseline)
+          break;
 
-      // If we only have an old alignment baseline set, we need layout, as we
-      // can't determine where the un-adjusted baseline is.
-      if (!new_alignment_baseline && old_alignment_baseline) {
-        return LayoutCacheStatus::kNeedsLayout;
-      }
+        // If we only have an old alignment baseline set, we need layout, as we
+        // can't determine where the un-adjusted baseline is.
+        if (!new_alignment_baseline && old_alignment_baseline)
+          return LayoutCacheStatus::kNeedsLayout;
 
-      // We've been provided a new alignment baseline, just check that it
-      // matches the previously generated baseline.
-      if (!old_alignment_baseline) {
-        return (*new_alignment_baseline == physical_fragment.FirstBaseline())
-                   ? LayoutCacheStatus::kHit
-                   : LayoutCacheStatus::kNeedsLayout;
-      }
+        // We've been provided a new alignment baseline, just check that it
+        // matches the previously generated baseline.
+        if (!old_alignment_baseline) {
+          if (*new_alignment_baseline != physical_fragment.FirstBaseline())
+            return LayoutCacheStatus::kNeedsLayout;
+          break;
+        }
 
-      // If the alignment baselines differ at this stage, we need layout.
-      if (*new_alignment_baseline != *old_alignment_baseline) {
-        return LayoutCacheStatus::kNeedsLayout;
+        // If the alignment baselines differ at this stage, we need layout.
+        if (*new_alignment_baseline != *old_alignment_baseline)
+          return LayoutCacheStatus::kNeedsLayout;
+        break;
       }
+      case BlockContentAlignment::kUnsafeCenter:
+      case BlockContentAlignment::kSafeCenter:
+      case BlockContentAlignment::kUnsafeEnd:
+      case BlockContentAlignment::kSafeEnd:
+        // 'middle', and 'bottom' vertical alignment depend on the block-size.
+        if (!is_block_size_equal)
+          return LayoutCacheStatus::kNeedsLayout;
+        break;
+    }
+  } else {
+    switch (ComputeContentAlignmentForBlock(style)) {
+      case BlockContentAlignment::kStart:
+      case BlockContentAlignment::kBaseline:
+        // Do nothing special.
+        break;
+      case BlockContentAlignment::kUnsafeCenter:
+      case BlockContentAlignment::kSafeCenter:
+      case BlockContentAlignment::kUnsafeEnd:
+      case BlockContentAlignment::kSafeEnd:
+        if (!is_block_size_equal) {
+          return LayoutCacheStatus::kNeedsLayout;
+        }
+        break;
     }
   }
 
-  return LayoutCacheStatus::kHit;
+  // If we've reached here we know that we can potentially "stretch"/"shrink"
+  // ourselves without affecting any of our children.
+  // In that case we may be able to perform "simplified" layout.
+  DCHECK(!node.IsTable());
+  return is_block_size_equal ? LayoutCacheStatus::kHit
+                             : LayoutCacheStatus::kNeedsSimplifiedLayout;
 }
 
 bool IntrinsicSizeWillChange(
@@ -529,15 +583,13 @@ bool MaySkipLayoutWithinBlockFormattingContext(
     if (physical_fragment.HasAdjoiningObjectDescendants()) {
       // Check if the previous position intersects with any floats.
       if (old_expected <
-          old_space.GetExclusionSpace().ClearanceOffsetIncludingInitialLetter(
-              EClear::kBoth)) {
+          old_space.GetExclusionSpace().ClearanceOffset(EClear::kBoth)) {
         return false;
       }
 
       // Check if the new position intersects with any floats.
       if (new_expected <
-          new_space.GetExclusionSpace().ClearanceOffsetIncludingInitialLetter(
-              EClear::kBoth)) {
+          new_space.GetExclusionSpace().ClearanceOffset(EClear::kBoth)) {
         return false;
       }
     }
@@ -586,8 +638,7 @@ bool MaySkipLayoutWithinBlockFormattingContext(
 
   // Check if the previous position intersects with any floats.
   if (**bfc_block_offset <
-      old_space.GetExclusionSpace().ClearanceOffsetIncludingInitialLetter(
-          EClear::kBoth)) {
+      old_space.GetExclusionSpace().ClearanceOffset(EClear::kBoth)) {
     return false;
   }
 
@@ -620,40 +671,11 @@ bool MaySkipLayoutWithinBlockFormattingContext(
 
   // Check if the new position intersects with any floats.
   if (**bfc_block_offset <
-      new_space.GetExclusionSpace().ClearanceOffsetIncludingInitialLetter(
-          EClear::kBoth)) {
+      new_space.GetExclusionSpace().ClearanceOffset(EClear::kBoth)) {
     return false;
   }
 
   return true;
-}
-
-LayoutUnit AlignmentOffset(LayoutUnit container_size,
-                           LayoutUnit size,
-                           LayoutUnit margin_start,
-                           LayoutUnit margin_end,
-                           LayoutUnit baseline_offset,
-                           AxisEdge axis_edge,
-                           bool is_overflow_safe) {
-  LayoutUnit free_space = container_size - size - margin_start - margin_end;
-  // If overflow is 'safe', we have to make sure we don't overflow the
-  // 'start' edge (potentially cause some data loss as the overflow is
-  // unreachable).
-  if (is_overflow_safe) {
-    free_space = free_space.ClampNegativeToZero();
-  }
-  switch (axis_edge) {
-    case AxisEdge::kStart:
-      return margin_start;
-    case AxisEdge::kCenter:
-      return margin_start + (free_space / 2);
-    case AxisEdge::kEnd:
-      return margin_start + free_space;
-    case AxisEdge::kFirstBaseline:
-    case AxisEdge::kLastBaseline:
-      return baseline_offset;
-  }
-  NOTREACHED();
 }
 
 }  // namespace blink

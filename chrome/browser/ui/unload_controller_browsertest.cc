@@ -8,7 +8,6 @@
 #include "base/json/json_reader.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
-#include "chrome/browser/ash/boca/on_task/on_task_locked_controller.h"
 #include "chrome/browser/policy/policy_test_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -76,9 +75,8 @@ IN_PROC_BROWSER_TEST_F(UnloadControllerPreventCloseTest,
   ASSERT_TRUE(browser);
 
   UnloadController unload_controller(browser);
-  EXPECT_EQ(kShouldPreventClose
-                ? BrowserWindowInterface::ClosingStatus::kDeniedByPolicy
-                : BrowserWindowInterface::ClosingStatus::kPermitted,
+  EXPECT_EQ(kShouldPreventClose ? BrowserClosingStatus::kDeniedByPolicy
+                                : BrowserClosingStatus::kPermitted,
             unload_controller.GetBrowserClosingStatus());
 }
 
@@ -107,7 +105,7 @@ IN_PROC_BROWSER_TEST_F(
   ASSERT_TRUE(browser);
 
   UnloadController unload_controller(browser);
-  EXPECT_EQ(BrowserWindowInterface::ClosingStatus::kPermitted,
+  EXPECT_EQ(BrowserClosingStatus::kPermitted,
             unload_controller.GetBrowserClosingStatus());
 }
 
@@ -130,8 +128,7 @@ IN_PROC_BROWSER_TEST_F(UnloadControllerWithOnTaskTest,
   webapps::AppId app_id = InstallMockApp();
   Browser* const app_browser =
       web_app::LaunchWebAppBrowser(browser()->profile(), app_id);
-  ash::boca::OnTaskLockedController::From(app_browser)
-      ->set_locked_for_on_task(true);
+  app_browser->SetLockedForOnTask(true);
 
   // Verify tab cannot be closed.
   content::WebContents* const active_web_contents =
@@ -146,8 +143,7 @@ IN_PROC_BROWSER_TEST_F(UnloadControllerWithOnTaskTest,
   webapps::AppId app_id = InstallMockApp();
   Browser* const app_browser =
       web_app::LaunchWebAppBrowser(browser()->profile(), app_id);
-  ash::boca::OnTaskLockedController::From(app_browser)
-      ->set_locked_for_on_task(false);
+  app_browser->SetLockedForOnTask(false);
 
   // Verify tab can be closed.
   content::WebContents* const active_web_contents =

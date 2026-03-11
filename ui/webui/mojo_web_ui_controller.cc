@@ -9,15 +9,11 @@
 namespace ui {
 
 EnableMojoWebUI::EnableMojoWebUI(content::WebUI* contents,
-                                 bool enable_chrome_send,
-                                 bool enable_chrome_histograms) {
+                                 bool enable_chrome_send) {
   content::BindingsPolicySet bindings(
       {content::BindingsPolicyValue::kMojoWebUi});
   if (enable_chrome_send) {
     bindings.Put(content::BindingsPolicyValue::kWebUi);
-  }
-  if (enable_chrome_histograms) {
-    bindings.Put(content::BindingsPolicyValue::kWebUiHistograms);
   }
   contents->SetBindings(bindings);
 }
@@ -25,10 +21,9 @@ EnableMojoWebUI::EnableMojoWebUI(content::WebUI* contents,
 EnableMojoWebUI::~EnableMojoWebUI() = default;
 
 MojoWebUIController::MojoWebUIController(content::WebUI* contents,
-                                         bool enable_chrome_send,
-                                         bool enable_chrome_histograms)
+                                         bool enable_chrome_send)
     : content::WebUIController(contents),
-      EnableMojoWebUI(contents, enable_chrome_send, enable_chrome_histograms) {}
+      EnableMojoWebUI(contents, enable_chrome_send) {}
 
 MojoWebUIController::~MojoWebUIController() = default;
 

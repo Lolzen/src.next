@@ -43,6 +43,8 @@
 
 namespace blink {
 
+class LayoutMultiColumnFlowThread;
+
 struct InlineNodeData;
 
 // LayoutBlockFlow is the class that implements a block container in CSS 2.1.
@@ -78,16 +80,30 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
                 LayoutObject* before_child = nullptr) override;
   void RemoveChild(LayoutObject*) override;
 
-  bool CanMergeWith(const LayoutBoxModelObject&) const override;
+  void MoveAllChildrenIncludingFloatsTo(LayoutBlock* to_block,
+                                        bool full_remove_insert);
 
   void ChildBecameFloatingOrOutOfFlow(LayoutBox* child);
   void CollapseAnonymousBlockChild(LayoutBlockFlow* child);
 
+  LayoutMultiColumnFlowThread* MultiColumnFlowThread() const {
+    NOT_DESTROYED();
+    return multi_column_flow_thread_.Get();
+  }
+  void ResetMultiColumnFlowThread() {
+    NOT_DESTROYED();
+    multi_column_flow_thread_ = nullptr;
+  }
+
   // Return true if this block establishes a fragmentation context root (e.g. a
   // multicol container).
+  //
+  // Implementation detail: At some point in the future there should be no flow
+  // threads. Callers that only want to know if this is a fragmentation context
+  // root (and don't depend on flow threads) should call this method.
   bool IsFragmentationContextRoot() const override {
     NOT_DESTROYED();
-    return IsMulticolContainer();
+    return MultiColumnFlowThread();
   }
 
   bool IsInitialLetterBox() const override;
@@ -138,13 +154,16 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   virtual void WillCollectInlines() { NOT_DESTROYED(); }
 
  protected:
-  void StyleDidChange(StyleDifference,
-                      const ComputedStyle* old_style,
-                      const StyleChangeContext&) override;
+  void WillBeDestroyed() override;
+  void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
 
   void InvalidateDisplayItemClients(PaintInvalidationReason) const override;
 
   Node* NodeForHitTest() const final;
+  bool HitTestChildren(HitTestResult&,
+                       const HitTestLocation&,
+                       const PhysicalOffset& accumulated_offset,
+                       HitTestPhase) override;
 
   void AddOutlineRects(OutlineRectCollector&,
                        LayoutObject::OutlineInfo*,
@@ -154,10 +173,8 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   void DirtyLinesFromChangedChild(LayoutObject* child) final;
 
  private:
-  void UpdateForMulticol();
-
-  void AddChildBeforeDescendant(LayoutObject* new_child,
-                                LayoutObject* before_descendant);
+  void CreateOrDestroyMultiColumnFlowThreadIfNeeded(
+      const ComputedStyle* old_style);
 
   // Merge children of |sibling_that_may_be_deleted| into this object if
   // possible, and delete |sibling_that_may_be_deleted|. Returns true if we
@@ -180,6 +197,7 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   bool ShouldTruncateOverflowingText() const;
 
  private:
+  Member<LayoutMultiColumnFlowThread> multi_column_flow_thread_;
   Member<InlineNodeData> inline_node_data_;
 
  protected:

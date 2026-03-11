@@ -108,7 +108,7 @@ void SetupCommonSandboxParameters(
   CHECK(
       serializer->SetParameter(sandbox::policy::kParamBundlePath, bundle_path));
 
-  std::string bundle_id(base::apple::BaseBundleID());
+  std::string bundle_id = base::apple::BaseBundleID();
   DCHECK(!bundle_id.empty()) << "base::apple::OuterBundle is unset";
   CHECK(serializer->SetParameter(sandbox::policy::kParamBundleId, bundle_id));
 
@@ -213,7 +213,6 @@ bool SetupSandboxParameters(sandbox::mojom::Sandbox sandbox_type,
     case sandbox::mojom::Sandbox::kRenderer:
     case sandbox::mojom::Sandbox::kService:
     case sandbox::mojom::Sandbox::kServiceWithJit:
-    case sandbox::mojom::Sandbox::kProxyResolver:
     case sandbox::mojom::Sandbox::kUtility:
       SetupCommonSandboxParameters(serializer, command_line);
       break;

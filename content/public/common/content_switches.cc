@@ -68,7 +68,7 @@ const char kDisable2dCanvasAntialiasing[]   = "disable-canvas-aa";
 // Disables Canvas2D rendering into a scanout buffer for overlay support.
 const char kDisable2dCanvasImageChromium[] = "disable-2d-canvas-image-chromium";
 
-// Disables client-visible 3D APIs, in particular WebGL.
+// Disables client-visible 3D APIs, in particular WebGL and Pepper 3D.
 // This is controlled by policy and is kept separate from the other
 // enable/disable switches to avoid accidentally regressing the policy
 // support for controlling access to these APIs.
@@ -170,11 +170,6 @@ const char kDisableGpuWatchdog[] = "disable-gpu-watchdog";
 // can be used.
 const char kDisableIpcFloodingProtection[] = "disable-ipc-flooding-protection";
 
-// Disables the IgnoreDuplicateNavs feature. This prevent navigations from
-// being unintentionally ignored in tests.
-const char kDisableIgnoreDuplicateNavsForTesting[] =
-    "disable-ignore-duplicate-navs-for-testing";
-
 // Disable the RenderThread's HistogramCustomizer.
 const char kDisableHistogramCustomizer[]    = "disable-histogram-customizer";
 
@@ -196,14 +191,6 @@ const char kDisableLogging[]                = "disable-logging";
 // Disables using CODECAPI_AVLowLatencyMode when creating DXVA decoders.
 const char kDisableLowLatencyDxva[]         = "disable-low-latency-dxva";
 
-// Disables renaming the main browser thread to "CrBrowserMain" during browser
-// startup. The internally mapped thread name is being emitted to Perfetto
-// traces, which means that the main thread is identified as "CrBrowserMain"
-// instead of the process name. Enabling this switch will prevent the thread
-// from being named, which fixes the Perfetto trace issue.
-const char kDisableMainThreadNameOverride[] =
-    "disable-main-thread-name-override";
-
 // Disables Mojo broker capabilities in the browser during Mojo initialization.
 const char kDisableMojoBroker[] = "disable-mojo-broker";
 
@@ -214,6 +201,9 @@ const char kDisableNewContentRenderingTimeout[] =
 
 // Disables the Web Notification and the Push APIs.
 const char kDisableNotifications[]          = "disable-notifications";
+
+// Disable Pepper3D.
+const char kDisablePepper3d[]               = "disable-pepper-3d";
 
 // Disables the activation of browser and web accessibility via interactions
 // with the platform's accessibility integration (i.e., a screenreader will not
@@ -404,6 +394,11 @@ const char kEnableSpatialNavigation[]       = "enable-spatial-navigation";
 const char kEnableStrictMixedContentChecking[] =
     "enable-strict-mixed-content-checking";
 
+// Blocks insecure usage of a number of powerful features (device orientation,
+// for example) that we haven't yet deprecated for the web at large.
+const char kEnableStrictPowerfulFeatureRestrictions[] =
+    "enable-strict-powerful-feature-restrictions";
+
 // When specified along with a value in the range (0,1] will --enable-tracing
 // for (roughly) that percentage of tests being run. This is done in a stable
 // manner such that the same tests are chosen each run, and under the assumption
@@ -477,6 +472,12 @@ const char kIPCConnectionTimeout[]          = "ipc-connection-timeout";
 //   --isolate-origins=https://www.foo.com,https://www.bar.com
 const char kIsolateOrigins[] = "isolate-origins";
 
+// Enables the web-facing behaviors that will enable origin-isolation by default
+// at some point in the relatively near future.
+//
+// https://crbug.com/1140371
+const char kIsolationByDefault[] = "isolation-by-default";
+
 // Disable latest shipping ECMAScript 6 features.
 const char kDisableJavaScriptHarmonyShipping[] =
     "disable-javascript-harmony-shipping";
@@ -548,6 +549,21 @@ const char kOverrideLanguageDetection[] = "override-language-detection";
 // Renderer process that runs the non-PPAPI PDF plugin.
 const char kPdfRenderer[] = "pdf-renderer";
 
+// Runs PPAPI (Pepper) plugins in-process.
+const char kPpapiInProcess[]                = "ppapi-in-process";
+
+// Specifies a command that should be used to launch the ppapi plugin process.
+// Useful for running the plugin process through purify or quantify.  Ex:
+//   --ppapi-plugin-launcher="path\to\purify /Run=yes"
+const char kPpapiPluginLauncher[]           = "ppapi-plugin-launcher";
+
+// Argument to the process type that indicates a PPAPI plugin process type.
+const char kPpapiPluginProcess[]            = "ppapi";
+
+// Causes the PPAPI sub process to display a dialog on launch. Be sure to use
+// --no-sandbox as well or the sandbox won't allow the dialog to display.
+const char kPpapiStartupDialog[]            = "ppapi-startup-dialog";
+
 // Causes the Private Aggregation API to run without reporting delays.
 const char kPrivateAggregationDeveloperMode[] =
     "private-aggregation-developer-mode";
@@ -582,10 +598,6 @@ const char kProcessType[]                   = "type";
 const char kProtectedAudiencesConsentedDebugToken[] =
     "protected-audiences-consented-debug-token";
 
-// Handle to shared memory containing the pseudonymization salt, passed to
-// child processes at launch. See https://crbug.com/40850085.
-const char kPseudonymizationSaltHandle[] = "pseudonymization-salt-handle";
-
 // Enables or disables pull-to-refresh gesture in response to vertical
 // overscroll.
 // Set the value to '0' to disable the feature, set to '1' to enable it for both
@@ -605,6 +617,14 @@ const char kReduceAcceptLanguageHTTP[] = "reduce-accept-language-http";
 // implements phase 4 of User-Agent reduction:
 // https://blog.chromium.org/2021/09/user-agent-reduction-origin-trial-and-dates.html.
 const char kReduceUserAgentMinorVersion[] = "reduce-user-agent-minor-version";
+
+// Reduce the platform and oscpu in the desktop User-Agent string. This flag
+// implements phase 5 of User-Agent reduction:
+// https://blog.chromium.org/2021/09/user-agent-reduction-origin-trial-and-dates.html.
+const char kReduceUserAgentPlatformOsCpu[] = "reduce-user-agent-platform-oscpu";
+
+// Register Pepper plugins (see pepper_plugin_list.cc for its format).
+const char kRegisterPepperPlugins[]         = "register-pepper-plugins";
 
 // Enables remote debug over stdio pipes [in=3, out=4] or over the remote pipes
 // specified in the 'remote-debugging-io-pipes' switch.
@@ -721,9 +741,6 @@ const char kSkiaFontCacheLimitMb[] = "skia-font-cache-limit-mb";
 // exceeds this limit.
 const char kSkiaResourceCacheLimitMb[] = "skia-resource-cache-limit-mb";
 
-// Allows web tests to specify the target device scale for the test cases.
-const char kTargetDeviceScaleForTesting[] = "target-device-scale-for-testing";
-
 // Type of the current test harness ("browser" or "ui" or "gpu").
 const char kTestType[]                      = "test-type";
 
@@ -789,13 +806,9 @@ const char kUtilityProcess[]                = "utility";
 const char kUtilityStartupDialog[] = "utility-startup-dialog";
 
 // This switch indicates the type of a utility process. It does not affect the
-// services offered by the process, but is added to the command line to make
-// it easier to identify the purpose of the utility process.
+// services offered by the process, but is added to the command line for
+// debugging and profiling purposes.
 const char kUtilitySubType[] = "utility-sub-type";
-
-// Crash the Utility process early in start-up, for testing.
-const char kUtilityImmediateCrashForTesting[] =
-    "utility-immediate-crash-for-testing";
 
 // Causes tests to attempt to verify pixel output.
 const char kVerifyPixels[] = "browser-ui-tests-verify-pixels";
@@ -824,9 +837,6 @@ const char kWebglAntialiasingMode[] = "webgl-antialiasing-mode";
 
 // Set a default sample count for webgl if msaa is enabled.
 const char kWebglMSAASampleCount[] = "webgl-msaa-sample-count";
-
-// Allows web tests to specify additional web settings for the test cases.
-const char kWebSettingsForTesting[] = "web-settings-for-testing";
 
 // The prefix used when starting the zygote process. (i.e. 'gdb --args')
 const char kZygoteCmdPrefix[] = "zygote-cmd-prefix";
@@ -959,6 +969,15 @@ const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
 // DirectWrite FontCache is shared by browser to renderers using shared memory.
 // This switch allows us to pass the shared memory handle to the renderer.
 const char kFontCacheSharedHandle[] = "font-cache-shared-handle";
+
+// The boolean value (0/1) of FontRenderParams::antialiasing to be passed to
+// Ppapi processes.
+const char kPpapiAntialiasedTextEnabled[] = "ppapi-antialiased-text-enabled";
+
+// The enum value of FontRenderParams::subpixel_rendering to be passed to Ppapi
+// processes.
+const char kPpapiSubpixelRenderingSetting[] =
+    "ppapi-subpixel-rendering-setting";
 
 // Raise the timer interrupt frequency in all Chrome processes, for experimental
 // purposes. This feature is needed because as of Windows 10 2004 the scheduling

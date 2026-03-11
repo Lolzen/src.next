@@ -17,22 +17,13 @@ namespace blink {
 
 namespace {
 
-bool HasSingleInvalidSVGMaskLayer(const LayoutObject& object,
-                                  const FillLayer& first_layer) {
+bool HasSingleInvalidSVGMaskReferenceMaskLayer(const LayoutObject& object,
+                                               const FillLayer& first_layer) {
   if (first_layer.Next()) {
     return false;
   }
-  const StyleImage* image = first_layer.GetImage();
-  if (!image) {
-    return false;
-  }
-  // If the image resource is in error, consider it invalid.
-  if (image->ErrorOccurred()) {
-    return true;
-  }
-  // The resource is not in error. Check if it contains an invalid SVG <mask>
-  // reference.
-  auto* mask_source = DynamicTo<StyleMaskSourceImage>(*image);
+  const auto* mask_source =
+      DynamicTo<StyleMaskSourceImage>(first_layer.GetImage());
   if (!mask_source || !mask_source->HasSVGMask()) {
     return false;
   }
@@ -56,7 +47,7 @@ std::optional<gfx::RectF> CSSMaskPainter::MaskBoundingBox(
     // reference should yield an image layer of transparent black.
     //
     // [1] https://drafts.fxtf.org/css-masking/#the-mask-image
-    if (HasSingleInvalidSVGMaskLayer(object, style.MaskLayers())) {
+    if (HasSingleInvalidSVGMaskReferenceMaskLayer(object, style.MaskLayers())) {
       return std::nullopt;
     }
     // foreignObject handled by the regular box code.

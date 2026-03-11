@@ -34,6 +34,10 @@ class SandboxIPCHandler : public base::DelegateSimpleThread::Delegate {
  private:
   void HandleRequestFromChild(int fd);
 
+  void HandleMakeSharedMemorySegment(int fd,
+                                     base::PickleIterator iter,
+                                     const std::vector<base::ScopedFD>& fds);
+
   void SendRendererReply(const std::vector<base::ScopedFD>& fds,
                          const base::Pickle& reply,
                          int reply_fd);

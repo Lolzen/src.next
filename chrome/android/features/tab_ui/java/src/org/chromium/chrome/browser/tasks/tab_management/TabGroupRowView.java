@@ -4,7 +4,7 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static org.chromium.components.browser_ui.widget.ListItemBuilder.buildSimpleMenuItem;
+import static org.chromium.components.browser_ui.widget.BrowserUiListMenuUtils.buildMenuListItem;
 
 import android.content.Context;
 import android.content.res.Resources;
@@ -19,11 +19,10 @@ import android.widget.Space;
 import android.widget.TextView;
 
 import androidx.annotation.ColorInt;
+import androidx.annotation.Nullable;
 import androidx.annotation.PluralsRes;
 import androidx.annotation.StringRes;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.data_sharing.ui.shared_image_tiles.SharedImageTilesView;
 import org.chromium.chrome.browser.tabmodel.TabGroupTitleUtils;
 import org.chromium.chrome.browser.tasks.tab_management.TabGroupFaviconCluster.ClusterData;
@@ -41,12 +40,11 @@ import java.time.Clock;
 import java.util.Objects;
 
 /** Displays a horizontal row for a single tab group. */
-@NullMarked
 public class TabGroupRowView extends LinearLayout {
 
     /** Represents the title data for the tab group row. */
     public static class TabGroupRowViewTitleData {
-        public final @Nullable String title;
+        public final String title;
         public final int numTabs;
         public final @PluralsRes int rowAccessibilityTextResId;
 
@@ -57,7 +55,7 @@ public class TabGroupRowView extends LinearLayout {
          *     describes the row.
          */
         public TabGroupRowViewTitleData(
-                @Nullable String title, int numTabs, @PluralsRes int rowAccessibilityTextResId) {
+                String title, int numTabs, @PluralsRes int rowAccessibilityTextResId) {
             this.title = title;
             this.numTabs = numTabs;
             this.rowAccessibilityTextResId = rowAccessibilityTextResId;
@@ -108,12 +106,11 @@ public class TabGroupRowView extends LinearLayout {
         ViewGroup.LayoutParams params = getLayoutParams();
         params.height = res.getDimensionPixelSize(R.dimen.tab_group_row_height_containment);
         setLayoutParams(params);
-        MarginLayoutParams clusterParams =
-                (MarginLayoutParams) mTabGroupFaviconCluster.getLayoutParams();
+        FrameLayout.MarginLayoutParams clusterParams =
+                (FrameLayout.MarginLayoutParams) mTabGroupFaviconCluster.getLayoutParams();
         clusterParams.setMarginStart(
                 res.getDimensionPixelSize(R.dimen.tab_group_list_first_element_margin_containment));
         mTabGroupFaviconCluster.setLayoutParams(clusterParams);
-        mTabGroupFaviconCluster.setContainmentEnabled(true);
     }
 
     void updateCornersForClusterData(ClusterData clusterData) {
@@ -186,18 +183,18 @@ public class TabGroupRowView extends LinearLayout {
             @Nullable Runnable leaveRunnable) {
         ModelList listItems = new ModelList();
         if (openRunnable != null) {
-            listItems.add(buildSimpleMenuItem(R.string.open_tab_group_menu_item));
+            listItems.add(buildMenuListItem(R.string.open_tab_group_menu_item, 0, 0));
         }
         if (deleteRunnable != null) {
-            listItems.add(buildSimpleMenuItem(R.string.delete_tab_group_menu_item));
+            listItems.add(buildMenuListItem(R.string.delete_tab_group_menu_item, 0, 0));
         }
         if (leaveRunnable != null) {
-            listItems.add(buildSimpleMenuItem(R.string.leave_tab_group_menu_item));
+            listItems.add(buildMenuListItem(R.string.leave_tab_group_menu_item, 0, 0));
         }
         return BrowserUiListMenuUtils.getBasicListMenu(
                 getContext(),
                 listItems,
-                (item, view) -> onItemSelected(item, openRunnable, deleteRunnable, leaveRunnable));
+                (item) -> onItemSelected(item, openRunnable, deleteRunnable, leaveRunnable));
     }
 
     private void onItemSelected(

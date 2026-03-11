@@ -20,7 +20,7 @@ class CSSProgressValue : public CSSValue {
   const CSSValue& Progress() const { return *progress_; }
   const CSSValue* EasingFunction() const { return easing_function_; }
 
-  String CustomCSSText() const;
+  WTF::String CustomCSSText() const;
 
   bool Equals(const CSSProgressValue&) const;
 

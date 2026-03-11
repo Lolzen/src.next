@@ -35,7 +35,6 @@
 #include "third_party/blink/renderer/core/css/resolver/scoped_style_resolver.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
-#include "third_party/blink/renderer/core/css/style_rule_font_palette_values.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -62,7 +61,7 @@ scoped_refptr<FontPalette> RetrieveFontPaletteFromStyleEngine(
         FontPalette::Create(requested_palette_values);
     new_request_palette->SetMatchFamilyName(family_name);
     new_request_palette->SetBasePalette(
-        font_palette_values->GetBasePaletteIndex(document));
+        font_palette_values->GetBasePaletteIndex());
     Vector<FontPalette::FontPaletteOverride> override_colors =
         font_palette_values->GetOverrideColorsAsVector(document);
     if (override_colors.size()) {
@@ -147,6 +146,8 @@ void CSSFontSelector::UnregisterForInvalidationCallbacks(
 
 void CSSFontSelector::DispatchInvalidationCallbacks(
     FontInvalidationReason reason) {
+  font_face_cache_->IncrementVersion();
+
   HeapVector<Member<FontSelectorClient>> clients(clients_);
   for (auto& client : clients) {
     if (client) {
@@ -275,6 +276,10 @@ void CSSFontSelector::UpdateGenericFontFamilySettings(Document& document) {
   generic_font_family_settings_ =
       document.GetSettings()->GetGenericFontFamilySettings();
   FontCacheInvalidated();
+}
+
+FontMatchingMetrics* CSSFontSelector::GetFontMatchingMetrics() const {
+  return GetDocument().GetFontMatchingMetrics();
 }
 
 bool CSSFontSelector::IsAlive() const {

@@ -8,15 +8,11 @@
 #include <memory>
 #include <set>
 #include <string>
-#include <utility>
-#include <vector>
 
 #include "base/command_line.h"
 #include "base/files/file_util.h"
-#include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
 #include "base/strings/string_split.h"
-#include "base/strings/stringprintf.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
@@ -41,7 +37,6 @@
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
-#include "crypto/keypair.h"
 #include "extensions/browser/background_script_executor.h"
 #include "extensions/browser/content_verifier/content_verify_job.h"
 #include "extensions/browser/content_verifier/test_utils.h"
@@ -55,7 +50,6 @@
 #include "extensions/browser/test_extension_registry_observer.h"
 #include "extensions/browser/updater/extension_update_data.h"
 #include "extensions/browser/updater/manifest_fetch_data.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_features.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/file_util.h"
@@ -69,8 +63,6 @@
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/test/base/ui_test_utils.h"
 #endif
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using extensions::mojom::ManifestLocation;
 
@@ -88,13 +80,7 @@ constexpr char kStoragePermissionExtensionCrx[] =
 
 class MockUpdateService : public UpdateService {
  public:
-  MockUpdateService()
-      : UpdateService(nullptr,
-                      nullptr,
-                      base::BindRepeating([](const std::vector<std::string>&,
-                                             base::OnceClosure callback) {
-                        std::move(callback).Run();
-                      })) {}
+  MockUpdateService() : UpdateService(nullptr, nullptr) {}
   MOCK_CONST_METHOD0(IsBusy, bool());
   MOCK_METHOD3(SendUninstallPing,
                void(const std::string& id,
@@ -276,18 +262,23 @@ class ContentVerifierTest : public ExtensionBrowserTest {
     std::string private_key_bytes;
     EXPECT_TRUE(
         Extension::ParsePEMKeyBytes(private_key_contents, &private_key_bytes));
-    auto signing_key = crypto::keypair::PrivateKey::FromPrivateKeyInfo(
-        base::as_byte_span(private_key_bytes));
-    std::vector<uint8_t> public_key = signing_key->ToSubjectPublicKeyInfo();
-    return crx_file::id_util::GenerateId(public_key);
+    auto signing_key =
+        crypto::RSAPrivateKey::CreateFromPrivateKeyInfo(std::vector<uint8_t>(
+            private_key_bytes.begin(), private_key_bytes.end()));
+    std::vector<uint8_t> public_key;
+    signing_key->ExportPublicKey(&public_key);
+    const std::string public_key_str(public_key.begin(), public_key.end());
+    return crx_file::id_util::GenerateId(public_key_str);
   }
 
   // Creates a random signing key and sets |extension_id| according to it.
-  crypto::keypair::PrivateKey CreateExtensionSigningKey(
+  std::unique_ptr<crypto::RSAPrivateKey> CreateExtensionSigningKey(
       std::string& extension_id) {
-    auto signing_key = crypto::keypair::PrivateKey::GenerateRsa2048();
-    std::vector<uint8_t> public_key = signing_key.ToSubjectPublicKeyInfo();
-    extension_id = crx_file::id_util::GenerateId(public_key);
+    auto signing_key = crypto::RSAPrivateKey::Create(2048);
+    std::vector<uint8_t> public_key;
+    signing_key->ExportPublicKey(&public_key);
+    const std::string public_key_str(public_key.begin(), public_key.end());
+    extension_id = crx_file::id_util::GenerateId(public_key_str);
     return signing_key;
   }
 
@@ -298,7 +289,7 @@ class ContentVerifierTest : public ExtensionBrowserTest {
   testing::AssertionResult CreateCrxWithVerifiedContentsInHeader(
       base::ScopedTempDir* temp_dir,
       const base::FilePath& unpacked_path,
-      const crypto::keypair::PrivateKey& private_key,
+      crypto::RSAPrivateKey* private_key,
       const std::string& verified_contents,
       base::FilePath* crx_path) {
     std::string compressed_verified_contents;
@@ -326,7 +317,7 @@ class ContentVerifierTest : public ExtensionBrowserTest {
 };
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-// TODO(crbug.com/371432155): Port to desktop Android when the tabs API is
+// TODO(crbug.com/391932982): Port to desktop Android when the tabs API is
 // supported.
 IN_PROC_BROWSER_TEST_F(ContentVerifierTest, DotSlashPaths) {
   TestContentVerifyJobObserver job_observer;
@@ -453,7 +444,7 @@ class ContentVerifierTestWithForcedHashes : public ContentVerifierTest {
 };
 
 // Tests detection of corruption in an extension's service worker file.
-// TODO(crbug.com/371432155): Port to desktop Android when the tabs API is
+// TODO(crbug.com/391932982): Port to desktop Android when the tabs API is
 // supported.
 IN_PROC_BROWSER_TEST_F(ContentVerifierTestWithForcedHashes,
                        TestServiceWorkerCorruption_DisableAndEnable) {
@@ -543,7 +534,7 @@ IN_PROC_BROWSER_TEST_F(ContentVerifierTestWithForcedHashes,
 }
 
 // Tests service worker corruption detection across browser starts.
-// TODO(crbug.com/371432155): Port to desktop Android when the tabs API is
+// TODO(crbug.com/391932982): Port to desktop Android when the tabs API is
 // supported.
 IN_PROC_BROWSER_TEST_F(ContentVerifierTest,
                        PRE_TestServiceWorker_AcrossSession) {
@@ -605,7 +596,7 @@ IN_PROC_BROWSER_TEST_F(ContentVerifierTest,
   // is preserved by the PRE_ test.)
 }
 
-// TODO(crbug.com/371432155): Port to desktop Android when the tabs API is
+// TODO(crbug.com/391932982): Port to desktop Android when the tabs API is
 // supported.
 IN_PROC_BROWSER_TEST_F(ContentVerifierTest, TestServiceWorker_AcrossSession) {
   // Force-enable content verification for every extension.
@@ -641,7 +632,7 @@ IN_PROC_BROWSER_TEST_F(ContentVerifierTest, TestServiceWorker_AcrossSession) {
     std::string file_contents;
     ASSERT_TRUE(base::ReadFileToString(
         extension->path().AppendASCII("background.js"), &file_contents));
-    EXPECT_TRUE(file_contents.contains("self.didModifyScript = true;"));
+    EXPECT_TRUE(base::Contains(file_contents, "self.didModifyScript = true;"));
   }
 
   // Now for the fun part. Start up the extension by opening a new tab,
@@ -1008,7 +999,8 @@ IN_PROC_BROWSER_TEST_F(
 
   base::FilePath crx_path;
   ASSERT_TRUE(CreateCrxWithVerifiedContentsInHeader(
-      &temp_dir, extension_dir, signing_key, verified_contents, &crx_path));
+      &temp_dir, extension_dir, signing_key.get(), verified_contents,
+      &crx_path));
 
   TestContentVerifySingleJobObserver observer(extension_id, resource_path);
 
@@ -1034,7 +1026,7 @@ IN_PROC_BROWSER_TEST_F(
   base::FilePath crx_path;
   auto signing_key = CreateExtensionSigningKey(extension_id);
   ASSERT_TRUE(CreateCrxWithVerifiedContentsInHeader(
-      &temp_dir, test_dir, signing_key, verified_contents, &crx_path));
+      &temp_dir, test_dir, signing_key.get(), verified_contents, &crx_path));
 
   const Extension* extension = InstallExtensionFromWebstore(crx_path, 0);
   EXPECT_FALSE(extension);
@@ -1152,11 +1144,10 @@ IN_PROC_BROWSER_TEST_F(ContentVerifierTest,
   ASSERT_TRUE(extension);
   const ExtensionId kExtensionId = extension->id();
 
-  // The page should not load because it has a slash at the end.
-  GURL page_url = extension->ResolveExtensionURL("script.js/");
-  auto* web_contents = GetActiveWebContents();
-  ASSERT_FALSE(NavigateToURL(web_contents, page_url));
-  ASSERT_FALSE(content::WaitForLoadStop(web_contents));
+  GURL page_url = extension->GetResourceURL("script.js/");
+  // The page should not load.
+  ASSERT_FALSE(NavigateToURL(page_url));
+  ASSERT_FALSE(content::WaitForLoadStop(GetActiveWebContents()));
   ExtensionPrefs* prefs = ExtensionPrefs::Get(profile());
   DisableReasonSet reasons = prefs->GetDisableReasons(kExtensionId);
   EXPECT_TRUE(reasons.empty());
@@ -1173,11 +1164,10 @@ IN_PROC_BROWSER_TEST_F(ContentVerifierTest,
   ASSERT_TRUE(extension);
   const ExtensionId kExtensionId = extension->id();
 
-  GURL page_url = extension->ResolveExtensionURL("script.js.");
+  GURL page_url = extension->GetResourceURL("script.js.");
   // The page should not load.
-  auto* web_contents = GetActiveWebContents();
-  ASSERT_FALSE(NavigateToURL(web_contents, page_url));
-  ASSERT_FALSE(content::WaitForLoadStop(web_contents));
+  ASSERT_FALSE(NavigateToURL(page_url));
+  ASSERT_FALSE(content::WaitForLoadStop(GetActiveWebContents()));
   ExtensionPrefs* prefs = ExtensionPrefs::Get(profile());
   DisableReasonSet reasons = prefs->GetDisableReasons(kExtensionId);
   EXPECT_TRUE(reasons.empty());
@@ -1187,8 +1177,16 @@ IN_PROC_BROWSER_TEST_F(ContentVerifierTest,
 // disable the extension, both in case-sensitive and case-insensitive systems.
 //
 // Regression test for https://crbug.com/1033294.
+// Consistently fails on Mac11, Mac12, and Mac13 bots (crbug.com/414579613).
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_RemainsEnabledOnNavigateToPathWithIncorrectCase \
+  DISABLED_RemainsEnabledOnNavigateToPathWithIncorrectCase
+#else
+#define MAYBE_RemainsEnabledOnNavigateToPathWithIncorrectCase \
+  RemainsEnabledOnNavigateToPathWithIncorrectCase
+#endif
 IN_PROC_BROWSER_TEST_F(ContentVerifierTest,
-                       RemainsEnabledOnNavigateToPathWithIncorrectCase) {
+                       MAYBE_RemainsEnabledOnNavigateToPathWithIncorrectCase) {
   const Extension* extension = InstallExtensionFromWebstore(
       test_data_dir_.AppendASCII("content_verifier/content_script.crx"), 1);
   ASSERT_TRUE(extension);
@@ -1200,16 +1198,15 @@ IN_PROC_BROWSER_TEST_F(ContentVerifierTest,
   TestContentVerifySingleJobObserver job_observer(
       extension_id, base::FilePath().AppendASCII(kIncorrectCasePath));
 
-  auto* web_contents = GetActiveWebContents();
   GURL page_url = extension->GetResourceURL(kIncorrectCasePath);
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
-  // Some platforms are case insensitive, load should succeed.
-  ASSERT_TRUE(NavigateToURL(web_contents, page_url));
-  ASSERT_TRUE(content::WaitForLoadStop(web_contents));
+#if BUILDFLAG(IS_WIN)
+  // Windows is case insensitive, load should succeed.
+  ASSERT_TRUE(NavigateToURL(page_url));
+  ASSERT_TRUE(content::WaitForLoadStop(GetActiveWebContents()));
 #else
   // On case-sensitive platforms, load should fail.
-  ASSERT_FALSE(NavigateToURL(web_contents, page_url));
-  ASSERT_FALSE(content::WaitForLoadStop(web_contents));
+  ASSERT_FALSE(NavigateToURL(page_url));
+  ASSERT_FALSE(content::WaitForLoadStop(GetActiveWebContents()));
 #endif
 
   // Ensure that ContentVerifyJob has finished checking the resource.

@@ -56,10 +56,11 @@ class CSSFontFeatureValuesMap : public ScriptWrappable,
   CSSFontFeatureValuesMap() = default;
 
   PairSyncIterable<CSSFontFeatureValuesMap>::IterationSource*
-  CreateIterationSource(ScriptState*) override;
+  CreateIterationSource(ScriptState*, ExceptionState&) override;
   bool GetMapEntry(ScriptState*,
                    const String& key,
-                   Vector<uint32_t>& value) override;
+                   Vector<uint32_t>& value,
+                   ExceptionState&) override;
 
   Member<CSSFontFeatureValuesRule> parent_rule_;
   Member<StyleRuleFontFeatureValues> backing_style_rule_;

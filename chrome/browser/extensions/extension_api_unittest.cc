@@ -30,10 +30,10 @@ std::optional<base::Value> ExtensionApiUnittest::RunFunctionAndReturnValue(
     const std::string& args) {
   function->set_extension(extension());
   return utils::RunFunctionAndReturnSingleResult(std::move(function), args,
-                                                 profile());
+                                                 browser()->profile());
 }
 
-std::optional<base::DictValue>
+std::optional<base::Value::Dict>
 ExtensionApiUnittest::RunFunctionAndReturnDictionary(
     scoped_refptr<ExtensionFunction> function,
     const std::string& args) {
@@ -50,7 +50,7 @@ ExtensionApiUnittest::RunFunctionAndReturnDictionary(
   return std::move(*value).TakeDict();
 }
 
-std::optional<base::ListValue> ExtensionApiUnittest::RunFunctionAndReturnList(
+std::optional<base::Value::List> ExtensionApiUnittest::RunFunctionAndReturnList(
     scoped_refptr<ExtensionFunction> function,
     const std::string& args) {
   std::optional<base::Value> value =
@@ -70,7 +70,8 @@ std::string ExtensionApiUnittest::RunFunctionAndReturnError(
     scoped_refptr<ExtensionFunction> function,
     const std::string& args) {
   function->set_extension(extension());
-  return utils::RunFunctionAndReturnError(std::move(function), args, profile());
+  return utils::RunFunctionAndReturnError(std::move(function), args,
+                                          browser()->profile());
 }
 
 void ExtensionApiUnittest::RunFunction(

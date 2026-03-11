@@ -56,6 +56,11 @@ public interface AutocompleteDelegate extends UrlBarDelegate {
      */
     boolean didFocusUrlFromFakebox();
 
+    /**
+     * @return Whether the URL currently has focus.
+     */
+    boolean isUrlBarFocused();
+
     /* Requests to show default browser promo when user pasting an URL. */
     void maybeShowDefaultBrowserPromo();
 

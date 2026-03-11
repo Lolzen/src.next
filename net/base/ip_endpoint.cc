@@ -64,7 +64,7 @@ void IPEndPoint::SetIndexToNameFuncForTesting(IndexToNameFunc func) {
 
 // static
 std::optional<uint32_t> IPEndPoint::ScopeIdFromDict(
-    const base::DictValue& dict) {
+    const base::Value::Dict& dict) {
   const std::string* name = dict.FindString(kInterfaceName);
   if (!name) {
     return std::nullopt;
@@ -89,8 +89,7 @@ base::Value IPEndPoint::ScopeIdToValue(std::optional<uint32_t> scope_id) {
   char* name = nullptr;
   char buf[IF_NAMESIZE + 1] = {0};
   if (index_to_name_func_for_testing_) {
-    name = index_to_name_func_for_testing_(scope_id.value(),
-                                           base::span<char>(buf));
+    name = index_to_name_func_for_testing_(scope_id.value(), buf);
   } else {
     name = if_indextoname(scope_id.value(), buf);
   }
@@ -104,7 +103,7 @@ base::Value IPEndPoint::ScopeIdToValue(std::optional<uint32_t> scope_id) {
 
 // static
 std::optional<IPEndPoint> IPEndPoint::FromValue(const base::Value& value) {
-  const base::DictValue* dict = value.GetIfDict();
+  const base::Value::Dict* dict = value.GetIfDict();
   if (!dict)
     return std::nullopt;
 
@@ -293,8 +292,17 @@ bool IPEndPoint::operator<(const IPEndPoint& other) const {
          std::tie(other.address_, other.port_, other.scope_id_);
 }
 
+bool IPEndPoint::operator==(const IPEndPoint& other) const {
+  return address_ == other.address_ && port_ == other.port_ &&
+         scope_id_ == other.scope_id_;
+}
+
+bool IPEndPoint::operator!=(const IPEndPoint& that) const {
+  return !(*this == that);
+}
+
 base::Value IPEndPoint::ToValue() const {
-  base::DictValue dict;
+  base::Value::Dict dict;
 
   DCHECK(address_.IsValid());
   dict.Set(kValueAddressKey, address_.ToValue());

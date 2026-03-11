@@ -4,8 +4,7 @@
 
 #include "base/android/scoped_hardware_buffer_handle.h"
 
-#include <android/hardware_buffer.h>
-
+#include "base/android/android_hardware_buffer_compat.h"
 #include "base/logging.h"
 #include "base/posix/unix_domain_socket.h"
 
@@ -32,7 +31,7 @@ ScopedHardwareBufferHandle ScopedHardwareBufferHandle::Adopt(
 // static
 ScopedHardwareBufferHandle ScopedHardwareBufferHandle::Create(
     AHardwareBuffer* buffer) {
-  AHardwareBuffer_acquire(buffer);
+  AndroidHardwareBufferCompat::GetInstance().Acquire(buffer);
   return ScopedHardwareBufferHandle(buffer);
 }
 
@@ -53,7 +52,7 @@ AHardwareBuffer* ScopedHardwareBufferHandle::get() const {
 
 void ScopedHardwareBufferHandle::reset() {
   if (buffer_) {
-    AHardwareBuffer_release(buffer_);
+    AndroidHardwareBufferCompat::GetInstance().Release(buffer_);
     buffer_ = nullptr;
   }
 }
@@ -66,15 +65,8 @@ AHardwareBuffer* ScopedHardwareBufferHandle::Take() {
 
 ScopedHardwareBufferHandle ScopedHardwareBufferHandle::Clone() const {
   DCHECK(buffer_);
-  AHardwareBuffer_acquire(buffer_);
+  AndroidHardwareBufferCompat::GetInstance().Acquire(buffer_);
   return ScopedHardwareBufferHandle(buffer_);
-}
-
-AHardwareBuffer_Desc ScopedHardwareBufferHandle::Describe() const {
-  DCHECK(buffer_);
-  AHardwareBuffer_Desc desc = {};
-  AHardwareBuffer_describe(buffer_, &desc);
-  return desc;
 }
 
 ScopedFD ScopedHardwareBufferHandle::SerializeAsFileDescriptor() const {
@@ -89,7 +81,9 @@ ScopedFD ScopedHardwareBufferHandle::SerializeAsFileDescriptor() const {
   // NOTE: SendHandleToUnixSocket does NOT acquire or retain a reference to the
   // buffer object. The caller is therefore responsible for ensuring that the
   // buffer remains alive through the lifetime of this file descriptor.
-  int result = AHardwareBuffer_sendHandleToUnixSocket(buffer_, writer.get());
+  int result =
+      AndroidHardwareBufferCompat::GetInstance().SendHandleToUnixSocket(
+          buffer_, writer.get());
   if (result < 0) {
     PLOG(ERROR) << "send";
     return ScopedFD();
@@ -102,11 +96,14 @@ ScopedFD ScopedHardwareBufferHandle::SerializeAsFileDescriptor() const {
 ScopedHardwareBufferHandle
 ScopedHardwareBufferHandle::DeserializeFromFileDescriptor(ScopedFD fd) {
   DCHECK(fd.is_valid());
+  DCHECK(AndroidHardwareBufferCompat::IsSupportAvailable());
   AHardwareBuffer* buffer = nullptr;
 
   // NOTE: Upon success, RecvHandleFromUnixSocket acquires a new reference to
   // the AHardwareBuffer.
-  int result = AHardwareBuffer_recvHandleFromUnixSocket(fd.get(), &buffer);
+  int result =
+      AndroidHardwareBufferCompat::GetInstance().RecvHandleFromUnixSocket(
+          fd.get(), &buffer);
   if (result < 0) {
     PLOG(ERROR) << "recv";
     return ScopedHardwareBufferHandle();
@@ -117,6 +114,7 @@ ScopedHardwareBufferHandle::DeserializeFromFileDescriptor(ScopedFD fd) {
 
 ScopedHardwareBufferHandle::ScopedHardwareBufferHandle(AHardwareBuffer* buffer)
     : buffer_(buffer) {
+  DCHECK(AndroidHardwareBufferCompat::IsSupportAvailable());
 }
 
 }  // namespace android

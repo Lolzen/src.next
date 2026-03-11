@@ -54,7 +54,7 @@ class ContentGpuClient;
 class ContentRendererClient;
 class ContentUtilityClient;
 struct CdmInfo;
-struct WebPluginInfo;
+struct ContentPluginInfo;
 
 // Setter and getter for the client. The client should be set early, before any
 // content code is called.
@@ -101,7 +101,7 @@ class CONTENT_EXPORT ContentClient {
   virtual void SetGpuInfo(const gpu::GPUInfo& gpu_info) {}
 
   // Gives the embedder a chance to register its own plugins.
-  virtual void AddPlugins(std::vector<content::WebPluginInfo>* plugins) {}
+  virtual void AddPlugins(std::vector<content::ContentPluginInfo>* plugins) {}
 
   // Gives the embedder a chance to register the Content Decryption Modules
   // (CDM) it supports, as well as the CDM host file paths to verify CDM host.
@@ -146,8 +146,6 @@ class CONTENT_EXPORT ContentClient {
     // described in the Custom Handler specification.
     // https://html.spec.whatwg.org/multipage/system-state.html#normalize-protocol-handler-parameters
     std::vector<std::pair<std::string, std::string>> predefined_handler_schemes;
-    // Registers a URL scheme as an Isolated Web App scheme.
-    std::vector<std::string> isolated_app_schemes;
 #if BUILDFLAG(IS_ANDROID)
     // Normally, non-standard schemes canonicalize to opaque origins. However,
     // Android WebView requires non-standard schemes to still be preserved.
@@ -219,17 +217,6 @@ class CONTENT_EXPORT ContentClient {
   virtual void ExposeInterfacesToBrowser(
       scoped_refptr<base::SequencedTaskRunner> io_task_runner,
       mojo::BinderMap* binders);
-
-  // Whether the embedder wants to allow default SiteInstanceGroups to be used
-  // in cases where full site isolation is not available.
-  // TODO(crbug.com/419595581): This method is here so we can disable default
-  // SiteInstanceGroups on Android WebView while still enabling the feature by
-  // default. Remove this carveout once remaining WebView issues are resolved.
-  virtual bool ShouldAllowDefaultSiteInstanceGroup();
-
-  // Returns whether duplicate navigations should be ignored.
-  virtual bool ShouldIgnoreDuplicateNavs(const GURL& url,
-                                         bool is_renderer_initiated) const;
 
  private:
   // For SetBrowserClientAlwaysAllowForTesting().

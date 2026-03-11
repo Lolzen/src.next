@@ -2,23 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "net/base/file_stream.h"
 
 #include <string>
 #include <utility>
 
-#include "base/containers/span.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
-#include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
-#include "base/strings/string_view_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/current_thread.h"
@@ -55,11 +57,15 @@ namespace net {
 
 namespace {
 
-constexpr std::string_view kTestData = "0123456789";
+constexpr char kTestData[] = "0123456789";
+constexpr int kTestDataSize = std::size(kTestData) - 1;
 
-// Creates an IOBuffer that contains kTestData.
-scoped_refptr<IOBuffer> CreateTestDataBuffer() {
-  return base::MakeRefCounted<VectorIOBuffer>(base::as_byte_span(kTestData));
+// Creates an IOBufferWithSize that contains the kTestDataSize.
+scoped_refptr<IOBufferWithSize> CreateTestDataBuffer() {
+  scoped_refptr<IOBufferWithSize> buf =
+      base::MakeRefCounted<IOBufferWithSize>(kTestDataSize);
+  memcpy(buf->data(), kTestData, kTestDataSize);
+  return buf;
 }
 
 }  // namespace
@@ -141,11 +147,10 @@ TEST_F(FileStreamTest, UseFileHandle) {
   ASSERT_EQ(0, callback64.WaitForResult());
   // Read into buffer and compare.
   scoped_refptr<IOBufferWithSize> read_buffer =
-      base::MakeRefCounted<IOBufferWithSize>(kTestData.size());
-  rv = read_stream->Read(read_buffer.get(), read_buffer->size(),
-                         callback.callback());
-  ASSERT_EQ(kTestData.size(), callback.GetResult(rv));
-  ASSERT_EQ(kTestData, base::as_string_view(read_buffer->span()));
+      base::MakeRefCounted<IOBufferWithSize>(kTestDataSize);
+  rv = read_stream->Read(read_buffer.get(), kTestDataSize, callback.callback());
+  ASSERT_EQ(kTestDataSize, callback.GetResult(rv));
+  ASSERT_EQ(0, memcmp(kTestData, read_buffer->data(), kTestDataSize));
   read_stream.reset();
 
   // 2. Test writing with a file handle.
@@ -159,17 +164,17 @@ TEST_F(FileStreamTest, UseFileHandle) {
   ASSERT_THAT(write_stream->Seek(0, callback64.callback()),
               IsError(ERR_IO_PENDING));
   ASSERT_EQ(0, callback64.WaitForResult());
-  scoped_refptr<IOBuffer> write_buffer = CreateTestDataBuffer();
-  rv = write_stream->Write(write_buffer.get(), write_buffer->size(),
+  scoped_refptr<IOBufferWithSize> write_buffer = CreateTestDataBuffer();
+  rv = write_stream->Write(write_buffer.get(), kTestDataSize,
                            callback.callback());
-  ASSERT_EQ(kTestData.size(), callback.GetResult(rv));
+  ASSERT_EQ(kTestDataSize, callback.GetResult(rv));
   write_stream.reset();
 
   // Read into buffer and compare to make sure the handle worked fine.
-  ASSERT_EQ(kTestData.size(),
+  ASSERT_EQ(kTestDataSize,
             base::ReadFile(temp_file_path(), read_buffer->data(),
-                           read_buffer->size()));
-  ASSERT_EQ(kTestData, base::as_string_view(read_buffer->span()));
+                           kTestDataSize));
+  ASSERT_EQ(0, memcmp(kTestData, read_buffer->data(), kTestDataSize));
 }
 
 TEST_F(FileStreamTest, UseClosedStream) {
@@ -244,7 +249,7 @@ TEST_F(FileStreamTest, Read_EarlyDelete) {
     base::RunLoop().RunUntilIdle();
     EXPECT_FALSE(callback.have_result());
   } else {
-    EXPECT_EQ(kTestData.substr(0, rv), base::as_string_view(buf->first(rv)));
+    EXPECT_EQ(std::string(kTestData, rv), std::string(buf->data(), rv));
   }
 }
 
@@ -283,7 +288,7 @@ TEST_F(FileStreamTest, Read_FromOffset) {
     data_read.append(buf->data(), rv);
   }
   EXPECT_EQ(file_size.value() - kOffset, total_bytes_read);
-  EXPECT_EQ(kTestData.substr(kOffset), data_read);
+  EXPECT_EQ(kTestData + kOffset, data_read);
 }
 
 TEST_F(FileStreamTest, Write) {
@@ -298,13 +303,13 @@ TEST_F(FileStreamTest, Write) {
   EXPECT_THAT(file_size, testing::Optional(0));
 
   scoped_refptr<IOBuffer> buf = CreateTestDataBuffer();
-  rv = stream.Write(buf.get(), buf->size(), callback.callback());
+  rv = stream.Write(buf.get(), kTestDataSize, callback.callback());
   rv = callback.GetResult(rv);
-  EXPECT_EQ(buf->size(), rv);
+  EXPECT_EQ(kTestDataSize, rv);
 
   file_size = base::GetFileSize(temp_file_path());
   ASSERT_TRUE(file_size.has_value());
-  EXPECT_EQ(kTestData.size(), file_size.value());
+  EXPECT_EQ(kTestDataSize, file_size.value());
 
   std::string data_read;
   EXPECT_TRUE(base::ReadFileToString(temp_file_path(), &data_read));
@@ -325,7 +330,7 @@ TEST_F(FileStreamTest, Write_EarlyDelete) {
   ASSERT_TRUE(file_size.has_value());
   EXPECT_EQ(0, file_size.value());
 
-  scoped_refptr<IOBuffer> buf = CreateTestDataBuffer();
+  scoped_refptr<IOBufferWithSize> buf = CreateTestDataBuffer();
   rv = stream->Write(buf.get(), buf->size(), callback.callback());
   stream.reset();
   if (rv < 0) {
@@ -353,19 +358,19 @@ TEST_F(FileStreamTest, Write_FromOffset) {
   EXPECT_THAT(callback.WaitForResult(), IsOk());
 
   TestInt64CompletionCallback callback64;
-  const int64_t kOffset = kTestData.size();
+  const int64_t kOffset = kTestDataSize;
   rv = stream.Seek(kOffset, callback64.callback());
   ASSERT_THAT(rv, IsError(ERR_IO_PENDING));
   int64_t new_offset = callback64.WaitForResult();
-  EXPECT_EQ(kTestData.size(), new_offset);
+  EXPECT_EQ(kTestDataSize, new_offset);
 
   int total_bytes_written = 0;
 
-  scoped_refptr<IOBuffer> buffer = CreateTestDataBuffer();
+  scoped_refptr<IOBufferWithSize> buffer = CreateTestDataBuffer();
   int buffer_size = buffer->size();
   scoped_refptr<DrainableIOBuffer> drainable =
       base::MakeRefCounted<DrainableIOBuffer>(std::move(buffer), buffer_size);
-  while (total_bytes_written != kTestData.size()) {
+  while (total_bytes_written != kTestDataSize) {
     rv = stream.Write(drainable.get(), drainable->BytesRemaining(),
                       callback.callback());
     if (rv == ERR_IO_PENDING)
@@ -378,7 +383,7 @@ TEST_F(FileStreamTest, Write_FromOffset) {
   }
   file_size = base::GetFileSize(temp_file_path());
   ASSERT_TRUE(file_size.has_value());
-  EXPECT_EQ(file_size, kTestData.size() * 2);
+  EXPECT_EQ(file_size, kTestDataSize * 2);
 }
 
 TEST_F(FileStreamTest, BasicReadWrite) {
@@ -414,11 +419,11 @@ TEST_F(FileStreamTest, BasicReadWrite) {
 
   int total_bytes_written = 0;
 
-  scoped_refptr<IOBuffer> buffer = CreateTestDataBuffer();
+  scoped_refptr<IOBufferWithSize> buffer = CreateTestDataBuffer();
   int buffer_size = buffer->size();
   scoped_refptr<DrainableIOBuffer> drainable =
       base::MakeRefCounted<DrainableIOBuffer>(std::move(buffer), buffer_size);
-  while (total_bytes_written != kTestData.size()) {
+  while (total_bytes_written != kTestDataSize) {
     rv = stream->Write(drainable.get(), drainable->BytesRemaining(),
                        callback.callback());
     if (rv == ERR_IO_PENDING)
@@ -434,7 +439,7 @@ TEST_F(FileStreamTest, BasicReadWrite) {
 
   file_size = base::GetFileSize(temp_file_path());
   ASSERT_TRUE(file_size.has_value());
-  EXPECT_EQ(kTestData.size() * 2, file_size);
+  EXPECT_EQ(kTestDataSize * 2, file_size);
 }
 
 TEST_F(FileStreamTest, BasicWriteRead) {
@@ -458,11 +463,11 @@ TEST_F(FileStreamTest, BasicWriteRead) {
 
   int total_bytes_written = 0;
 
-  scoped_refptr<IOBuffer> buffer = CreateTestDataBuffer();
+  scoped_refptr<IOBufferWithSize> buffer = CreateTestDataBuffer();
   int buffer_size = buffer->size();
   scoped_refptr<DrainableIOBuffer> drainable =
       base::MakeRefCounted<DrainableIOBuffer>(std::move(buffer), buffer_size);
-  while (total_bytes_written != kTestData.size()) {
+  while (total_bytes_written != kTestDataSize) {
     rv = stream->Write(drainable.get(), drainable->BytesRemaining(),
                        callback.callback());
     if (rv == ERR_IO_PENDING)
@@ -474,7 +479,7 @@ TEST_F(FileStreamTest, BasicWriteRead) {
     total_bytes_written += rv;
   }
 
-  EXPECT_EQ(kTestData.size(), total_bytes_written);
+  EXPECT_EQ(kTestDataSize, total_bytes_written);
 
   rv = stream->Seek(0, callback64.callback());
   ASSERT_THAT(rv, IsError(ERR_IO_PENDING));
@@ -500,10 +505,11 @@ TEST_F(FileStreamTest, BasicWriteRead) {
 
   file_size = base::GetFileSize(temp_file_path());
   ASSERT_TRUE(file_size.has_value());
-  EXPECT_EQ(kTestData.size() * 2, file_size.value());
+  EXPECT_EQ(kTestDataSize * 2, file_size.value());
 
-  EXPECT_EQ(kTestData.size() * 2, total_bytes_read);
-  const std::string kExpectedFileData = base::StrCat({kTestData, kTestData});
+  EXPECT_EQ(kTestDataSize * 2, total_bytes_read);
+  const std::string kExpectedFileData =
+      std::string(kTestData) + std::string(kTestData);
   EXPECT_EQ(kExpectedFileData, data_read);
 }
 
@@ -519,7 +525,7 @@ class TestWriteReadCompletionCallback {
         data_read_(data_read),
         drainable_(
             base::MakeRefCounted<DrainableIOBuffer>(CreateTestDataBuffer(),
-                                                    kTestData.size())) {}
+                                                    kTestDataSize)) {}
 
   TestWriteReadCompletionCallback(const TestWriteReadCompletionCallback&) =
       delete;
@@ -569,7 +575,7 @@ class TestWriteReadCompletionCallback {
 
     int rv;
 
-    if (*total_bytes_written_ != kTestData.size()) {
+    if (*total_bytes_written_ != kTestDataSize) {
       // Recurse to finish writing all data.
       int total_bytes_written = 0, total_bytes_read = 0;
       std::string data_read;
@@ -635,13 +641,13 @@ TEST_F(FileStreamTest, WriteRead) {
     TestWriteReadCompletionCallback callback(stream.get(), &total_bytes_written,
                                              &total_bytes_read, &data_read);
 
-    scoped_refptr<IOBuffer> buf = CreateTestDataBuffer();
+    scoped_refptr<IOBufferWithSize> buf = CreateTestDataBuffer();
     rv = stream->Write(buf.get(), buf->size(), callback.callback());
     if (rv == ERR_IO_PENDING) {
       rv = callback.WaitForResult();
     }
     EXPECT_LT(0, rv);
-    EXPECT_EQ(kTestData.size(), total_bytes_written);
+    EXPECT_EQ(kTestDataSize, total_bytes_written);
 
     callback.ValidateWrittenData();
   }
@@ -649,10 +655,11 @@ TEST_F(FileStreamTest, WriteRead) {
 
   file_size = base::GetFileSize(temp_file_path());
   ASSERT_TRUE(file_size.has_value());
-  EXPECT_EQ(kTestData.size() * 2, file_size.value());
+  EXPECT_EQ(kTestDataSize * 2, file_size.value());
 
-  EXPECT_EQ(kTestData.size() * 2, total_bytes_read);
-  const std::string kExpectedFileData = base::StrCat({kTestData, kTestData});
+  EXPECT_EQ(kTestDataSize * 2, total_bytes_read);
+  const std::string kExpectedFileData =
+      std::string(kTestData) + std::string(kTestData);
   EXPECT_EQ(kExpectedFileData, data_read);
 }
 
@@ -663,7 +670,7 @@ class TestWriteCloseCompletionCallback {
         total_bytes_written_(total_bytes_written),
         drainable_(
             base::MakeRefCounted<DrainableIOBuffer>(CreateTestDataBuffer(),
-                                                    kTestData.size())) {}
+                                                    kTestDataSize)) {}
   TestWriteCloseCompletionCallback(const TestWriteCloseCompletionCallback&) =
       delete;
   TestWriteCloseCompletionCallback& operator=(
@@ -694,7 +701,7 @@ class TestWriteCloseCompletionCallback {
 
     int rv;
 
-    if (*total_bytes_written_ != kTestData.size()) {
+    if (*total_bytes_written_ != kTestDataSize) {
       // Recurse to finish writing all data.
       int total_bytes_written = 0;
       TestWriteCloseCompletionCallback callback(stream_, &total_bytes_written);
@@ -744,19 +751,19 @@ TEST_F(FileStreamTest, WriteClose) {
     // `callback` can't outlive `stream`.
     TestWriteCloseCompletionCallback callback(stream.get(),
                                               &total_bytes_written);
-    scoped_refptr<IOBuffer> buf = CreateTestDataBuffer();
+    scoped_refptr<IOBufferWithSize> buf = CreateTestDataBuffer();
     rv = stream->Write(buf.get(), buf->size(), callback.callback());
     if (rv == ERR_IO_PENDING) {
       total_bytes_written = callback.WaitForResult();
     }
     EXPECT_LT(0, total_bytes_written);
-    EXPECT_EQ(kTestData.size(), total_bytes_written);
+    EXPECT_EQ(kTestDataSize, total_bytes_written);
   }
   stream.reset();
 
   file_size = base::GetFileSize(temp_file_path());
   ASSERT_TRUE(file_size.has_value());
-  EXPECT_EQ(kTestData.size() * 2, file_size.value());
+  EXPECT_EQ(kTestDataSize * 2, file_size.value());
 }
 
 TEST_F(FileStreamTest, OpenAndDelete) {
@@ -921,7 +928,7 @@ class FileStreamPipeTest : public PlatformTest, public WithTaskEnvironment {
         PIPE_TYPE_BYTE, /*nMaxInstances=*/1,
         /*nOutBufferSize=*/0, /*nInBufferSize=*/0, /*nDefaultTimeOut=*/0,
         /*lpSecurityAttributes=*/nullptr));
-    if (pipe.is_valid()) {
+    if (pipe.IsValid()) {
       return base::File(std::move(pipe), /*async=*/true);
     }
     return base::File(base::File::GetLastFileError());
@@ -935,7 +942,7 @@ class FileStreamPipeTest : public PlatformTest, public WithTaskEnvironment {
                       /*dwShareMode=*/0, /*lpSecurityAttributes=*/nullptr,
                       OPEN_EXISTING, /*dwFlagsAndAttributes=*/0,
                       /*hTemplateFile=*/nullptr));
-    if (!pipe.is_valid()) {
+    if (!pipe.IsValid()) {
       return base::File(base::File::GetLastFileError());
     }
     return base::File(std::move(pipe));
@@ -972,7 +979,7 @@ TEST_F(FileStreamPipeTest, ConnectNamedPipeAfterClient) {
       IsOk());
 
   // Send some data over the pipe to be sure it works.
-  scoped_refptr<IOBuffer> write_io_buffer = CreateTestDataBuffer();
+  scoped_refptr<IOBufferWithSize> write_io_buffer = CreateTestDataBuffer();
   int result = pipe_stream.Write(write_io_buffer.get(), write_io_buffer->size(),
                                  callback.callback());
 

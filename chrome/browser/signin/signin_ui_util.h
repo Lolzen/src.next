@@ -11,13 +11,13 @@
 #include "base/auto_reset.h"
 #include "base/functional/callback_forward.h"
 #include "build/buildflag.h"
+#include "chrome/browser/signin/reauth_result.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "components/signin/public/base/signin_buildflags.h"
 #include "components/signin/public/base/signin_metrics.h"
 
 struct AccountInfo;
 struct CoreAccountInfo;
-class Browser;
 class Profile;
 class ProfileAttributesEntry;
 class ProfileAttributesStorage;
@@ -29,21 +29,10 @@ class IdentityManager;
 // Utility functions to gather status information from the various signed in
 // services and construct messages suitable for showing in UI.
 namespace signin_ui_util {
-
-// Enables history sync for the primary account.
-// If the user is already signed in, the history datatype is enabled
-// immediately. If an account is signed in to Web, the user is also signed in to
-// Chrome. If the user needs to reauth, history sync is enabled immediately, and
-// a reauth tab is opened. If the user is not signed in to Web, a sign in tab is
-// opened, and history sync is enabled once the sign in was completed.
-void SignInAndEnableHistorySync(Browser* browser,
-                                Profile* profile,
-                                signin_metrics::AccessPoint access_point);
-
 class SigninUiDelegate;
 
 // Returns the username of the primary account or an empty string if there is
-// no primary account.
+// no primary account or the account has not consented to browser sync.
 std::u16string GetAuthenticatedUsername(Profile* profile);
 
 // Shows a learn more page for signin errors.
@@ -82,18 +71,13 @@ void SignInFromSingleAccountPromo(Profile* profile,
                                   const CoreAccountInfo& account,
                                   signin_metrics::AccessPoint access_point);
 
-// This function is used to enable sync or the history sync for a given account:
-// Which screen is shown depends on the feature
-// `kReplaceSyncPromosWithSignInPromos`.
+// This function is used to enable sync for a given account:
 // * This function does nothing if the user is already signed in to Chrome.
 // * If |account| is empty, then it presents the Chrome sign-in page.
 // * If token service has an invalid refresh token for account |account|,
 //   then it presents the Chrome sign-in page with |account.email| prefilled.
 // * If token service has a valid refresh token for |account|, then it
-//   shows to the user the sync consent screen is
-//   `kReplaceSyncPromosWithSignInPromos` is disabled or the history sync optin
-//   screen if `kReplaceSyncPromosWithSignInPromos` is enabled.
-// TODO(crbug.com/457398017): Consider renaming this method.
+//   enables sync for |account|.
 void EnableSyncFromSingleAccountPromo(Profile* profile,
                                       const CoreAccountInfo& account,
                                       signin_metrics::AccessPoint access_point);
@@ -105,7 +89,6 @@ void EnableSyncFromSingleAccountPromo(Profile* profile,
 //
 // |is_default_promo_account| is true if |account| corresponds to the default
 // account in the promo. It is ignored if |account| is empty.
-// TODO(crbug.com/457398017): Consider renaming this method.
 void EnableSyncFromMultiAccountPromo(Profile* profile,
                                      const CoreAccountInfo& account,
                                      signin_metrics::AccessPoint access_point,
@@ -149,13 +132,11 @@ std::u16string GetShortProfileIdentityToDisplay(
 std::string GetAllowedDomain(std::string signin_pattern);
 
 // Returns whether Chrome should show the identity of the user (using a brief
-// animation) on opening a new window.
-bool ShouldShowAnimatedIdentityOnOpeningWindow(Profile& profile);
-
-// Creates a scoped override that makes the delay for cross window animation
-// replay zero.
-base::AutoReset<std::optional<base::TimeDelta>>
-CreateZeroOverrideDelayForCrossWindowAnimationReplayForTesting();
+// animation) on opening a new window. IdentityManager's refresh tokens must be
+// loaded when this function gets called.
+bool ShouldShowAnimatedIdentityOnOpeningWindow(
+    const ProfileAttributesStorage& profile_attributes_storage,
+    Profile* profile);
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 base::AutoReset<SigninUiDelegate*> SetSigninUiDelegateForTesting(
@@ -170,7 +151,7 @@ void RecordAnimatedIdentityTriggered(Profile* profile);
 void RecordProfileMenuViewShown(Profile* profile);
 
 // Called when a button/link in the profile menu was clicked.
-void RecordProfileMenuClick(const Profile& profile);
+void RecordProfileMenuClick(Profile* profile);
 
 }  // namespace signin_ui_util
 

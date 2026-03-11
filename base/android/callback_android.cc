@@ -23,7 +23,8 @@ void RunObjectCallbackAndroid(const JavaRef<jobject>& callback,
 }
 
 void RunBooleanCallbackAndroid(const JavaRef<jobject>& callback, bool arg) {
-  Java_Helper_onBooleanResultFromNative(AttachCurrentThread(), callback, arg);
+  Java_Helper_onBooleanResultFromNative(AttachCurrentThread(), callback,
+                                        static_cast<jboolean>(arg));
 }
 
 void RunIntCallbackAndroid(const JavaRef<jobject>& callback, int32_t arg) {
@@ -35,7 +36,8 @@ void RunLongCallbackAndroid(const JavaRef<jobject>& callback, int64_t arg) {
 }
 
 void RunTimeCallbackAndroid(const JavaRef<jobject>& callback, base::Time time) {
-  RunLongCallbackAndroid(callback, time.InMillisecondsSinceUnixEpoch());
+  Java_Helper_onTimeResultFromNative(AttachCurrentThread(), callback,
+                                     time.InMillisecondsSinceUnixEpoch());
 }
 
 void RunStringCallbackAndroid(const JavaRef<jobject>& callback,
@@ -49,10 +51,14 @@ void RunOptionalStringCallbackAndroid(
     const JavaRef<jobject>& callback,
     base::optional_ref<const std::string> optional_string_arg) {
   JNIEnv* env = AttachCurrentThread();
-  RunObjectCallbackAndroid(
-      callback, optional_string_arg
-                    ? ConvertUTF8ToJavaString(env, optional_string_arg.value())
-                    : nullptr);
+  if (optional_string_arg.has_value()) {
+    Java_Helper_onOptionalStringResultFromNative(
+        env, callback, true,
+        ConvertUTF8ToJavaString(env, optional_string_arg.value()));
+  } else {
+    Java_Helper_onOptionalStringResultFromNative(
+        env, callback, false, ConvertUTF8ToJavaString(env, std::string()));
+  }
 }
 
 void RunByteArrayCallbackAndroid(const JavaRef<jobject>& callback,
@@ -62,7 +68,9 @@ void RunByteArrayCallbackAndroid(const JavaRef<jobject>& callback,
   Java_Helper_onObjectResultFromNative(env, callback, j_bytes);
 }
 
+void RunRunnableAndroid(const JavaRef<jobject>& runnable) {
+  Java_Helper_runRunnable(AttachCurrentThread(), runnable);
+}
+
 }  // namespace android
 }  // namespace base
-
-DEFINE_JNI(Callback)

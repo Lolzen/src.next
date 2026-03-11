@@ -14,12 +14,9 @@
 #include "content/public/test/browser_test.h"
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/extension_features.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -107,7 +104,7 @@ IN_PROC_BROWSER_TEST_F(WebstoreReinstallerBrowserTest, TestWebstoreReinstall) {
           .SetLocation(mojom::ManifestLocation::kInternal)
           .SetID(kTestExtensionId)
           .SetManifest(
-              base::DictValue()
+              base::Value::Dict()
                   .Set("name", kExtensionName)
                   .Set("description", "Foo")
                   .Set("manifest_version", 2)

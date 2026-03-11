@@ -4,20 +4,19 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import org.chromium.base.supplier.MonotonicObservableSupplier;
-import org.chromium.base.supplier.ObservableSuppliers;
-import org.chromium.base.supplier.SettableMonotonicObservableSupplier;
-import org.chromium.build.annotations.NullMarked;
+
+import androidx.annotation.NonNull;
+
+import org.chromium.base.supplier.ObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplierImpl;
 import org.chromium.ui.modelutil.PropertyModel;
 
 import java.util.List;
 
 /** Contains the logic to set the state of the model and react to color change clicks. */
-@NullMarked
 public class ColorPickerMediator {
-    private final List<PropertyModel> mColorItems;
-    private final SettableMonotonicObservableSupplier<Integer> mSelectedColorSupplier =
-            ObservableSuppliers.createMonotonic();
+    private final @NonNull List<PropertyModel> mColorItems;
+    private ObservableSupplierImpl<Integer> mSelectedColorSupplier = new ObservableSupplierImpl<>();
 
     /**
      * Contains the logic to set the state of the model and react to color change clicks. This
@@ -39,7 +38,7 @@ public class ColorPickerMediator {
         mSelectedColorSupplier.set(selectedColor);
     }
 
-    MonotonicObservableSupplier<Integer> getSelectedColorSupplier() {
+    ObservableSupplier<Integer> getSelectedColorSupplier() {
         return mSelectedColorSupplier;
     }
 }

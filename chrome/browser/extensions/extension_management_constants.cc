@@ -4,11 +4,8 @@
 
 #include "chrome/browser/extensions/extension_management_constants.h"
 
-#include "extensions/buildflags/buildflags.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
-
-namespace extensions::schema_constants {
+namespace extensions {
+namespace schema_constants {
 
 // Some values below are used by the policy component to filter out policy
 // values. They must be synced with
@@ -42,10 +39,12 @@ const char kUpdateUrlPrefix[] = "update_url:";
 const char kBlockedInstallMessage[] = "blocked_install_message";
 
 const char kToolbarPin[] = "toolbar_pin";
+const char kForcePinned[] = "force_pinned";
+const char kDefaultUnpinned[] = "default_unpinned";
 
 const char kFileUrlNavigationAllowed[] = "file_url_navigation_allowed";
 
-Manifest::Type GetManifestType(std::string_view name) {
+Manifest::Type GetManifestType(const std::string& name) {
   const auto iter = kAllowedTypesMap.find(name);
   if (iter != kAllowedTypesMap.end()) {
     return iter->second;
@@ -53,5 +52,5 @@ Manifest::Type GetManifestType(std::string_view name) {
   return Manifest::TYPE_UNKNOWN;
 }
 
-
-} // namespace extensions::schema_constants
+}  // namespace schema_constants
+}  // namespace extensions

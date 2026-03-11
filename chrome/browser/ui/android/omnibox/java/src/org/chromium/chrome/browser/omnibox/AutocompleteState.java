@@ -13,17 +13,16 @@ import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 
 import java.util.Locale;
-import java.util.Objects;
+import java.util.Optional;
 
 /** A state to keep track of EditText and autocomplete. */
 @NullMarked
 class AutocompleteState {
     private String mUserText;
-    private @Nullable String mAutocompleteText;
-    private @Nullable String mAdditionalText;
+    private Optional<String> mAutocompleteText;
+    private Optional<String> mAdditionalText;
     private int mSelStart;
     private int mSelEnd;
-    private @Nullable String mSiteSearchLabel;
 
     public AutocompleteState(AutocompleteState a) {
         copyFrom(a);
@@ -34,64 +33,52 @@ class AutocompleteState {
             @Nullable String autocompleteText,
             @Nullable String additionalText,
             int selStart,
-            int selEnd,
-            @Nullable String siteSearchLabel) {
+            int selEnd) {
         set(
                 userText,
-                TextUtils.isEmpty(autocompleteText) ? null : autocompleteText,
-                TextUtils.isEmpty(additionalText) ? null : additionalText,
+                TextUtils.isEmpty(autocompleteText)
+                        ? Optional.empty()
+                        : Optional.of(autocompleteText),
+                TextUtils.isEmpty(additionalText) ? Optional.empty() : Optional.of(additionalText),
                 selStart,
-                selEnd,
-                siteSearchLabel);
+                selEnd);
     }
 
     @Initializer
     public void set(
             String userText,
-            @Nullable String autocompleteText,
-            @Nullable String additionalText,
+            Optional<String> autocompleteText,
+            Optional<String> additionalText,
             int selStart,
-            int selEnd,
-            @Nullable String siteSearchLabel) {
+            int selEnd) {
         mUserText = userText;
         mAutocompleteText = autocompleteText;
         mAdditionalText = additionalText;
         mSelStart = selStart;
         mSelEnd = selEnd;
-        mSiteSearchLabel = siteSearchLabel;
     }
 
     public void copyFrom(AutocompleteState a) {
-        set(
-                a.mUserText,
-                a.mAutocompleteText,
-                a.mAdditionalText,
-                a.mSelStart,
-                a.mSelEnd,
-                a.mSiteSearchLabel);
+        set(a.mUserText, a.mAutocompleteText, a.mAdditionalText, a.mSelStart, a.mSelEnd);
     }
 
     public String getUserText() {
         return mUserText;
     }
 
-    public @Nullable String getAutocompleteText() {
+    public Optional<String> getAutocompleteText() {
         return mAutocompleteText;
     }
 
-    public @Nullable String getAdditionalText() {
+    public Optional<String> getAdditionalText() {
         return mAdditionalText;
-    }
-
-    public @Nullable String getSiteSearchLabel() {
-        return mSiteSearchLabel;
     }
 
     /**
      * @return The whole text including autocomplete text.
      */
     public String getText() {
-        return mUserText.concat(mAutocompleteText != null ? mAutocompleteText : "");
+        return TextUtils.concat(mUserText, mAutocompleteText.orElse("")).toString();
     }
 
     public int getSelStart() {
@@ -111,12 +98,12 @@ class AutocompleteState {
         mUserText = userText;
     }
 
-    public void setAutocompleteText(@Nullable String autocompleteText) {
+    public void setAutocompleteText(Optional<String> autocompleteText) {
         mAutocompleteText = autocompleteText;
     }
 
     public void clearAutocompleteText() {
-        mAutocompleteText = null;
+        mAutocompleteText = Optional.empty();
     }
 
     public boolean isCursorAtEndOfUserText() {
@@ -176,18 +163,14 @@ class AutocompleteState {
         int diff = mUserText.length() - prevState.mUserText.length();
         if (diff < 0) return false;
         if (!isPrefix(mUserText, prevState.getText())) return false;
-        if (prevState.getAutocompleteText() != null) {
-            mAutocompleteText = prevState.getAutocompleteText().substring(diff);
-        } else {
-            mAutocompleteText = null;
-        }
+        mAutocompleteText = prevState.getAutocompleteText().map(s -> s.substring(diff));
         mAdditionalText = prevState.mAdditionalText;
         return true;
     }
 
     public void commitAutocompleteText() {
-        if (mAutocompleteText != null) mUserText += mAutocompleteText;
-        mAutocompleteText = null;
+        mAutocompleteText.ifPresent(s -> mUserText += s);
+        mAutocompleteText = Optional.empty();
     }
 
     @Override
@@ -196,30 +179,27 @@ class AutocompleteState {
         if (o == this) return true;
         AutocompleteState a = (AutocompleteState) o;
         return mUserText.equals(a.mUserText)
-                && Objects.equals(mAutocompleteText, a.mAutocompleteText)
+                && mAutocompleteText.equals(a.mAutocompleteText)
                 && mSelStart == a.mSelStart
-                && mSelEnd == a.mSelEnd
-                && Objects.equals(mSiteSearchLabel, a.mSiteSearchLabel);
+                && mSelEnd == a.mSelEnd;
     }
 
     @Override
     public int hashCode() {
         return mUserText.hashCode() * 2
-                + (mAutocompleteText != null ? mAutocompleteText.hashCode() : 0) * 3
+                + mAutocompleteText.map(s -> s.hashCode()).orElse(0) * 3
                 + mSelStart * 5
-                + mSelEnd * 7
-                + (mSiteSearchLabel != null ? mSiteSearchLabel.hashCode() : 0) * 11;
+                + mSelEnd * 7;
     }
 
     @Override
     public String toString() {
         return String.format(
                 Locale.US,
-                "AutocompleteState {[%s][%s] [%d-%d] [%s]}",
+                "AutocompleteState {[%s][%s] [%d-%d]}",
                 mUserText,
                 mAutocompleteText,
                 mSelStart,
-                mSelEnd,
-                mSiteSearchLabel);
+                mSelEnd);
     }
 }

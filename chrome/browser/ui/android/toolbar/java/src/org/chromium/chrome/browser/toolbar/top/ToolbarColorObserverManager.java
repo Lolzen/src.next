@@ -37,11 +37,6 @@ class ToolbarColorObserverManager implements ToolbarColorObserver {
         notifyToolbarColorChanged();
     }
 
-    @Override
-    public void onToolbarExpandingOnNtp(boolean isToolbarExpanding) {
-        notifyToolbarExpandingOnNtp(isToolbarExpanding);
-    }
-
     /**
      * Notify the observer that the toolbar color is changed based on alpha value and toolbar color,
      * and send the rendering toolbar color to the observer.
@@ -60,11 +55,5 @@ class ToolbarColorObserverManager implements ToolbarColorObserver {
         // colors to be slightly off.
         @ColorInt int opaqueToolbarColor = ColorUtils.getOpaqueColor(mToolbarColor);
         mToolbarColorObserver.onToolbarColorChanged(opaqueToolbarColor);
-    }
-
-    private void notifyToolbarExpandingOnNtp(boolean isToolbarExpanding) {
-        if (mToolbarColorObserver == null) return;
-
-        mToolbarColorObserver.onToolbarExpandingOnNtp(isToolbarExpanding);
     }
 }

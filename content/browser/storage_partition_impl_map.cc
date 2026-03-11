@@ -9,6 +9,7 @@
 
 #include "base/barrier_closure.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/containers/map_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
@@ -22,13 +23,13 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
-#include "components/leveldb_proto/public/proto_database_provider.h"
 #include "content/browser/background_fetch/background_fetch_context.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/code_cache/generated_code_cache_context.h"
 #include "content/browser/cookie_store/cookie_store_manager.h"
 #include "content/browser/file_system/browser_file_system_helper.h"
 #include "content/browser/loader/subresource_proxying_url_loader_service.h"
+#include "content/browser/resource_context_impl.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/webui/url_data_manager_backend.h"
 #include "content/public/browser/browser_context.h"
@@ -40,7 +41,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
-#include "crypto/hash.h"
+#include "crypto/sha2.h"
 #include "services/network/public/cpp/features.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -275,7 +276,7 @@ void BlockingGarbageCollect(
   }
   for (base::FilePath path = enumerator.Next(); !path.empty();
        path = enumerator.Next()) {
-    if (!active_paths.contains(path) && path != trash_directory) {
+    if (!base::Contains(active_paths, path) && path != trash_directory) {
       // Since |trash_directory| is unique for each run of this function there
       // can be no colllisions on the move.
       base::Move(path, trash_directory.Append(path.BaseName()));
@@ -304,9 +305,9 @@ base::FilePath StoragePartitionImplMap::GetStoragePartitionPath(
   if (!partition_name.empty()) {
     // For analysis of why we can ignore collisions, see the comment above
     // kPartitionNameHashBytes.
-    auto hash = crypto::hash::Sha256(partition_name);
-    auto truncated_hash = base::span(hash).first<kPartitionNameHashBytes>();
-    return path.AppendASCII(base::HexEncode(truncated_hash));
+    uint8_t buffer[kPartitionNameHashBytes];
+    crypto::SHA256HashString(partition_name, buffer, sizeof(buffer));
+    return path.AppendASCII(base::HexEncode(buffer));
   }
 
   return path.Append(kDefaultPartitionDirname);
@@ -316,7 +317,8 @@ StoragePartitionImplMap::StoragePartitionImplMap(
     BrowserContext* browser_context)
     : browser_context_(browser_context),
       file_access_runner_(base::ThreadPool::CreateSequencedTaskRunner(
-          {base::MayBlock(), base::TaskPriority::BEST_EFFORT})) {}
+          {base::MayBlock(), base::TaskPriority::BEST_EFFORT})),
+      resource_context_initialized_(false) {}
 
 StoragePartitionImplMap::~StoragePartitionImplMap() {
 }
@@ -345,12 +347,6 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
       StoragePartitionImpl::Create(browser_context_, partition_config,
                                    relative_partition_path));
   StoragePartitionImpl* partition = partition_ptr.get();
-
-  if (partition_config.is_default()) {
-    partition->SetProtoDatabaseProvider(
-        browser_context_->TakeDefaultProtoDatabaseProvider());
-  }
-
   partitions_[partition_config] = std::move(partition_ptr);
   partition->Initialize(fallback_for_blob_urls);
 
@@ -450,6 +446,16 @@ void StoragePartitionImplMap::ForEach(
 void StoragePartitionImplMap::PostCreateInitialization(
     StoragePartitionImpl* partition,
     bool in_memory) {
+  // TODO(ajwong): ResourceContexts no longer have any storage related state.
+  // We should move this into a place where it is called once per
+  // BrowserContext creation rather than piggybacking off the default context
+  // creation.
+  // Note: moving this into Get() before partitions_[] is set causes reentrency.
+  if (!resource_context_initialized_) {
+    resource_context_initialized_ = true;
+    InitializeResourceContext(browser_context_);
+  }
+
   if (!in_memory) {
     // Clean up any lingering WebSQL user data on disk, now that WebSQL
     // has been deprecated and removed for all platforms.

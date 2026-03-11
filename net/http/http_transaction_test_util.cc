@@ -2,20 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "net/http/http_transaction_test_util.h"
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
 
-#include <stdint.h>
+#include "net/http/http_transaction_test_util.h"
 
 #include <algorithm>
 #include <unordered_map>
 #include <utility>
 
-#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/notimplemented.h"
-#include "base/numerics/safe_conversions.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
@@ -246,7 +247,6 @@ MockHttpRequest::MockHttpRequest(const MockTransaction& t) {
   frame_origin = url::Origin::Create(url);
   fps_cache_filter = t.fps_cache_filter;
   browser_run_id = t.browser_run_id;
-  is_shared_resource = t.is_shared_resource;
 }
 
 std::string MockHttpRequest::CacheKey() {
@@ -257,8 +257,10 @@ std::string MockHttpRequest::CacheKey() {
 
 TestTransactionConsumer::TestTransactionConsumer(
     RequestPriority priority,
-    HttpTransactionFactory* factory)
-    : trans_(factory->CreateTransaction(priority)) {}
+    HttpTransactionFactory* factory) {
+  // Disregard the error code.
+  factory->CreateTransaction(priority, &trans_);
+}
 
 TestTransactionConsumer::~TestTransactionConsumer() = default;
 
@@ -409,14 +411,12 @@ int MockNetworkTransaction::Read(IOBuffer* buf,
       num = t->read_handler.Run(content_length_, data_cursor_, buf, buf_len);
       data_cursor_ += num;
     } else {
-      int data_len = base::checked_cast<int>(data_.size());
+      int data_len = static_cast<int>(data_.size());
       num = std::min(static_cast<int64_t>(buf_len), data_len - data_cursor_);
       if (test_mode_ & TEST_MODE_SLOW_READ)
         num = std::min(num, 1);
       if (num) {
-        buf->span().copy_prefix_from(
-            base::span(data_).subspan(base::checked_cast<size_t>(data_cursor_),
-                                      base::checked_cast<size_t>(num)));
+        memcpy(buf->data(), data_.data() + data_cursor_, num);
         data_cursor_ += num;
       }
     }
@@ -604,7 +604,7 @@ int MockNetworkTransaction::DoSendRequest() {
 
   std::string resp_status = t->status;
   std::string resp_headers = t->response_headers;
-  std::string resp_data(t->data);
+  std::string resp_data = t->data;
 
   if (t->handler) {
     t->handler.Run(&current_request_, &resp_status, &resp_headers, &resp_data);
@@ -640,10 +640,8 @@ int MockNetworkTransaction::DoSendRequest() {
   response_.ssl_info.cert_status = t->cert_status;
   response_.ssl_info.connection_status = t->ssl_connection_status;
   response_.dns_aliases = t->dns_aliases;
-  data_ = std::vector<uint8_t>(resp_data.begin(), resp_data.end());
-  std::optional<base::ByteCount> content_length =
-      response_.headers->GetContentLength();
-  content_length_ = content_length ? content_length->InBytes() : -1;
+  data_ = resp_data;
+  content_length_ = response_.headers->GetContentLength();
 
   if (net_log_.net_log()) {
     socket_log_id_ = net_log_.net_log()->NextID();
@@ -753,6 +751,10 @@ void MockNetworkTransaction::CloseConnectionOnDestruction() {
   NOTIMPLEMENTED();
 }
 
+bool MockNetworkTransaction::IsMdlMatchForMetrics() const {
+  return false;
+}
+
 void MockNetworkTransaction::CallbackLater(CompletionOnceCallback callback,
                                            int result) {
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
@@ -783,14 +785,16 @@ void MockNetworkLayer::ResetTransactionCount() {
   transaction_count_ = 0;
 }
 
-std::unique_ptr<HttpTransaction> MockNetworkLayer::CreateTransaction(
-    RequestPriority priority) {
+int MockNetworkLayer::CreateTransaction(
+    RequestPriority priority,
+    std::unique_ptr<HttpTransaction>* trans) {
   transaction_count_++;
   last_create_transaction_priority_ = priority;
   auto mock_transaction =
       std::make_unique<MockNetworkTransaction>(priority, this);
   last_transaction_ = mock_transaction->AsWeakPtr();
-  return std::move(mock_transaction);
+  *trans = std::move(mock_transaction);
+  return OK;
 }
 
 HttpCache* MockNetworkLayer::GetCache() {

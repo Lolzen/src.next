@@ -35,7 +35,7 @@ namespace blink {
 
 class PLATFORM_EXPORT GeneratedImage : public Image {
  public:
-  bool HasSingleSecurityOrigin() const override { return true; }
+  bool CurrentFrameHasSingleSecurityOrigin() const override { return true; }
 
   bool HasIntrinsicSize() const override { return false; }
 
@@ -72,7 +72,7 @@ class PLATFORM_EXPORT GeneratedImage : public Image {
       const ImageDrawOptions& draw_options);
 
   // FIXME: Implement this to be less conservative.
-  bool IsOpaque() override { return false; }
+  bool CurrentFrameKnownToBeOpaque() override { return false; }
 
   GeneratedImage(const gfx::SizeF& size) : size_(size) {}
 

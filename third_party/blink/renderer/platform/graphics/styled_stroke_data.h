@@ -41,6 +41,7 @@ namespace blink {
 class StrokeData;
 
 enum StrokeStyle {
+  kNoStroke,
   kSolidStroke,
   kDottedStroke,
   kDashedStroke,

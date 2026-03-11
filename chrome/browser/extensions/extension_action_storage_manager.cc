@@ -17,15 +17,12 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/state_store.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_id.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -89,7 +86,7 @@ std::string BitmapToString(const SkBitmap& bitmap) {
 }
 
 // Set |action|'s default values to those specified in |dict|.
-void SetDefaultsFromValue(const base::DictValue& dict,
+void SetDefaultsFromValue(const base::Value::Dict& dict,
                           ExtensionAction* action) {
   const int kDefaultTabId = ExtensionAction::kDefaultTabId;
 
@@ -133,7 +130,7 @@ void SetDefaultsFromValue(const base::DictValue& dict,
     }
   }
 
-  const base::DictValue* icon_dict = dict.FindDict(kIconStorageKey);
+  const base::Value::Dict* icon_dict = dict.FindDict(kIconStorageKey);
   if (icon_dict && !action->HasIcon(kDefaultTabId)) {
     gfx::ImageSkia icon;
     for (const auto iter : *icon_dict) {
@@ -152,11 +149,11 @@ void SetDefaultsFromValue(const base::DictValue& dict,
   }
 }
 
-// Store |action|'s default values in a base::DictValue for use in storing to
+// Store |action|'s default values in a base::Value::Dict for use in storing to
 // disk.
-base::DictValue DefaultsToValue(ExtensionAction* action) {
+base::Value::Dict DefaultsToValue(ExtensionAction* action) {
   const int kDefaultTabId = ExtensionAction::kDefaultTabId;
-  base::DictValue dict;
+  base::Value::Dict dict;
 
   dict.Set(kPopupUrlStorageKey, action->GetPopupUrl(kDefaultTabId).spec());
   dict.Set(kTitleStorageKey, action->GetTitle(kDefaultTabId));
@@ -172,7 +169,7 @@ base::DictValue DefaultsToValue(ExtensionAction* action) {
   gfx::ImageSkia icon =
       action->GetExplicitlySetIcon(kDefaultTabId).AsImageSkia();
   if (!icon.isNull()) {
-    base::DictValue icon_value;
+    base::Value::Dict icon_value;
     std::vector<gfx::ImageSkiaRep> image_reps = icon.image_reps();
     for (const gfx::ImageSkiaRep& rep : image_reps) {
       int size = static_cast<int>(rep.scale() * icon.width());
@@ -242,7 +239,7 @@ void ExtensionActionStorageManager::WriteToStorage(
     ExtensionAction* extension_action) {
   StateStore* store = GetStateStore();
   if (store) {
-    base::DictValue defaults = DefaultsToValue(extension_action);
+    base::Value::Dict defaults = DefaultsToValue(extension_action);
     store->SetExtensionValue(extension_action->extension_id(),
                              kBrowserActionStorageKey,
                              base::Value(std::move(defaults)));

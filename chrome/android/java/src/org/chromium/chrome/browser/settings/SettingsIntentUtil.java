@@ -9,12 +9,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.components.browser_ui.settings.EmbeddableSettingsPage;
 
-@NullMarked
 public class SettingsIntentUtil {
     private SettingsIntentUtil() {}
 
@@ -28,45 +28,9 @@ public class SettingsIntentUtil {
      * @return An intent ready to launch the settings activity.
      */
     public static Intent createIntent(
-            Context context, @Nullable String fragmentName, @Nullable Bundle fragmentArgs) {
-        return createIntent(context, fragmentName, fragmentArgs, /* addToBackStack= */ false);
-    }
-
-    /**
-     * Creates an {@link Intent} that launches the settings activity.
-     *
-     * @param context The context from which the settings activity is being launched.
-     * @param fragmentName The name of the main fragment shown in the settings activity. null means
-     *     the default fragment.
-     * @param fragmentArgs A bundle of extra arguments given to the main fragment. Can be null.
-     * @param addToBackStack if true, the fragment will be added to fragment manager's back stack.
-     * @return An intent ready to launch the settings activity.
-     */
-    public static Intent createIntent(
-            Context context,
+            @NonNull Context context,
             @Nullable String fragmentName,
-            @Nullable Bundle fragmentArgs,
-            boolean addToBackStack) {
-        return createIntent(context, fragmentName, fragmentArgs, addToBackStack, /* tag= */ null);
-    }
-
-    /**
-     * Creates an {@link Intent} that launches the settings activity.
-     *
-     * @param context The context from which the settings activity is being launched.
-     * @param fragmentName The name of the main fragment shown in the settings activity. null means
-     *     the default fragment.
-     * @param fragmentArgs A bundle of extra arguments given to the main fragment. Can be null.
-     * @param addToBackStack if true, the fragment will be added to fragment manager's back stack.
-     * @param tag A tag used to identify the fragment transaction.
-     * @return An intent ready to launch the settings activity.
-     */
-    public static Intent createIntent(
-            Context context,
-            @Nullable String fragmentName,
-            @Nullable Bundle fragmentArgs,
-            boolean addToBackStack,
-            @Nullable String tag) {
+            @Nullable Bundle fragmentArgs) {
         Intent intent = new Intent();
         intent.setClass(context, SettingsActivity.class);
         if (isStandaloneFragment(context, fragmentName)) {
@@ -88,10 +52,6 @@ public class SettingsIntentUtil {
         if (fragmentArgs != null) {
             intent.putExtra(SettingsActivity.EXTRA_SHOW_FRAGMENT_ARGUMENTS, fragmentArgs);
         }
-        if (addToBackStack) {
-            intent.putExtra(SettingsActivity.EXTRA_ADD_TO_BACK_STACK, addToBackStack);
-            if (tag != null) intent.putExtra(SettingsActivity.EXTRA_FRAGMENT_TAG, tag);
-        }
         return intent;
     }
 
@@ -102,7 +62,8 @@ public class SettingsIntentUtil {
      * fragments are shown in separate activities and have full control over the whole UI. See
      * {@link SettingsActivity} for details.
      */
-    private static boolean isStandaloneFragment(Context context, @Nullable String fragmentName) {
+    private static boolean isStandaloneFragment(
+            @NonNull Context context, @Nullable String fragmentName) {
         if (fragmentName == null) {
             return false;
         }

@@ -6,8 +6,6 @@
 
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
-#include "chrome/browser/ui/signin/signin_view_controller.h"
 #include "chrome/browser/ui/webui/signin/turn_sync_on_helper.h"
 #include "google_apis/gaia/core_account_id.h"
 
@@ -25,11 +23,11 @@ void ShowDiceTab(Browser* browser,
     return;
 
   if (enable_sync) {
-    browser->GetFeatures().signin_view_controller()->ShowDiceEnableSyncTab(
+    browser->signin_view_controller()->ShowDiceEnableSyncTab(
         access_point, promo_action, email);
   } else {
-    browser->GetFeatures().signin_view_controller()->ShowDiceAddAccountTab(
-        access_point, email);
+    browser->signin_view_controller()->ShowDiceAddAccountTab(access_point,
+                                                             email);
   }
 }
 

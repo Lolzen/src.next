@@ -28,7 +28,6 @@
 #include <optional>
 
 #include "base/metrics/histogram_functions.h"
-#include "base/time/time.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "third_party/blink/public/common/scheduler/task_attribution_id.h"
 #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
@@ -45,6 +44,7 @@
 #include "third_party/blink/renderer/core/loader/history_item.h"
 #include "third_party/blink/renderer/core/navigation_api/navigation_api.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/timing/soft_navigation_heuristics.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
@@ -53,34 +53,25 @@
 #include "third_party/blink/renderer/platform/scheduler/public/task_attribution_tracker.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
-#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_view.h"
 
 namespace blink {
 
 namespace {
 
-void MaybeRecordHistoryPushStateUkm(LocalDOMWindow* window) {
+void MaybeRecordUkm(LocalDOMWindow* window,
+                    bool is_history_modifying_operation) {
   if (!window || !window->GetFrame()) {
-    return;
-  }
-
-  AdTracker* ad_tracker = window->GetFrame()->GetAdTracker();
-  if (!ad_tracker) {
     return;
   }
 
   bool has_sticky_user_activation =
       window->GetFrame()->HasStickyUserActivation();
+  bool from_ad = window->GetFrame()->IsAdScriptInStack() ||
+                 window->GetFrame()->IsAdFrame();
 
-  bool from_ad = window->GetFrame()->IsAdFrame() ||
-                 ad_tracker->IsAdScriptInStack(
-                     AdTracker::StackType::kTopOnly,
-                     /*ignore_monkey_patch=*/
-                     AdTracker::MonkeyPatchableApi::kHistoryPushState,
-                     /*out_ad_script_ancestry=*/nullptr);
-
-  ukm::builders::HistoryApi_PushState(window->UkmSourceID())
+  ukm::builders::HistoryApi(window->UkmSourceID())
+      .SetIsHistoryModifyingOperation(is_history_modifying_operation)
       .SetHasStickyUserActivation(has_sticky_user_activation)
       .SetFromAd(from_ad)
       .Record(window->UkmRecorder());
@@ -97,6 +88,8 @@ void History::Trace(Visitor* visitor) const {
 }
 
 unsigned History::length(ExceptionState& exception_state) const {
+  MaybeRecordUkm(DomWindow(), /*is_history_modifying_operation=*/false);
+
   if (!DomWindow()) {
     exception_state.ThrowSecurityError(
         "May not use a History object associated with a Document that is not "
@@ -109,6 +102,8 @@ unsigned History::length(ExceptionState& exception_state) const {
 
 ScriptValue History::state(ScriptState* script_state,
                            ExceptionState& exception_state) {
+  MaybeRecordUkm(DomWindow(), /*is_history_modifying_operation=*/false);
+
   return StateHelper(script_state, exception_state);
 }
 
@@ -120,6 +115,8 @@ SerializedScriptValue* History::StateInternal() const {
 
 void History::setScrollRestoration(const V8ScrollRestoration& value,
                                    ExceptionState& exception_state) {
+  MaybeRecordUkm(DomWindow(), /*is_history_modifying_operation=*/false);
+
   HistoryItem* item = GetHistoryItem();
   if (!item) {
     exception_state.ThrowSecurityError(
@@ -141,6 +138,8 @@ void History::setScrollRestoration(const V8ScrollRestoration& value,
 
 V8ScrollRestoration History::scrollRestoration(
     ExceptionState& exception_state) {
+  MaybeRecordUkm(DomWindow(), /*is_history_modifying_operation=*/false);
+
   if (!DomWindow()) {
     exception_state.ThrowSecurityError(
         "May not use a History object associated with a Document that is not "
@@ -222,7 +221,7 @@ void History::forward(ScriptState* script_state,
 void History::go(ScriptState* script_state,
                  int delta,
                  ExceptionState& exception_state) {
-  base::TimeTicks actual_navigation_start = base::TimeTicks::Now();
+  MaybeRecordUkm(DomWindow(), /*is_history_modifying_operation=*/true);
 
   LocalDOMWindow* window = DomWindow();
   if (!window) {
@@ -249,16 +248,15 @@ void History::go(ScriptState* script_state,
 
   if (delta) {
     // Set up propagating the current task state to the navigation commit.
-    std::optional<scheduler::TaskAttributionId> task_state_id;
+    std::optional<scheduler::TaskAttributionId> soft_navigation_task_id;
     if (script_state->World().IsMainWorld() && frame->IsOutermostMainFrame()) {
-      if (auto* tracker = scheduler::TaskAttributionTracker::From(
-              script_state->GetIsolate())) {
-        task_state_id = tracker->AsyncSameDocumentNavigationStarted();
+      if (auto* heuristics = SoftNavigationHeuristics::From(*window)) {
+        soft_navigation_task_id =
+            heuristics->AsyncSameDocumentNavigationStarted();
       }
     }
     DCHECK(frame->Client());
-    if (frame->Client()->NavigateBackForward(delta, actual_navigation_start,
-                                             task_state_id)) {
+    if (frame->Client()->NavigateBackForward(delta, soft_navigation_task_id)) {
       if (Page* page = frame->GetPage())
         page->HistoryNavigationVirtualTimePauser().PauseVirtualTime();
     }
@@ -276,7 +274,7 @@ void History::pushState(ScriptState* script_state,
                         const String& title,
                         const String& url,
                         ExceptionState& exception_state) {
-  MaybeRecordHistoryPushStateUkm(DomWindow());
+  MaybeRecordUkm(DomWindow(), /*is_history_modifying_operation=*/true);
 
   v8::Isolate* isolate = script_state->GetIsolate();
   WebFrameLoadType load_type = WebFrameLoadType::kStandard;
@@ -312,6 +310,8 @@ void History::replaceState(ScriptState* script_state,
                            const String& title,
                            const String& url,
                            ExceptionState& exception_state) {
+  MaybeRecordUkm(DomWindow(), /*is_history_modifying_operation=*/true);
+
   v8::Isolate* isolate = script_state->GetIsolate();
   scoped_refptr<SerializedScriptValue> serialized_data =
       SerializedScriptValue::Serialize(isolate, data.V8Value(),
@@ -327,9 +327,11 @@ void History::replaceState(ScriptState* script_state,
 }
 
 KURL History::UrlForState(const String& url_string) {
-  if (url_string.IsNull() || url_string.empty()) {
+  if (url_string.IsNull())
     return DomWindow()->Url();
-  }
+  if (url_string.empty())
+    return DomWindow()->BaseURL();
+
   return KURL(DomWindow()->BaseURL(), url_string);
 }
 
@@ -366,21 +368,21 @@ void History::StateObjectAdded(scoped_refptr<SerializedScriptValue> data,
     // place: JavaScript already had this URL, b) JavaScript can only access a
     // same-origin History object.
     exception_state.ThrowSecurityError(
-        StrCat({"A history state object with URL '", full_url.ElidedString(),
-                "' cannot be created in a document with origin '",
-                window->GetSecurityOrigin()->ToString(), "' and URL '",
-                window->Url().ElidedString(), "'."}));
+        "A history state object with URL '" + full_url.ElidedString() +
+        "' cannot be created in a document with origin '" +
+        window->GetSecurityOrigin()->ToString() + "' and URL '" +
+        window->Url().ElidedString() + "'.");
     return;
   }
 
   if (!window->GetFrame()->navigation_rate_limiter().CanProceed()) {
-    if (RuntimeEnabledFeatures::
-            ThrottledHistoryAPIThrowsSecurityErrorEnabled()) {
-      exception_state.ThrowSecurityError(
-          "Throttling history state changes to "
-          "prevent the browser from hanging.");
-    }
-
+    // TODO(769592): Get an API spec change so that we can throw an exception:
+    //
+    //  exception_state.ThrowDOMException(DOMExceptionCode::kQuotaExceededError,
+    //                                    "Throttling history state changes to "
+    //                                    "prevent the browser from hanging.");
+    //
+    // instead of merely warning.
     return;
   }
 

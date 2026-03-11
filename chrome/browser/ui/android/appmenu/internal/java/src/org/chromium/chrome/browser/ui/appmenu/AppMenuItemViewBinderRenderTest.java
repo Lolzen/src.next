@@ -30,13 +30,10 @@ import org.chromium.base.test.params.ParameterizedRunner;
 import org.chromium.base.test.util.Criteria;
 import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.Feature;
-import org.chromium.base.test.util.Features.DisableFeatures;
-import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.ui.appmenu.AppMenuHandler.AppMenuItemType;
 import org.chromium.chrome.browser.ui.appmenu.test.R;
 import org.chromium.chrome.test.ChromeJUnit4RunnerDelegate;
 import org.chromium.chrome.test.util.ChromeRenderTestRule;
-import org.chromium.ui.modelutil.MVCListAdapter;
 import org.chromium.ui.modelutil.ModelListAdapter;
 import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.test.util.BlankUiTestActivity;
@@ -48,12 +45,10 @@ import java.util.List;
 
 /** Render tests for {@link AppMenuItemViewBinder}. */
 @RunWith(ParameterizedRunner.class)
-// TODO: Add new tests when the flag is enabled.
-@DisableFeatures({ChromeFeatureList.ANDROID_THEME_MODULE})
 @ParameterAnnotations.UseRunnerDelegate(ChromeJUnit4RunnerDelegate.class)
 public class AppMenuItemViewBinderRenderTest {
     @ParameterAnnotations.ClassParameter
-    private static final List<ParameterSet> sClassParams =
+    private static List<ParameterSet> sClassParams =
             Arrays.asList(
                     new ParameterSet().value(false, true).name("LiteMode_MenuItemEnabled"),
                     new ParameterSet().value(false, false).name("LiteMode_MenuItemDisabled"),
@@ -86,9 +81,9 @@ public class AppMenuItemViewBinderRenderTest {
     static final String TITLE_4 = "Menu Item Four";
     static final String TITLE_5 = "Menu Item Five";
 
-    private MVCListAdapter.ModelList mMenuList;
+    private ModelListAdapter.ModelList mMenuList;
     private ModelListAdapter mModelListAdapter;
-    private final boolean mMenuItemEnabled;
+    private boolean mMenuItemEnabled;
 
     public AppMenuItemViewBinderRenderTest(boolean nightMode, boolean menuItemEnabled) {
         mMenuItemEnabled = menuItemEnabled;
@@ -104,8 +99,7 @@ public class AppMenuItemViewBinderRenderTest {
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
                     sActivity = sActivityTestRule.getActivity();
-                    sActivity.setTheme(R.style.Theme_BrowserUI_DayNight);
-                    mMenuList = new MVCListAdapter.ModelList();
+                    mMenuList = new ModelListAdapter.ModelList();
                     mModelListAdapter = new ModelListAdapter(mMenuList);
 
                     sActivity.setContentView(R.layout.app_menu_layout);
@@ -141,7 +135,7 @@ public class AppMenuItemViewBinderRenderTest {
         if (icon != null) {
             model.set(AppMenuItemProperties.ICON, icon);
         }
-        mMenuList.add(new MVCListAdapter.ListItem(AppMenuItemType.STANDARD, model));
+        mMenuList.add(new ModelListAdapter.ListItem(AppMenuItemType.STANDARD, model));
 
         return model;
     }
@@ -176,11 +170,11 @@ public class AppMenuItemViewBinderRenderTest {
                         .with(AppMenuItemProperties.ICON, buttonIcon)
                         .build();
 
-        MVCListAdapter.ModelList subList = new MVCListAdapter.ModelList();
-        subList.add(new MVCListAdapter.ListItem(0, buttonModel));
+        ModelListAdapter.ModelList subList = new ModelListAdapter.ModelList();
+        subList.add(new ModelListAdapter.ListItem(0, buttonModel));
         titleModel.set(AppMenuItemProperties.ADDITIONAL_ICONS, subList);
 
-        mMenuList.add(new MVCListAdapter.ListItem(AppMenuItemType.TITLE_BUTTON, titleModel));
+        mMenuList.add(new ModelListAdapter.ListItem(AppMenuItemType.TITLE_BUTTON, titleModel));
 
         return titleModel;
     }
@@ -208,7 +202,7 @@ public class AppMenuItemViewBinderRenderTest {
                         .with(AppMenuItemProperties.MENU_ITEM_ID, menuId)
                         .build();
 
-        MVCListAdapter.ModelList subList = new MVCListAdapter.ModelList();
+        ModelListAdapter.ModelList subList = new ModelListAdapter.ModelList();
         int menutype = AppMenuItemType.BUTTON_ROW;
         createIconMenuItem(subList, subId1, titleCondensed1, icon1, enabled);
         createIconMenuItem(subList, subId2, titleCondensed2, icon2, enabled);
@@ -221,13 +215,13 @@ public class AppMenuItemViewBinderRenderTest {
         }
 
         model.set(AppMenuItemProperties.ADDITIONAL_ICONS, subList);
-        mMenuList.add(new MVCListAdapter.ListItem(menutype, model));
+        mMenuList.add(new ModelListAdapter.ListItem(menutype, model));
 
         return model;
     }
 
     private void createIconMenuItem(
-            MVCListAdapter.ModelList list,
+            ModelListAdapter.ModelList list,
             int id,
             String titleCondensed,
             Drawable icon,
@@ -239,7 +233,7 @@ public class AppMenuItemViewBinderRenderTest {
                         .with(AppMenuItemProperties.ICON, icon)
                         .with(AppMenuItemProperties.ENABLED, enabled)
                         .build();
-        list.add(new MVCListAdapter.ListItem(0, model));
+        list.add(new ModelListAdapter.ListItem(0, model));
     }
 
     private void waitListViewToBeDrawn() {
@@ -391,7 +385,7 @@ public class AppMenuItemViewBinderRenderTest {
                             AppCompatResources.getDrawable(
                                     sActivity,
                                     org.chromium.chrome.browser.ui.appmenu.test.R.drawable
-                                            .ic_star_24dp);
+                                            .test_ic_star_border_black_24dp);
                     Drawable icon3 =
                             AppCompatResources.getDrawable(
                                     sActivity,
@@ -435,7 +429,7 @@ public class AppMenuItemViewBinderRenderTest {
                             AppCompatResources.getDrawable(
                                     sActivity,
                                     org.chromium.chrome.browser.ui.appmenu.test.R.drawable
-                                            .ic_star_24dp);
+                                            .test_ic_star_border_black_24dp);
                     Drawable icon3 =
                             AppCompatResources.getDrawable(
                                     sActivity,
@@ -445,7 +439,7 @@ public class AppMenuItemViewBinderRenderTest {
                             AppCompatResources.getDrawable(
                                     sActivity,
                                     org.chromium.chrome.browser.ui.appmenu.test.R.drawable
-                                            .ic_info_24dp);
+                                            .test_ic_info_outline_black_24dp);
                     createIconRowMenuItem(
                             1,
                             MENU_ID1,
@@ -484,7 +478,7 @@ public class AppMenuItemViewBinderRenderTest {
                             AppCompatResources.getDrawable(
                                     sActivity,
                                     org.chromium.chrome.browser.ui.appmenu.test.R.drawable
-                                            .ic_star_24dp);
+                                            .test_ic_star_border_black_24dp);
                     Drawable icon3 =
                             AppCompatResources.getDrawable(
                                     sActivity,
@@ -494,9 +488,12 @@ public class AppMenuItemViewBinderRenderTest {
                             AppCompatResources.getDrawable(
                                     sActivity,
                                     org.chromium.chrome.browser.ui.appmenu.test.R.drawable
-                                            .ic_info_24dp);
+                                            .test_ic_info_outline_black_24dp);
                     Drawable icon5 =
-                            AppCompatResources.getDrawable(sActivity, R.drawable.ic_refresh_24dp);
+                            AppCompatResources.getDrawable(
+                                    sActivity,
+                                    org.chromium.chrome.browser.ui.appmenu.test.R.drawable
+                                            .test_ic_refresh_black_24dp);
                     createIconRowMenuItem(
                             1,
                             MENU_ID1,

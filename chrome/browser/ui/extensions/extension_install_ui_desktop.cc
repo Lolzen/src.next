@@ -7,6 +7,7 @@
 #include "base/functional/bind.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -16,11 +17,6 @@
 #include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/extensions/extension_installed_watcher.h"
-#include "chrome/browser/ui/extensions/extension_post_install_dialog.h"
-#include "chrome/browser/ui/extensions/extension_post_install_dialog_model.h"
 #include "chrome/browser/ui/extensions/installation_error_infobar_delegate.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/browser/ui/simple_message_box.h"
@@ -48,7 +44,12 @@ using extensions::Extension;
 
 namespace {
 
-BrowserWindowInterface* FindOrCreateVisibleBrowser(Profile* profile) {
+Browser* FindOrCreateVisibleBrowser(Profile* profile) {
+  // TODO(mpcomplete): remove this workaround for http://crbug.com/244246
+  // after fixing http://crbug.com/38676.
+  if (!IncognitoModePrefs::CanOpenBrowser(profile)) {
+    return nullptr;
+  }
   chrome::ScopedTabbedBrowserDisplayer displayer(profile);
   Browser* browser = displayer.browser();
   if (browser->tab_strip_model()->count() == 0) {
@@ -78,13 +79,12 @@ void ShowAppInstalledNotification(
                                        base::UTF8ToUTF16(extension->name())));
 #else
   Profile* current_profile = profile->GetOriginalProfile();
-  BrowserWindowInterface* browser_window =
-      FindOrCreateVisibleBrowser(current_profile);
-  CHECK(browser_window);
-  NavigateParams params(GetSingletonTabNavigateParams(
-      browser_window->GetBrowserForMigrationOnly(),
-      GURL(chrome::kChromeUIAppsURL)));
-  Navigate(&params);
+  Browser* browser = FindOrCreateVisibleBrowser(current_profile);
+  if (browser) {
+    NavigateParams params(
+        GetSingletonTabNavigateParams(browser, GURL(chrome::kChromeUIAppsURL)));
+    Navigate(&params);
+  }
 #endif
 }
 
@@ -113,25 +113,20 @@ void ExtensionInstallUIDesktop::OnInstallSuccess(
   // Extensions aren't enabled by default in incognito so we confirm
   // the install in a normal window.
   Profile* current_profile = profile()->GetOriginalProfile();
-  BrowserWindowInterface* browser_window =
-      FindOrCreateVisibleBrowser(current_profile);
-  CHECK(browser_window);
+  Browser* browser = FindOrCreateVisibleBrowser(current_profile);
 
   if (!extension->is_app()) {
-    SkBitmap icon_to_use = icon ? *icon : SkBitmap();
-    extensions::TriggerPostInstallDialog(
-        profile(), extension, icon_to_use,
-        base::BindOnce(
-            [](BrowserWindowInterface* bwi) {
-              return bwi->GetActiveTabInterface()->GetContents();
-            },
-            browser_window));
+    ShowBubble(extension, browser, *icon);
     return;
   }
 
   if (!use_app_installed_bubble()) {
     ShowAppInstalledNotification(extension, profile());
     return;
+  }
+
+  if (browser) {
+    ShowBubble(extension, browser, *icon);
   }
 }
 

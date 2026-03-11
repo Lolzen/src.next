@@ -4,7 +4,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,6 +13,7 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_forward.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/path_service.h"
@@ -69,7 +69,6 @@
 #include "ui/shell_dialogs/fake_select_file_dialog.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
-#include "base/test/test_future.h"
 #include "chromeos/dbus/dlp/dlp_client.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
@@ -555,7 +554,7 @@ class DelayingDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
   }
 };
 
-// Disabled on multiple platforms due to flakiness. crbug.com/41236339
+// Disabled on multiple platforms due to flakiness. crbug.com/580766
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, DISABLED_SaveHTMLOnlyTabDestroy) {
   GURL url = NavigateToMockURL("a");
   auto delaying_delegate =
@@ -588,8 +587,8 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, DISABLED_SaveHTMLOnlyTabDestroy) {
 }
 
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveViewSourceHTMLOnly) {
-  // TODO(lukasza): https://crbug.com/40631088: Disallow renderer crashes once
-  // the bug is fixed.
+  // TODO(lukasza): https://crbug.com/971811: Disallow renderer crashes once the
+  // bug is fixed.
   content::ScopedAllowRendererCrashes scoped_allow_renderer_crashes;
 
   GURL mock_url = embedded_test_server()->GetURL("/save_page/a.htm");
@@ -609,7 +608,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveViewSourceHTMLOnly) {
   EXPECT_TRUE(base::ContentsEqual(GetTestDirFile("a.htm"), full_file_name));
 }
 
-// Regression test for https://crbug.com/40632177 (saving a page that was served
+// Regression test for https://crbug.com/974312 (saving a page that was served
 // with `Cross-Origin-Resource-Policy: same-origin` http response header).
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveCompleteHTML) {
   GURL url = NavigateToMockURL("b");
@@ -955,7 +954,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveDownloadableIFrame) {
 }
 
 // Test that file: URI won't be saved when referred to from an HTTP page.
-// See also https://crbug.com/40084438.
+// See also https://crbug.com/616429.
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveUnauthorizedResource) {
   GURL url = NavigateToMockURL("unauthorized-access");
 
@@ -982,7 +981,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveUnauthorizedResource) {
 
   // We should not save resource that the web page didn't have access to.
   // (because executing a resource request can have side effects - for example
-  // after https://crbug.com/40083783 a website from the internet should not be
+  // after https://crbug.com/590714 a website from the internet should not be
   // able to issue a resource request to an intranet website and trigger
   // server-side actions in the internet;  this test uses a file: URI as a
   // canary for detecting whether a website can access restricted resources).
@@ -1037,7 +1036,7 @@ class SavePageSitePerProcessBrowserTest : public SavePageBrowserTest {
   }
 };
 
-// Test for crbug.com/40433720.
+// Test for crbug.com/526786.
 IN_PROC_BROWSER_TEST_F(SavePageSitePerProcessBrowserTest, SaveAsCompleteHtml) {
   GURL url(
       embedded_test_server()->GetURL("a.com", "/save_page/frames-xsite.htm"));
@@ -1097,7 +1096,7 @@ IN_PROC_BROWSER_TEST_F(SavePageSitePerProcessBrowserTest, SaveAsCompleteHtml) {
               HasSubstr("b.htm: 3a35f7fa-96a9-4487-9f18-4470263907fa"));
 }
 
-// Test for crbug.com/40438557.
+// Test for crbug.com/538766.
 // Disabled on Mac due to excessive flakiness. https://crbug.com/1271741
 #if BUILDFLAG(IS_MAC)
 #define MAYBE_SaveAsMHTML DISABLED_SaveAsMHTML
@@ -1154,7 +1153,7 @@ IN_PROC_BROWSER_TEST_F(SavePageSitePerProcessBrowserTest,
   EXPECT_EQ(1, count) << "Verify number of image/png parts in the mhtml output";
 }
 
-// Test for crbug.com/40439413 - handling of dead renderer processes.
+// Test for crbug.com/541342 - handling of dead renderer processes.
 IN_PROC_BROWSER_TEST_F(SavePageSitePerProcessBrowserTest,
                        CompleteHtmlWhenRendererIsDead) {
   GURL url(
@@ -1167,7 +1166,7 @@ IN_PROC_BROWSER_TEST_F(SavePageSitePerProcessBrowserTest,
   web_contents->GetPrimaryMainFrame()
       ->ForEachRenderFrameHostWithAction(
           [web_contents, &did_kill_a_process](RenderFrameHost* frame) {
-            if (frame->GetLastCommittedURL().GetHost() == "bar.com") {
+            if (frame->GetLastCommittedURL().host() == "bar.com") {
               RenderProcessHost* process_to_kill = frame->GetProcess();
               EXPECT_NE(web_contents->GetPrimaryMainFrame()
                             ->GetProcess()
@@ -1256,7 +1255,7 @@ class SavePageOriginalVsSavedComparisonTest
     }
 
     // Check that we're able to navigate away and come back, as well.
-    // See https://crbug.com/41450468.
+    // See https://crbug.com/948246.
     ASSERT_TRUE(
         ui_test_utils::NavigateToURL(browser(), GURL("data:text/html,foo")));
     chrome::GoBack(browser(), WindowOpenDisposition::CURRENT_TAB);
@@ -1295,7 +1294,7 @@ class SavePageOriginalVsSavedComparisonTest
         // loaded before continuing with the test.
     };
 
-    // TODO(lukasza): crbug.com/41216547: Enable <object> testing of MHTML.
+    // TODO(lukasza): crbug.com/553478: Enable <object> testing of MHTML.
     if (save_page_type == content::SAVE_PAGE_TYPE_AS_MHTML)
       return;
 
@@ -1374,9 +1373,9 @@ class SavePageOriginalVsSavedComparisonTest
 };
 
 // Test coverage for:
-// - crbug.com/40433720: OOPIFs support for CompleteHtml
-// - crbug.com/40438557: OOPIFs support for MHTML
-// - crbug.com/40438945: Subframe gets redirected.
+// - crbug.com/526786: OOPIFs support for CompleteHtml
+// - crbug.com/538766: OOPIFs support for MHTML
+// - crbug.com/539936: Subframe gets redirected.
 // Test compares original-vs-saved for a page with cross-site frames
 // (subframes get redirected to a different domain - see frames-xsite.htm).
 IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest, CrossSite) {
@@ -1395,7 +1394,7 @@ IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest, CrossSite) {
 }
 
 // Test compares original-vs-saved for a page with <object> elements.
-// (see crbug.com/41216547).
+// (see crbug.com/553478).
 // crbug.com/1070886: disabled because of flakiness.
 IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest,
                        DISABLED_ObjectElementsViaHttp) {
@@ -1406,7 +1405,7 @@ IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest,
 }
 
 // Tests that saving a page from file: URI works.
-// TODO(lukasza): https://crbug.com/40627967: Re-enable the test.
+// TODO(lukasza): https://crbug.com/964364: Re-enable the test.
 IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest,
                        DISABLED_ObjectElementsViaFile) {
   base::FilePath test_data_dir;
@@ -1446,7 +1445,7 @@ IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest,
 
 // Test compares original-vs-saved for a page with nested frames.
 // Two levels of nesting are especially good for verifying correct
-// link rewriting for subframes-vs-main-frame (see crbug.com/40444391).
+// link rewriting for subframes-vs-main-frame (see crbug.com/554666).
 IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest, NestedFrames) {
   content::SavePageType save_page_type = GetParam();
 
@@ -1462,7 +1461,7 @@ IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest, NestedFrames) {
   TestOriginalVsSavedPage(save_page_type, url, 3, 3, expected_substrings);
 }
 
-// Test for crbug.com/40123384 and crbug.com/40438320.
+// Test for crbug.com/106364 and crbug.com/538188.
 // Test frames have the same uri ...
 //   subframe1 and subframe2 - both have src=b.htm
 //   subframe3 and subframe4 - about:blank (no src, only srcdoc attribute).
@@ -1515,8 +1514,8 @@ IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest, Encoding) {
   GURL url(embedded_test_server()->GetURL("a.com",
                                           "/save_page/frames-encodings.htm"));
 
-  // TODO(lukasza): crbug.com/40439547: MHTML needs to handle multi-byte
-  // encodings by either:
+  // TODO(lukasza): crbug.com/541699: MHTML needs to handle multi-byte encodings
+  // by either:
   // 1. Continuing to preserve the original encoding, but starting to round-trip
   //    the encoding declaration (in Content-Type MIME/MHTML header?)
   // 2. Saving html docs in UTF8.
@@ -1527,7 +1526,7 @@ IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest, Encoding) {
   TestOriginalVsSavedPage(save_page_type, url, 6, 6, expected_substrings);
 }
 
-// Test for saving style element and attribute (see also crbug.com/40448527).
+// Test for saving style element and attribute (see also crbug.com/568293).
 #if BUILDFLAG(IS_MAC)
 // TODO(crbug.com/40202613): Fails on dcheck-enabled builds on 11.0.
 #define MAYBE_Style DISABLED_Style
@@ -1550,8 +1549,8 @@ IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest, MAYBE_Style) {
 }
 
 // Test for saving a page with broken subresources:
-// - Broken, undecodable image (see also https://crbug.com/40456883)
-// - Broken link, to unresolvable host (see also https://crbug.com/41243783)
+// - Broken, undecodable image (see also https://crbug.com/586680)
+// - Broken link, to unresolvable host (see also https://crbug.com/594219)
 IN_PROC_BROWSER_TEST_P(SavePageOriginalVsSavedComparisonTest, BrokenImage) {
   content::SavePageType save_page_type = GetParam();
 
@@ -1713,40 +1712,27 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveHTMLWithDlp) {
 
   chromeos::DlpClient::Shutdown();
   chromeos::DlpClient::InitializeFake();
+  base::test::RepeatingTestFuture<
+      dlp::AddFilesRequest, base::OnceCallback<void(dlp::AddFilesResponse)>>
+      add_file_cb;
+  chromeos::DlpClient::Get()->GetTestInterface()->SetAddFilesMock(
+      add_file_cb.GetCallback());
 
-  // Use page "b" which has subresources (1.png, 1.css). Total 3 files.
-  url = NavigateToMockURL("b");
+  url = NavigateToMockURL("a");
 
-  SaveCurrentTab(url, content::SAVE_PAGE_TYPE_AS_COMPLETE_HTML, "b", 3, &dir,
+  SaveCurrentTab(url, content::SAVE_PAGE_TYPE_AS_COMPLETE_HTML, "a", 1, &dir,
                  &full_file_name);
 
   ASSERT_FALSE(HasFailure());
 
-  // Asynchronously get the recorded requests from the fake client.
-  base::test::TestFuture<const dlp::GetDatabaseEntriesResponse> future;
-  chromeos::DlpClient::Get()->GetDatabaseEntries(future.GetCallback());
-  const auto& response = future.Get();
-  const auto& requests = response.files_entries();
+  auto request = std::get<0>(add_file_cb.Take());
+  ASSERT_EQ(1, request.add_file_requests().size());
+  EXPECT_EQ(full_file_name.value(), request.add_file_requests(0).file_path());
+  EXPECT_EQ(request.add_file_requests(0).source_url(), url.spec());
 
-  // There is a total of 6 requests, 3 for temporary files and 3 for final
-  // destination.
-  ASSERT_EQ(6, requests.size());
-
-  // The order of subresource saving is not guaranteed, so we use a set
-  // to verify the presence of each expected file path.
-  std::set<std::string> expected_paths;
-  expected_paths.insert(full_file_name.value());
-  expected_paths.insert(dir.AppendASCII("1.png").value());
-  expected_paths.insert(dir.AppendASCII("1.css").value());
-
-  std::set<std::string> actual_paths;
-  for (const auto& request : requests) {
-    actual_paths.insert(request.path());
-  }
-
-  for (const auto& expected_path : expected_paths) {
-    EXPECT_TRUE(actual_paths.contains(expected_path));
-  }
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  EXPECT_TRUE(base::PathExists(full_file_name));
+  EXPECT_FALSE(base::PathExists(dir));
 }
 
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveMHTMLWithDlp) {

@@ -259,7 +259,7 @@ void Image::DrawPattern(GraphicsContext& context,
   // Fetch orientation data if needed.
   ImageOrientation orientation = ImageOrientationEnum::kDefault;
   if (draw_options.respect_orientation)
-    orientation = Orientation();
+    orientation = CurrentFrameOrientation();
 
   // |tiling_info.image_rect| is in source image space, unscaled but oriented.
   // image-resolution information is baked into |tiling_info.scale|,
@@ -323,7 +323,7 @@ void Image::DrawPattern(GraphicsContext& context,
 
   StartAnimation();
 
-  if (IsLazyDecoded()) {
+  if (CurrentFrameIsLazyDecoded()) {
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
                          "Draw LazyPixelRef", TRACE_EVENT_SCOPE_THREAD,
                          "LazyPixelRef", image_id);
@@ -340,19 +340,13 @@ scoped_refptr<Image> Image::ImageForDefaultFrame() {
   return image;
 }
 
-PaintImageBuilder Image::CreatePaintImageBuilder(
-    std::optional<PaintImage::Id> paint_id) {
+PaintImageBuilder Image::CreatePaintImageBuilder() {
   auto animation_type = MaybeAnimated() ? PaintImage::AnimationType::kAnimated
                                         : PaintImage::AnimationType::kStatic;
-  auto builder = PaintImageBuilder::WithDefault();
-  if (paint_id.has_value()) {
-    builder.set_id(paint_id.value());
-  } else {
-    builder.set_id(stable_image_id_);
-  }
-  builder.set_animation_type(animation_type).set_is_multipart(is_multipart_);
-
-  return builder;
+  return PaintImageBuilder::WithDefault()
+      .set_id(stable_image_id_)
+      .set_animation_type(animation_type)
+      .set_is_multipart(is_multipart_);
 }
 
 bool Image::ApplyShader(cc::PaintFlags& flags,
@@ -394,7 +388,7 @@ SkBitmap Image::AsSkBitmapForCurrentFrame(
 
     ImageOrientation orientation = ImageOrientationEnum::kDefault;
     if (respect_image_orientation == kRespectImageOrientation)
-      orientation = bitmap_image->Orientation();
+      orientation = bitmap_image->CurrentFrameOrientation();
 
     gfx::Vector2dF image_scale(1, 1);
     if (density_corrected_size != paint_image_size) {
@@ -426,7 +420,7 @@ DarkModeImageCache* Image::GetDarkModeImageCache() {
 
 gfx::RectF Image::CorrectSrcRectForImageOrientation(gfx::SizeF image_size,
                                                     gfx::RectF src_rect) const {
-  ImageOrientation orientation = Orientation();
+  ImageOrientation orientation = CurrentFrameOrientation();
   DCHECK(orientation != ImageOrientationEnum::kDefault);
   AffineTransform forward_map = orientation.TransformFromDefault(image_size);
   AffineTransform inverse_map = forward_map.Inverse();

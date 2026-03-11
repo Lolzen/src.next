@@ -65,7 +65,6 @@ bool DocumentFragment::ChildTypeAllowed(NodeType type) const {
 Node* DocumentFragment::Clone(Document& factory,
                               NodeCloningData& data,
                               ContainerNode* append_to,
-                              CustomElementRegistry* fallback_registry,
                               ExceptionState&) const {
   DCHECK_EQ(append_to, nullptr)
       << "DocumentFragment::Clone() doesn't support append_to";
@@ -80,7 +79,7 @@ Node* DocumentFragment::Clone(Document& factory,
     PartRoot::CloneParts(*this, *clone, data);
   }
   if (data.Has(CloneOption::kIncludeDescendants)) {
-    clone->CloneChildNodesFrom(*this, data, fallback_registry);
+    clone->CloneChildNodesFrom(*this, data);
   }
   DCHECK(!part_root || &data.CurrentPartRoot() == part_root);
   return clone;
@@ -88,13 +87,12 @@ Node* DocumentFragment::Clone(Document& factory,
 
 void DocumentFragment::ParseHTML(const String& source,
                                  Element* context_element,
-                                 CustomElementRegistry* registry,
                                  ParserContentPolicy parser_content_policy) {
   RUNTIME_CALL_TIMER_SCOPE(
       GetDocument().GetAgent().isolate(),
       RuntimeCallStats::CounterId::kDocumentFragmentParseHTML);
   HTMLDocumentParser::ParseDocumentFragment(source, this, context_element,
-                                            registry, parser_content_policy);
+                                            parser_content_policy);
 }
 
 bool DocumentFragment::ParseXML(const String& source,

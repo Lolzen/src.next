@@ -222,14 +222,7 @@ public class EarlyTraceEvent {
         }
     }
 
-    /**
-     * Enables early startup tracing.
-     *
-     * <p>Tracing will be disabled and events emitted if and only if tracing is enabled. Callers
-     * must ensure to also call {@link #reset()} once early tracing should no longer be collected to
-     * avoid indefinitely collecting trace events if no trace session is started.
-     */
-    public static void enable() {
+    static void enable() {
         synchronized (sLock) {
             if (sState != STATE_DISABLED) return;
             sEvents = new ArrayList<Event>();
@@ -241,7 +234,7 @@ public class EarlyTraceEvent {
     /**
      * Disables Early tracing and flushes buffered events to the native side.
      *
-     * <p>Once this is called, no new event will be registered.
+     * Once this is called, no new event will be registered.
      */
     static void disable() {
         synchronized (sLock) {
@@ -262,12 +255,9 @@ public class EarlyTraceEvent {
         }
     }
 
-    /**
-     * Stops early tracing without flushing the buffered events.
-     *
-     * <p>This is safe to call even if tracing has never been enabled or has since been disabled.
-     */
-    public static void reset() {
+    /** Stops early tracing without flushing the buffered events. */
+    @VisibleForTesting
+    static void reset() {
         synchronized (sLock) {
             sState = STATE_DISABLED;
             sEvents = null;
@@ -277,7 +267,7 @@ public class EarlyTraceEvent {
 
     @EnsuresNonNullIf({"sEvents", "sAsyncEvents"})
     @SuppressWarnings("NullAway")
-    public static boolean enabled() {
+    static boolean enabled() {
         return sState == STATE_ENABLED;
     }
 
@@ -384,7 +374,8 @@ public class EarlyTraceEvent {
             if (e.mIsStart) {
                 if (e.mIsToplevel) {
                     EarlyTraceEventJni.get()
-                            .recordEarlyToplevelBeginEvent(e.mName, e.mTimeNanos, e.mThreadId);
+                            .recordEarlyToplevelBeginEvent(
+                                    e.mName, e.mTimeNanos, e.mThreadId, e.mThreadTimeMillis);
                 } else {
                     EarlyTraceEventJni.get()
                             .recordEarlyBeginEvent(
@@ -393,7 +384,8 @@ public class EarlyTraceEvent {
             } else {
                 if (e.mIsToplevel) {
                     EarlyTraceEventJni.get()
-                            .recordEarlyToplevelEndEvent(e.mName, e.mTimeNanos, e.mThreadId);
+                            .recordEarlyToplevelEndEvent(
+                                    e.mName, e.mTimeNanos, e.mThreadId, e.mThreadTimeMillis);
                 } else {
                     EarlyTraceEventJni.get()
                             .recordEarlyEndEvent(
@@ -446,10 +438,16 @@ public class EarlyTraceEvent {
                 long threadMillis);
 
         void recordEarlyToplevelBeginEvent(
-                @JniType("std::string") String name, long timeNanos, int threadId);
+                @JniType("std::string") String name,
+                long timeNanos,
+                int threadId,
+                long threadMillis);
 
         void recordEarlyToplevelEndEvent(
-                @JniType("std::string") String name, long timeNanos, int threadId);
+                @JniType("std::string") String name,
+                long timeNanos,
+                int threadId,
+                long threadMillis);
 
         void recordEarlyAsyncBeginEvent(
                 @JniType("std::string") String name, long id, long timeNanos);

@@ -48,6 +48,7 @@
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/frame/fenced_frame_sandbox_flags.h"
 #include "third_party/blink/public/common/frame/frame_policy.h"
+#include "third_party/blink/public/common/page/browsing_context_group_info.h"
 #include "third_party/blink/public/common/page/color_provider_color_maps.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/frame/frame_owner_properties.mojom.h"
@@ -58,6 +59,7 @@
 #include "third_party/blink/public/mojom/input/touch_event.mojom-blink.h"
 #include "third_party/blink/public/mojom/page/prerender_page_param.mojom.h"
 #include "third_party/blink/public/mojom/page/widget.mojom-blink.h"
+#include "third_party/blink/public/mojom/partitioned_popins/partitioned_popin_params.mojom.h"
 #include "third_party/blink/public/platform/interface_registry.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
@@ -124,9 +126,9 @@ void RunServeAsyncRequestsTask(scoped_refptr<base::TaskRunner> task_runner,
   // getting the platform's one. (crbug.com/751425)
   URLLoaderMockFactory::GetSingletonInstance()->ServeAsynchronousRequests();
   if (TestWebFrameClient::IsLoading()) {
-    task_runner->PostTask(
-        FROM_HERE, blink::BindOnce(&RunServeAsyncRequestsTask, task_runner,
-                                   std::move(quit_closure)));
+    task_runner->PostTask(FROM_HERE,
+                          WTF::BindOnce(&RunServeAsyncRequestsTask, task_runner,
+                                        std::move(quit_closure)));
   } else {
     std::move(quit_closure).Run();
   }
@@ -178,13 +180,8 @@ cc::LayerTreeSettings GetSynchronousSingleThreadLayerTreeSettings() {
   // test makes progress.
   settings.single_thread_proxy_scheduler = false;
   settings.use_layer_lists = true;
-// TODO(crbug.com/434513378) Cannot enable smooth scrolling on Fuchsia as it
-// causes test failures in BasicScroll test.
-#if !BUILDFLAG(IS_FUCHSIA)
-  settings.enable_smooth_scroll = true;
-#endif
 #if BUILDFLAG(IS_MAC)
-  settings.enable_elastic_overscroll_on_root = true;
+  settings.enable_elastic_overscroll = true;
 #endif
   return settings;
 }
@@ -261,8 +258,8 @@ void PumpPendingRequestsForFrameToLoad(WebLocalFrame* frame) {
   scoped_refptr<base::TaskRunner> task_runner =
       frame->GetTaskRunner(blink::TaskType::kInternalTest);
   task_runner->PostTask(FROM_HERE,
-                        blink::BindOnce(&RunServeAsyncRequestsTask, task_runner,
-                                        loop.QuitClosure()));
+                        WTF::BindOnce(&RunServeAsyncRequestsTask, task_runner,
+                                      loop.QuitClosure()));
   loop.Run();
 }
 
@@ -400,11 +397,11 @@ WebViewHelper::WebViewHelper(
       std::move(create_web_frame_callback);
   if (!create_callback) {
     create_callback =
-        blink::BindRepeating(&WebViewHelper::CreateTestWebFrameWidget<>);
+        WTF::BindRepeating(&WebViewHelper::CreateTestWebFrameWidget<>);
   }
   // Due to return type differences we need to bind the RepeatingCallback
   // in a wrapper.
-  create_widget_callback_wrapper_ = blink::BindRepeating(
+  create_widget_callback_wrapper_ = WTF::BindRepeating(
       [](const CreateTestWebFrameWidgetCallback& create_test_web_widget,
          base::PassKey<WebLocalFrame> pass_key,
          CrossVariantMojoAssociatedRemote<
@@ -727,10 +724,10 @@ void WebViewHelper::InitializeWebView(
     std::optional<blink::FencedFrame::DeprecatedFencedFrameMode>
         fenced_frame_mode,
     bool is_prerendering) {
-  auto browsing_context_group_token = base::UnguessableToken::Create();
+  auto browsing_context_group_info = BrowsingContextGroupInfo::CreateUnique();
   if (opener) {
     WebViewImpl* opener_impl = To<WebViewImpl>(opener);
-    browsing_context_group_token =
+    browsing_context_group_info.browsing_context_group_token =
         opener_impl->GetPage()->BrowsingContextGroupToken();
   }
   web_view_client =
@@ -742,19 +739,19 @@ void WebViewHelper::InitializeWebView(
     prerender_param->should_prepare_paint_tree = true;
   }
 
-  web_view_ = To<WebViewImpl>(WebView::Create(
-      web_view_client,
-      /*is_hidden=*/is_prerendering, std::move(prerender_param),
-      /*fenced_frame_mode=*/fenced_frame_mode,
-      /*compositing_enabled=*/true,
-      /*widgets_never_composited=*/false,
-      /*opener=*/opener, mojo::NullAssociatedReceiver(),
-      *agent_group_scheduler_,
-      /*session_storage_namespace_id=*/std::string(),
-      /*page_base_background_color=*/std::nullopt, browsing_context_group_token,
-      /*color_provider_colors=*/nullptr,
-      /*history_index=*/-1,
-      /*history_length=*/0));
+  web_view_ = To<WebViewImpl>(
+      WebView::Create(web_view_client,
+                      /*is_hidden=*/is_prerendering, std::move(prerender_param),
+                      /*fenced_frame_mode=*/fenced_frame_mode,
+                      /*compositing_enabled=*/true,
+                      /*widgets_never_composited=*/false,
+                      /*opener=*/opener, mojo::NullAssociatedReceiver(),
+                      *agent_group_scheduler_,
+                      /*session_storage_namespace_id=*/std::string(),
+                      /*page_base_background_color=*/std::nullopt,
+                      std::move(browsing_context_group_info),
+                      /*color_provider_colors=*/nullptr,
+                      /*partitioned_popin_params=*/nullptr));
   // This property must be set at initialization time, it is not supported to be
   // changed afterward, and does nothing.
   web_view_->GetSettings()->SetViewportEnabled(viewport_enabled_);
@@ -785,20 +782,19 @@ void WebViewHelper::InitializeWebView(
 
 WebViewImpl* WebViewHelper::CreateWebView(WebViewClient* web_view_client,
                                           bool compositing_enabled) {
-  return To<WebViewImpl>(WebView::Create(
-      web_view_client,
-      /*is_hidden=*/false,
-      /*prerender_param=*/nullptr,
-      /*fenced_frame_mode=*/std::nullopt, compositing_enabled,
-      /*widgets_never_composited=*/false,
-      /*opener=*/nullptr, mojo::NullAssociatedReceiver(),
-      *agent_group_scheduler_,
-      /*session_storage_namespace_id=*/std::string(),
-      /*page_base_background_color=*/std::nullopt,
-      /*browsing_context_group_token=*/base::UnguessableToken::Create(),
-      /*color_provider_colors=*/nullptr,
-      /*history_index=*/-1,
-      /*history_length=*/0));
+  return To<WebViewImpl>(
+      WebView::Create(web_view_client,
+                      /*is_hidden=*/false,
+                      /*prerender_param=*/nullptr,
+                      /*fenced_frame_mode=*/std::nullopt, compositing_enabled,
+                      /*widgets_never_composited=*/false,
+                      /*opener=*/nullptr, mojo::NullAssociatedReceiver(),
+                      *agent_group_scheduler_,
+                      /*session_storage_namespace_id=*/std::string(),
+                      /*page_base_background_color=*/std::nullopt,
+                      BrowsingContextGroupInfo::CreateUnique(),
+                      /*color_provider_colors=*/nullptr,
+                      /*partitioned_popin_params=*/nullptr));
 }
 
 int TestWebFrameClient::loads_in_progress_ = 0;
@@ -882,8 +878,8 @@ void TestWebFrameClient::BeginNavigation(
     return;
 
   navigation_callback_.Reset(
-      blink::BindOnce(&TestWebFrameClient::CommitNavigation,
-                      weak_factory_.GetWeakPtr(), std::move(info)));
+      WTF::BindOnce(&TestWebFrameClient::CommitNavigation,
+                    weak_factory_.GetWeakPtr(), std::move(info)));
   frame_->GetTaskRunner(blink::TaskType::kInternalLoading)
       ->PostTask(FROM_HERE, navigation_callback_.callback());
 }
@@ -1004,7 +1000,7 @@ void TestWebFrameWidget::DispatchThroughCcInputHandler(
   GetWidgetInputHandlerManager()->DispatchEvent(
       std::make_unique<WebCoalescedInputEvent>(event.Clone(),
                                                ui::LatencyInfo()),
-      BindOnce(
+      WTF::BindOnce(
           [](TestWebFrameWidget* widget, mojom::blink::InputEventResultSource,
              const ui::LatencyInfo&, mojom::blink::InputEventResultState,
              mojom::blink::DidOverscrollParamsPtr overscroll,
@@ -1016,9 +1012,9 @@ void TestWebFrameWidget::DispatchThroughCcInputHandler(
   FlushInputHandlerTasks();
 }
 
-void TestWebFrameWidget::RequestDecode(const cc::DrawImage&,
-                                       base::OnceCallback<void(bool)> callback,
-                                       bool speculative) {
+void TestWebFrameWidget::RequestDecode(
+    const cc::DrawImage&,
+    base::OnceCallback<void(bool)> callback) {
   // TODO(paint-dev): probably this should `std::move(callback).Run(true)`, but
   // that could cause deep recursion into
   // ResourceFetcher::MaybeStartSpeculativeImageDecode(). Currently, nothing
@@ -1060,7 +1056,7 @@ void TestWebFrameWidget::BindWidgetChannels(
 
   widget_host_->GetWidgetInputHandler(
       input_handler.BindNewPipeAndPassReceiver(),
-      GetInputHandlerHost()->BindNewRemote(), /* from_viz= */ false);
+      GetInputHandlerHost()->BindNewRemote());
 }
 
 bool TestWebFrameWidget::HaveScrollEventHandlers() const {
@@ -1159,10 +1155,8 @@ void TestWebFrameWidgetHost::BindRenderInputRouterInterfaces(
 
 void TestWebFrameWidgetHost::GetWidgetInputHandler(
     mojo::PendingReceiver<mojom::blink::WidgetInputHandler> request,
-    mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost> host,
-    bool from_viz) {
-  client_remote_->GetWidgetInputHandler(std::move(request), std::move(host),
-                                        from_viz);
+    mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost> host) {
+  client_remote_->GetWidgetInputHandler(std::move(request), std::move(host));
 }
 
 mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost>
@@ -1186,7 +1180,7 @@ void TestWidgetInputHandlerHost::ImeCancelComposition() {}
 
 void TestWidgetInputHandlerHost::ImeCompositionRangeChanged(
     const gfx::Range& range,
-    const std::optional<Vector<gfx::Rect>>& character_bounds) {}
+    const std::optional<WTF::Vector<gfx::Rect>>& character_bounds) {}
 
 void TestWidgetInputHandlerHost::SetMouseCapture(bool capture) {}
 

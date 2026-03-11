@@ -4,21 +4,19 @@
 
 package org.chromium.chrome.browser.settings;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 
+import androidx.annotation.NonNull;
+import androidx.core.content.OnConfigurationChangedProvider;
 import androidx.fragment.app.Fragment;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.components.browser_ui.settings.CustomDividerFragment;
 import org.chromium.components.browser_ui.settings.PaddedItemDecorationWithDivider;
 import org.chromium.components.browser_ui.widget.displaystyle.UiConfig;
@@ -26,17 +24,15 @@ import org.chromium.components.browser_ui.widget.displaystyle.UiConfig.DisplaySt
 import org.chromium.components.browser_ui.widget.displaystyle.ViewResizer;
 import org.chromium.components.browser_ui.widget.displaystyle.ViewResizerUtil;
 
-import java.util.function.Supplier;
-
 /** Applies the padding to the fragment for wide displays. */
-@NullMarked
 public class WideDisplayPadding {
-    private final Context mContext;
-    private final @Nullable View mContent;
+    @NonNull private final Context mContext;
+    @NonNull private final View mContent;
     private final int mMinWidePaddingPixels;
-    private final UiConfig mUiConfig;
+    @NonNull private final UiConfig mUiConfig;
 
-    private WideDisplayPadding(Fragment fragment, SettingsActivity settingsActivity) {
+    private WideDisplayPadding(
+            Fragment fragment, OnConfigurationChangedProvider onConfigurationChangedProvider) {
         mContext = fragment.requireContext();
         mContent = fragment.getView();
 
@@ -46,7 +42,6 @@ public class WideDisplayPadding {
 
         // For settings with a recycler view, add paddings to the side so the content is
         // scrollable; otherwise, add the padding to the content.
-        assumeNonNull(mContent);
         RecyclerView recyclerView = mContent.findViewById(R.id.recycler_view);
         View paddedView = recyclerView == null ? mContent : recyclerView;
         mUiConfig = new UiConfig(paddedView);
@@ -62,24 +57,13 @@ public class WideDisplayPadding {
         }
 
         // Update padding on configuration changes.
-        settingsActivity.addOnConfigurationChangedListener(
+        onConfigurationChangedProvider.addOnConfigurationChangedListener(
                 (newConfig) -> {
                     mUiConfig.updateDisplayStyle();
                 });
 
         if (!hasPreferenceRecyclerView) {
-            if (!settingsActivity.isTwoColumnSettingsVisible()) {
-                // TODO(crbug.com/454247949): Short term workaround until margin for views are
-                // updated.
-                int defaultPadding =
-                        ChromeFeatureList.sAndroidSettingsContainment.isEnabled()
-                                ? mContext.getResources()
-                                        .getDimensionPixelSize(
-                                                R.dimen.settings_single_column_layout_margin)
-                                : 0;
-                ViewResizer.createAndAttach(
-                        paddedView, mUiConfig, defaultPadding, mMinWidePaddingPixels);
-            }
+            ViewResizer.createAndAttach(paddedView, mUiConfig, 0, mMinWidePaddingPixels);
             return;
         }
 
@@ -92,8 +76,10 @@ public class WideDisplayPadding {
         CustomDividerFragment customDividerFragment =
                 fragment instanceof CustomDividerFragment ? (CustomDividerFragment) fragment : null;
 
+        Supplier<Integer> itemOffsetSupplier =
+                () -> getItemOffset(mUiConfig.getCurrentDisplayStyle(), recyclerView);
         PaddedItemDecorationWithDivider itemDecoration =
-                getPaddedItemDecorationWithDivider(settingsActivity, recyclerView);
+                new PaddedItemDecorationWithDivider(itemOffsetSupplier);
         Drawable dividerDrawable = getDividerDrawable();
 
         // Early return if (a)Fragment implements CustomDividerFragment and explicitly don't
@@ -120,33 +106,21 @@ public class WideDisplayPadding {
         recyclerView.addItemDecoration(itemDecoration);
     }
 
-    private PaddedItemDecorationWithDivider getPaddedItemDecorationWithDivider(
-            SettingsActivity settingsActivity, RecyclerView recyclerView) {
-        Supplier<Integer> itemOffsetSupplier =
-                () -> {
-                    boolean applyHorizontalPadding = !settingsActivity.isTwoColumnSettingsVisible();
-
-                    return applyHorizontalPadding
-                            ? getItemOffset(mUiConfig.getCurrentDisplayStyle(), recyclerView)
-                            : 0;
-                };
-        PaddedItemDecorationWithDivider itemDecoration =
-                new PaddedItemDecorationWithDivider(itemOffsetSupplier);
-        return itemDecoration;
-    }
-
     /**
      * Applies the padding to the fragment for wide displays.
      *
      * <p>Call this method exactly once with a top-level fragment on its creation.
      *
      * @param fragment The fragment to apply padding to.
-     * @param settingsActivity The settings activity to observe for configuration changes.
+     * @param onConfigurationChangedProvider Used to register for OnConfigurationChanged event to
+     *     update the padding on configuration changes.
      */
-    public static void apply(Fragment fragment, SettingsActivity settingsActivity) {
-        new WideDisplayPadding(fragment, settingsActivity);
+    public static void apply(
+            Fragment fragment, OnConfigurationChangedProvider onConfigurationChangedProvider) {
+        new WideDisplayPadding(fragment, onConfigurationChangedProvider);
     }
 
+    @NonNull
     private Integer getItemOffset(DisplayStyle displayStyle, View view) {
         if (displayStyle.isWide()) {
             return ViewResizerUtil.computePaddingForWideDisplay(
@@ -156,7 +130,7 @@ public class WideDisplayPadding {
     }
 
     // Get the divider drawable from AndroidX Pref attribute to keep things consistent.
-    private @Nullable Drawable getDividerDrawable() {
+    private Drawable getDividerDrawable() {
         TypedArray ta =
                 mContext.obtainStyledAttributes(
                         null,

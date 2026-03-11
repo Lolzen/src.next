@@ -8,10 +8,8 @@
 #include <map>
 #include <string>
 
-#include "base/android/android_info.h"
-#include "base/trace_event/memory_allocator_dump.h"
-#include "base/trace_event/process_memory_dump.h"
-#include "base/trace_event/trace_event.h"
+#include "base/android/build_info.h"
+#include "base/trace_event/base_tracing.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base::android {
@@ -68,8 +66,7 @@ TEST(MeminfoDumpProviderTest, Simple) {
   ASSERT_TRUE(
       second_entries.contains(MeminfoDumpProvider::kPrivateDirtyMetricName));
   ASSERT_TRUE(second_entries.contains(MeminfoDumpProvider::kPssMetricName));
-  if (base::android::android_info::sdk_int() >=
-      base::android::android_info::SDK_VERSION_Q) {
+  if (BuildInfo::GetInstance()->sdk_int() >= SdkVersion::SDK_VERSION_Q) {
     // Stale values are reported.
     EXPECT_EQ(first_entries[MeminfoDumpProvider::kPrivateDirtyMetricName],
               second_entries[MeminfoDumpProvider::kPrivateDirtyMetricName]);

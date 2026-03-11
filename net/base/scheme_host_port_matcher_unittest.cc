@@ -5,7 +5,6 @@
 #include "net/base/scheme_host_port_matcher.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
-#include "url/gurl.h"
 
 namespace net {
 
@@ -36,15 +35,13 @@ TEST(SchemeHostPortMatcherTest, WithBadInputs) {
   EXPECT_FALSE(matcher.Includes(GURL("http://google.com")));
 }
 
-// Tests that URLMatcher does not include logic specific to
-// ProxyHostMatchingRules.
+// Tests that URLMatcher does not include logic specific to ProxyBypassRules.
 //  * Should not implicitly bypass localhost or link-local addresses
 //  * Should not match proxy bypass specific rules like <-loopback> and <local>
 //
-// Historically, SchemeHostPortMatcher was refactored out of
-// ProxyHostMatchingRules. This test confirms that the layering separation is as
-// expected.
-TEST(SchemeHostPortMatcherTest, DoesNotMimicProxyHostMatchingRules) {
+// Historically, SchemeHostPortMatcher was refactored out of ProxyBypassRules.
+// This test confirms that the layering separation is as expected.
+TEST(SchemeHostPortMatcherTest, DoesNotMimicProxyBypassRules) {
   // Should not parse <-loopback> as its own rule (will treat it as a hostname
   // rule).
   SchemeHostPortMatcher matcher =

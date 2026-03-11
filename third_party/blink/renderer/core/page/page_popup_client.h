@@ -126,7 +126,7 @@ class CORE_EXPORT PagePopupClient {
                             int resource_id,
                             SegmentedBuffer&);
 
-  virtual void SetMenuListOptionsBoundsInAXTree(Vector<gfx::Rect>&,
+  virtual void SetMenuListOptionsBoundsInAXTree(WTF::Vector<gfx::Rect>&,
                                                 gfx::Point) {}
 
  protected:
@@ -135,7 +135,7 @@ class CORE_EXPORT PagePopupClient {
 
 inline void PagePopupClient::AddString(const String& str,
                                        SegmentedBuffer& data) {
-  StringUtf8Adaptor utf8(str);
+  StringUTF8Adaptor utf8(str);
   data.Append(base::span(utf8));
 }
 

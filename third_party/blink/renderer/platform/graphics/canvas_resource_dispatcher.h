@@ -37,9 +37,13 @@ class PLATFORM_EXPORT CanvasResourceDispatcher
  public:
   static constexpr unsigned kMaxPendingCompositorFrames = 2;
 
-  // We set a limit to the number of placeholder resources that have been posted
-  // to the main thread but not yet received on that thread.
-  static constexpr unsigned kMaxPendingPlaceholderResources = 50;
+  // In theory, the spec allows an unlimited number of frames to be retained
+  // on the main thread. For example, by acquiring ImageBitmaps from the
+  // placeholder canvas.  We nonetheless set a limit to the number of
+  // outstanding placeholder frames in order to prevent potential resource
+  // leaks that can happen when the main thread is in a jam, causing posted
+  // frames to pile-up.
+  static constexpr unsigned kMaxUnreclaimedPlaceholderFrames = 50;
 
   base::WeakPtr<CanvasResourceDispatcher> GetWeakPtr() {
     return weak_ptr_factory_.GetWeakPtr();
@@ -87,10 +91,16 @@ class PLATFORM_EXPORT CanvasResourceDispatcher
     return animation_state_ == AnimationState::kSuspended;
   }
   void DispatchFrame(scoped_refptr<CanvasResource>&&,
+                     base::TimeTicks commit_start_time,
                      const SkIRect& damage_rect,
                      bool is_opaque);
   // virtual for mocking
-  virtual void OnMainThreadReceivedImage();
+  virtual void OnPlaceholderReleasedResource(viz::ResourceId,
+                                             scoped_refptr<CanvasResource>&&);
+  void DispatchFrameSync(scoped_refptr<CanvasResource>&&,
+                         base::TimeTicks commit_start_time,
+                         const SkIRect& damage_rect,
+                         bool is_opaque);
   void ReplaceBeginFrameAck(const viz::BeginFrameArgs& args) {
     current_begin_frame_ack_ = viz::BeginFrameAck(args, true);
   }
@@ -100,12 +110,12 @@ class PLATFORM_EXPORT CanvasResourceDispatcher
 
   // viz::mojom::blink::CompositorFrameSinkClient implementation.
   void DidReceiveCompositorFrameAck(
-      Vector<viz::ReturnedResource> resources) final;
+      WTF::Vector<viz::ReturnedResource> resources) final;
   void OnBeginFrame(const viz::BeginFrameArgs&,
-                    const HashMap<uint32_t, viz::FrameTimingDetails>&,
-                    Vector<viz::ReturnedResource> resources) final;
+                    const WTF::HashMap<uint32_t, viz::FrameTimingDetails>&,
+                    WTF::Vector<viz::ReturnedResource> resources) final;
   void OnBeginFramePausedChanged(bool paused) final {}
-  void ReclaimResources(Vector<viz::ReturnedResource> resources) final;
+  void ReclaimResources(WTF::Vector<viz::ReturnedResource> resources) final;
   void OnCompositorFrameTransitionDirectiveProcessed(
       uint32_t sequence_id) final {}
   void OnSurfaceEvicted(const viz::LocalSurfaceId& local_surface_id) final {}
@@ -116,12 +126,12 @@ class PLATFORM_EXPORT CanvasResourceDispatcher
  private:
   friend class OffscreenCanvasPlaceholderTest;
   friend class CanvasResourceDispatcherTest;
-  struct ExportedResource;
+  struct FrameResource;
 
-  using ExportedResourceMap =
-      HashMap<viz::ResourceId, std::unique_ptr<ExportedResource>>;
+  using ResourceMap = HashMap<viz::ResourceId, std::unique_ptr<FrameResource>>;
 
   bool PrepareFrame(scoped_refptr<CanvasResource>&&,
+                    base::TimeTicks commit_start_time,
                     const SkIRect& damage_rect,
                     bool is_opaque,
                     viz::CompositorFrame* frame);
@@ -152,6 +162,10 @@ class PLATFORM_EXPORT CanvasResourceDispatcher
   virtual void PostImageToPlaceholder(scoped_refptr<CanvasResource>&&,
                                       viz::ResourceId resource_id);
 
+  void ReclaimPlaceholderResource(viz::ResourceId resource_id,
+                                  scoped_refptr<CanvasResource>&&);
+  void ReclaimResourceInternal(const ResourceMap::iterator&);
+
   mojo::Remote<viz::mojom::blink::CompositorFrameSink> sink_;
   mojo::Remote<mojom::blink::SurfaceEmbedder> surface_embedder_;
   mojo::Receiver<viz::mojom::blink::CompositorFrameSinkClient> receiver_{this};
@@ -159,19 +173,15 @@ class PLATFORM_EXPORT CanvasResourceDispatcher
   int placeholder_canvas_id_;
 
   viz::ResourceIdGenerator id_generator_;
-
-  // Stores resources that have been exported to the compositor, to be released
-  // when the compositor no longer requires them (or in the limit when this
-  // instance is destroyed).
-  ExportedResourceMap exported_resources_;
+  ResourceMap resources_;
 
   viz::FrameTokenGenerator next_frame_token_;
 
   // The latest_unposted_resource_id_ always refers to the Id of the frame
-  // resource used by the latest_unposted_resource_.
-  scoped_refptr<CanvasResource> latest_unposted_resource_;
+  // resource used by the latest_unposted_image_.
+  scoped_refptr<CanvasResource> latest_unposted_image_;
   viz::ResourceId latest_unposted_resource_id_;
-  unsigned num_pending_placeholder_resources_;
+  unsigned num_unreclaimed_frames_posted_;
 
   viz::BeginFrameAck current_begin_frame_ack_;
 

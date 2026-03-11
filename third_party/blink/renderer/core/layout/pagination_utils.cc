@@ -124,32 +124,8 @@ LogicalSize DesiredPageContainingBlockSize(const Document& document,
   return ToLogicalSize(layout_size, style.GetWritingMode());
 }
 
-LayoutUnit CalculateSafePrintableInset(const Document& document) {
-  if (!RuntimeEnabledFeatures::CSSSafePrintableInsetEnabled()) {
-    return LayoutUnit();
-  }
-  const WebPrintParams& params = document.GetFrame()->GetPrintParams();
-  // If there's more than one page per sheet, the unprintable area will be
-  // accounted for by the printing code, so that the collection of pages will
-  // be inset appropriately.
-  if (params.pages_per_sheet > 1) {
-    return LayoutUnit();
-  }
-
-  float inset = 0;
-  inset = params.printable_area_in_css_pixels.x();
-  inset = std::max(inset, params.printable_area_in_css_pixels.y());
-  inset = std::max(inset, params.default_page_description.size.width() -
-                              params.printable_area_in_css_pixels.right());
-  inset = std::max(inset, params.default_page_description.size.height() -
-                              params.printable_area_in_css_pixels.bottom());
-
-  return LayoutUnit(inset);
-}
-
 void ResolvePageBoxGeometry(const BlockNode& page_box,
                             LogicalSize page_containing_block_size,
-                            LayoutUnit safe_printable_inset,
                             FragmentGeometry* geometry,
                             BoxStrut* margins) {
   const ComputedStyle& style = page_box.Style();
@@ -157,8 +133,6 @@ void ResolvePageBoxGeometry(const BlockNode& page_box,
                                        style.GetWritingDirection(),
                                        /* is_new_fc */ true);
   SetUpSpaceBuilderForPageBox(page_containing_block_size, &space_builder);
-  space_builder.SetSafePrintableInset(safe_printable_inset);
-  space_builder.SetPaperEdgeAdjacentSides(LogicalBoxSides(true));
   ConstraintSpace space = space_builder.ToConstraintSpace();
   *geometry = CalculateInitialFragmentGeometry(space, page_box,
                                                /*BlockBreakToken=*/nullptr);
@@ -183,26 +157,6 @@ void ResolvePageBoxGeometry(const BlockNode& page_box,
   ResolveAutoMargins(style.MarginInlineStart(), style.MarginInlineEnd(),
                      style.MarginBlockStart(), style.MarginBlockEnd(),
                      additional_inline_space, additional_block_space, margins);
-}
-
-void ResolvePageContainerGeometry(const BlockNode& page_container,
-                                  LogicalSize page_containing_block_size,
-                                  FragmentGeometry* geometry,
-                                  BoxStrut* margins) {
-  // The size of the page box isn't affected by the safe printable area, since
-  // it also encompasses the page margins.
-  const LayoutUnit safe_printable_inset;
-  ResolvePageBoxGeometry(page_container, page_containing_block_size,
-                         safe_printable_inset, geometry, margins);
-}
-
-void ResolvePageBorderBoxGeometry(const BlockNode& page_border_box,
-                                  LogicalSize page_containing_block_size,
-                                  LayoutUnit safe_printable_inset,
-                                  FragmentGeometry* geometry,
-                                  BoxStrut* margins) {
-  ResolvePageBoxGeometry(page_border_box, page_containing_block_size,
-                         safe_printable_inset, geometry, margins);
 }
 
 PhysicalSize CalculateInitialContainingBlockSizeForPagination(
@@ -235,9 +189,7 @@ PhysicalSize CalculateInitialContainingBlockSizeForPagination(
   FragmentGeometry geometry;
   LogicalSize containing_block_size =
       DesiredPageContainingBlockSize(document, *page_style);
-  LayoutUnit safe_printable_inset = CalculateSafePrintableInset(document);
-  ResolvePageBorderBoxGeometry(temporary_page_node, containing_block_size,
-                               safe_printable_inset, &geometry);
+  ResolvePageBoxGeometry(temporary_page_node, containing_block_size, &geometry);
   LogicalSize logical_size = ShrinkLogicalSize(
       geometry.border_box_size, geometry.border + geometry.padding);
 
@@ -271,9 +223,9 @@ float TargetScaleForPage(const PhysicalBoxFragment& page_container) {
   const ComputedStyle& style = page_node.Style();
   FragmentGeometry geometry;
   BoxStrut margins;
-  ResolvePageContainerGeometry(page_node,
-                               DesiredPageContainingBlockSize(document, style),
-                               &geometry, &margins);
+  ResolvePageBoxGeometry(page_node,
+                         DesiredPageContainingBlockSize(document, style),
+                         &geometry, &margins);
   LogicalSize source_size = geometry.border_box_size + margins;
   LogicalSize target_size =
       ToLogicalSize(page_container.Size(), style.GetWritingMode());
@@ -299,11 +251,7 @@ LogicalRect TargetPageBorderBoxLogicalRect(
     const Document& document,
     const ComputedStyle& style,
     const LogicalSize& source_margin_box_size,
-    const BoxStrut& margins,
-    float* scale_out) {
-  float scale_storage;
-  float& scale = scale_out ? *scale_out : scale_storage;
-  scale = 1;
+    const BoxStrut& margins) {
   LogicalSize source_border_box_size(
       source_margin_box_size.inline_size - margins.InlineSum(),
       source_margin_box_size.block_size - margins.BlockSum());
@@ -317,7 +265,7 @@ LogicalRect TargetPageBorderBoxLogicalRect(
   LogicalSize target_size = PageBoxDefaultSizeWithSourceOrientation(
       document, style, source_margin_box_size);
 
-  scale = TargetShrinkScaleFactor(target_size, source_margin_box_size);
+  float scale = TargetShrinkScaleFactor(target_size, source_margin_box_size);
 
   rect.offset.inline_offset =
       LayoutUnit(rect.offset.inline_offset.ToFloat() * scale +
@@ -404,29 +352,16 @@ PhysicalRect StitchedPageContentRect(
   DCHECK_EQ(page_container.GetBoxType(), PhysicalFragment::kPageContainer);
   const PhysicalBoxFragment& page_border_box = GetPageBorderBox(page_container);
   const PhysicalBoxFragment& page_area = GetPageArea(page_border_box);
-  const LayoutView& view = *page_container.GetDocument().GetLayoutView();
-  const PhysicalBoxFragment& first_page_area = *GetPageArea(view, 0);
-  const BlockBreakToken* previous_break_token =
-      FindPreviousBreakTokenForPageArea(page_area);
-
-  return StitchedPageContentRect(page_area, first_page_area,
-                                 previous_break_token);
-}
-
-PhysicalRect StitchedPageContentRect(
-    const PhysicalBoxFragment& page_area,
-    const PhysicalBoxFragment& first_page_area,
-    const BlockBreakToken* previous_break_token) {
-  DCHECK_EQ(page_area.GetBoxType(), PhysicalFragment::kPageArea);
-  DCHECK_EQ(first_page_area.GetBoxType(), PhysicalFragment::kPageArea);
-
   PhysicalRect physical_page_rect = page_area.LocalRect();
 
-  if (previous_break_token) {
+  if (const BlockBreakToken* previous_break_token =
+          FindPreviousBreakTokenForPageArea(page_area)) {
     LayoutUnit consumed_block_size = previous_break_token->ConsumedBlockSize();
     PhysicalDirection block_end =
-        page_area.Style().GetWritingDirection().BlockEnd();
+        page_container.Style().GetWritingDirection().BlockEnd();
     if (block_end == PhysicalDirection::kLeft) {
+      const LayoutView& view = *page_container.GetDocument().GetLayoutView();
+      const PhysicalBoxFragment& first_page_area = *GetPageArea(view, 0);
       physical_page_rect.offset.left += first_page_area.Size().width;
       physical_page_rect.offset.left -=
           consumed_block_size + page_area.Size().width;
@@ -460,9 +395,7 @@ float CalculateOverflowShrinkForPrinting(const LayoutView& view,
     const auto& page_container = To<PhysicalBoxFragment>(*link);
     for (const PhysicalFragmentLink& child : page_container.Children()) {
       if (child->GetBoxType() == PhysicalFragment::kPageBorderBox) {
-        const auto& page_border_box = *To<PhysicalBoxFragment>(child.get());
-        const auto& page =
-            *To<PhysicalBoxFragment>(page_border_box.Children()[0].get());
+        const auto& page = *To<PhysicalBoxFragment>(child->Children()[0].get());
         // Check the inline axis overflow on each individual page, to find the
         // largest relative overflow.
         float page_scale_factor;

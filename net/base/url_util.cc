@@ -24,9 +24,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/ip_address.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "net/base/schemeful_site.h"
 #include "url/gurl.h"
-#include "url/origin.h"
 #include "url/scheme_host_port.h"
 #include "url/url_canon.h"
 #include "url/url_canon_internal.h"
@@ -71,7 +69,7 @@ std::u16string UnescapeIdentityString(std::string_view escaped_text) {
 GURL AppendQueryParameter(const GURL& url,
                           std::string_view name,
                           std::string_view value) {
-  std::string query(url.GetQuery());
+  std::string query(url.query());
 
   if (!query.empty())
     query += "&";
@@ -94,7 +92,7 @@ GURL AppendOrReplaceQueryParameter(const GURL& url,
   if (should_keep_param)
     param_value = base::EscapeQueryParamValue(value.value(), true);
 
-  const std::string_view input = url.query();
+  const std::string_view input = url.query_piece();
   url::Component cursor(0, input.size());
   std::string output;
   url::Component key_range, value_range;
@@ -187,9 +185,7 @@ bool GetValueForKeyInQuery(const GURL& url,
                            std::string* out_value) {
   for (QueryIterator it(url); !it.IsAtEnd(); it.Advance()) {
     if (it.GetKey() == search_key) {
-      if (out_value) {
-        *out_value = it.GetUnescapedValue();
-      }
+      *out_value = it.GetUnescapedValue();
       return true;
     }
   }
@@ -206,9 +202,11 @@ bool ParseHostAndPort(std::string_view input, std::string* host, int* port) {
   url::Component hostname_component;
   url::Component port_component;
 
-  url::ParseAuthority(input, auth_component, url::ParserMode::kSpecialURL,
-                      &username_component, &password_component,
-                      &hostname_component, &port_component);
+  // `input` is not NUL-terminated, so `input.data()` must be accompanied by a
+  // length. In these calls, `url::Component` provides an offset and length.
+  url::ParseAuthority(input.data(), auth_component, &username_component,
+                      &password_component, &hostname_component,
+                      &port_component);
 
   // There shouldn't be a username/password.
   if (username_component.is_valid() || password_component.is_valid())
@@ -219,7 +217,7 @@ bool ParseHostAndPort(std::string_view input, std::string* host, int* port) {
 
   int parsed_port_number = -1;
   if (port_component.is_nonempty()) {
-    parsed_port_number = url::ParsePort(input, port_component);
+    parsed_port_number = url::ParsePort(input.data(), port_component);
 
     // If parsing failed, port_number will be either PORT_INVALID or
     // PORT_UNSPECIFIED, both of which are negative.
@@ -236,7 +234,7 @@ bool ParseHostAndPort(std::string_view input, std::string* host, int* port) {
   // invalid. If it is an IPv6 literal then strip the brackets.
   if (hostname_component.len > 0 && input[hostname_component.begin] == '[') {
     if (input[hostname_component.end() - 1] == ']' &&
-        url::IPv6AddressToNumber(hostname_component.AsViewOn(input),
+        url::IPv6AddressToNumber(input.data(), hostname_component,
                                  tmp_ipv6_addr)) {
       // Strip the brackets.
       hostname_component.begin++;
@@ -257,7 +255,7 @@ bool ParseHostAndPort(std::string_view input, std::string* host, int* port) {
 std::string GetHostAndPort(const GURL& url) {
   // For IPv6 literals, GURL::host() already includes the brackets so it is
   // safe to just append a colon.
-  return base::StringPrintf("%s:%d", url.GetHost().c_str(),
+  return base::StringPrintf("%s:%d", url.host().c_str(),
                             url.EffectiveIntPort());
 }
 
@@ -265,9 +263,8 @@ std::string GetHostAndOptionalPort(const GURL& url) {
   // For IPv6 literals, GURL::host() already includes the brackets
   // so it is safe to just append a colon.
   if (url.has_port())
-    return base::StringPrintf("%s:%s", url.GetHost().c_str(),
-                              url.GetPort().c_str());
-  return url.GetHost();
+    return base::StringPrintf("%s:%s", url.host().c_str(), url.port().c_str());
+  return url.host();
 }
 
 NET_EXPORT std::string GetHostAndOptionalPort(
@@ -290,7 +287,7 @@ std::string TrimEndingDot(std::string_view host) {
 }
 
 std::string GetHostOrSpecFromURL(const GURL& url) {
-  return url.has_host() ? TrimEndingDot(url.host()) : url.spec();
+  return url.has_host() ? TrimEndingDot(url.host_piece()) : url.spec();
 }
 
 std::string GetSuperdomain(std::string_view domain) {
@@ -335,10 +332,10 @@ std::string CanonicalizeHost(std::string_view host,
   const int kCxxMaxStringBufferSizeWithoutMalloc = 22;
   canon_host_output.Resize(kCxxMaxStringBufferSizeWithoutMalloc);
   if (is_file_scheme) {
-    url::CanonicalizeFileHostVerbose(host, raw_host_component,
+    url::CanonicalizeFileHostVerbose(host.data(), raw_host_component,
                                      canon_host_output, *host_info);
   } else {
-    url::CanonicalizeSpecialHostVerbose(host, raw_host_component,
+    url::CanonicalizeSpecialHostVerbose(host.data(), raw_host_component,
                                         canon_host_output, *host_info);
   }
 
@@ -488,18 +485,6 @@ GURL SimplifyUrlForRequest(const GURL& url) {
   return url.ReplaceComponents(replacements);
 }
 
-GURL RemoveCredentialsFromUrl(const GURL& url) {
-  DCHECK(url.is_valid());
-  // Fast path to avoid re-canonicalization via ReplaceComponents.
-  if (!url.has_username() && !url.has_password()) {
-    return url;
-  }
-  GURL::Replacements replacements;
-  replacements.ClearUsername();
-  replacements.ClearPassword();
-  return url.ReplaceComponents(replacements);
-}
-
 GURL ChangeWebSocketSchemeToHttpScheme(const GURL& url) {
   DCHECK(url.SchemeIsWSOrWSS());
   GURL::Replacements replace_scheme;
@@ -514,38 +499,23 @@ bool IsStandardSchemeWithNetworkHost(std::string_view scheme) {
     return true;
 
   url::SchemeType scheme_type;
-  if (!url::GetStandardSchemeType(scheme, &scheme_type)) {
+  if (!url::GetStandardSchemeType(
+          scheme.data(), url::Component(0, scheme.length()), &scheme_type)) {
     return false;
   }
   return scheme_type == url::SCHEME_WITH_HOST_PORT_AND_USER_INFORMATION ||
          scheme_type == url::SCHEME_WITH_HOST_AND_PORT;
 }
 
-OriginRelation GetOriginRelation(const url::Origin& target_origin,
-                                 const url::Origin& related_origin) {
-  if (target_origin == related_origin) {
-    return OriginRelation::kSameOrigin;
-  }
-
-  return SchemefulSite::IsSameSite(target_origin, related_origin)
-             ? OriginRelation::kSameSite
-             : OriginRelation::kCrossSite;
-}
-
-OriginRelation GetOriginRelation(const GURL& target_url,
-                                 const url::Origin& related_origin) {
-  return GetOriginRelation(url::Origin::Create(target_url), related_origin);
-}
-
 void GetIdentityFromURL(const GURL& url,
                         std::u16string* username,
                         std::u16string* password) {
-  *username = UnescapeIdentityString(url.GetUsername());
-  *password = UnescapeIdentityString(url.GetPassword());
+  *username = UnescapeIdentityString(url.username());
+  *password = UnescapeIdentityString(url.password());
 }
 
 bool HasGoogleHost(const GURL& url) {
-  return IsGoogleHost(url.host());
+  return IsGoogleHost(url.host_piece());
 }
 
 bool IsGoogleHost(std::string_view host) {

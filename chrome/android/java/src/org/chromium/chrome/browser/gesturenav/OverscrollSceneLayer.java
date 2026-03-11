@@ -9,8 +9,6 @@ import android.view.View;
 import org.jni_zero.JNINamespace;
 import org.jni_zero.NativeMethods;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.layouts.scene_layer.SceneLayer;
 import org.chromium.chrome.browser.layouts.scene_layer.SceneOverlayLayer;
 import org.chromium.ui.base.WindowAndroid;
@@ -18,7 +16,6 @@ import org.chromium.ui.resources.ResourceManager;
 
 /** {@link SceneOverlayLayer} implementation for gesture navigation overscroll effect. */
 @JNINamespace("android")
-@NullMarked
 class OverscrollSceneLayer extends SceneOverlayLayer {
     private final View mParentView;
 
@@ -30,7 +27,7 @@ class OverscrollSceneLayer extends SceneOverlayLayer {
 
     OverscrollSceneLayer(WindowAndroid window, View parentView) {
         mParentView = parentView;
-        mNativePtr = OverscrollSceneLayerJni.get().init(this, window);
+        mNativePtr = OverscrollSceneLayerJni.get().init(OverscrollSceneLayer.this, window);
         assert mNativePtr != 0;
     }
 
@@ -40,6 +37,7 @@ class OverscrollSceneLayer extends SceneOverlayLayer {
         OverscrollSceneLayerJni.get()
                 .prepare(
                         mNativePtr,
+                        OverscrollSceneLayer.this,
                         startX,
                         startY,
                         mParentView.getWidth(),
@@ -62,23 +60,29 @@ class OverscrollSceneLayer extends SceneOverlayLayer {
         // to keep the animation going on.
         if (xDelta == 0.f) return true;
         return OverscrollSceneLayerJni.get()
-                .update(mNativePtr, resourceManager, mAccumulatedScroll, xDelta);
+                .update(
+                        mNativePtr,
+                        OverscrollSceneLayer.this,
+                        resourceManager,
+                        mAccumulatedScroll,
+                        xDelta);
     }
 
     /** Release the glow effect to recede slowly. */
     void release() {
-        OverscrollSceneLayerJni.get().update(mNativePtr, null, 0.f, 0.f);
+        OverscrollSceneLayerJni.get().update(mNativePtr, OverscrollSceneLayer.this, null, 0.f, 0.f);
         mAccumulatedScroll = 0.f;
     }
 
     /** Reset the glow effect. */
     void reset() {
-        OverscrollSceneLayerJni.get().onReset(mNativePtr);
+        OverscrollSceneLayerJni.get().onReset(mNativePtr, OverscrollSceneLayer.this);
     }
 
     @Override
     public void setContentTree(SceneLayer contentTree) {
-        OverscrollSceneLayerJni.get().setContentTree(mNativePtr, contentTree);
+        OverscrollSceneLayerJni.get()
+                .setContentTree(mNativePtr, OverscrollSceneLayer.this, contentTree);
     }
 
     @Override
@@ -94,19 +98,28 @@ class OverscrollSceneLayer extends SceneOverlayLayer {
 
     @NativeMethods
     interface Natives {
-        long init(OverscrollSceneLayer self, WindowAndroid window);
+        long init(OverscrollSceneLayer caller, WindowAndroid window);
 
         void prepare(
-                long nativeOverscrollSceneLayer, float startX, float startY, int width, int height);
+                long nativeOverscrollSceneLayer,
+                OverscrollSceneLayer caller,
+                float startX,
+                float startY,
+                int width,
+                int height);
 
-        void setContentTree(long nativeOverscrollSceneLayer, SceneLayer contentTree);
+        void setContentTree(
+                long nativeOverscrollSceneLayer,
+                OverscrollSceneLayer caller,
+                SceneLayer contentTree);
 
         boolean update(
                 long nativeOverscrollSceneLayer,
-                @Nullable ResourceManager resourceManager,
+                OverscrollSceneLayer caller,
+                ResourceManager resourceManager,
                 float accumulatedScroll,
                 float delta);
 
-        void onReset(long nativeOverscrollSceneLayer);
+        void onReset(long nativeOverscrollSceneLayer, OverscrollSceneLayer caller);
     }
 }

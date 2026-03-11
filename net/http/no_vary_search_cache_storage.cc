@@ -24,6 +24,7 @@
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
+#include "base/types/cxx23_to_underlying.h"
 #include "net/base/pickle.h"
 #include "net/base/pickle_base_types.h"
 #include "net/base/pickle_traits.h"
@@ -82,7 +83,7 @@ enum class JournalEntryType : uint32_t {
 template <>
 struct PickleTraits<JournalEntryType> {
   static void Serialize(base::Pickle& pickle, const JournalEntryType& value) {
-    WriteToPickle(pickle, std::to_underlying(value));
+    WriteToPickle(pickle, base::to_underlying(value));
   }
 
   static std::optional<JournalEntryType> Deserialize(
@@ -101,7 +102,7 @@ struct PickleTraits<JournalEntryType> {
   }
 
   static size_t PickleSize(const JournalEntryType& value) {
-    return EstimatePickleSize(std::to_underlying(value));
+    return EstimatePickleSize(base::to_underlying(value));
   }
 };
 
@@ -326,8 +327,7 @@ class NoVarySearchCacheStorage::Loader final {
     kCouldntCreateCacheFile = 11,
     kCouldntCreateJournal = 12,
     kCouldntStartJournal = 13,
-    kOperationsInitFailed = 14,
-    kMaxValue = kOperationsInitFailed,
+    kMaxValue = kCouldntStartJournal,
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/net/enums.xml:NoVarySearchCacheStorageLoadResult)
 
@@ -351,10 +351,6 @@ class NoVarySearchCacheStorage::Loader final {
   // value from this object will be posted back to the main thread. Calls into
   // other methods of this object to handle various exceptional conditions.
   [[nodiscard]] ResultType Load() {
-    if (!operations_->Init()) {
-      return GiveUp(Result::kOperationsInitFailed);
-    }
-
     auto maybe_load_result = operations_->Load(kSnapshotFilename, kMaxFileSize);
     if (!maybe_load_result.has_value()) {
       base::UmaHistogramExactLinear("HttpCache.NoVarySearch.SnapshotLoadError",
@@ -375,8 +371,7 @@ class NoVarySearchCacheStorage::Loader final {
       return StartFromScratch(Result::kBadSnapshotMagicNumber);
     }
 
-    base::PickleIterator pickle =
-        base::PickleIterator::WithData(snapshot_pickle);
+    auto pickle = base::Pickle::WithUnownedBuffer(snapshot_pickle);
     auto maybe_cache = ReadValueFromPickle<NoVarySearchCache>(pickle);
     if (!maybe_cache) {
       return StartFromScratch(Result::kInvalidSnapshotPickle);
@@ -448,12 +443,13 @@ class NoVarySearchCacheStorage::Loader final {
         break;
       }
       const auto pickle_span = pickles.take_first(size);
-      base::PickleIterator iter = base::PickleIterator::WithData(pickle_span);
-      if (iter.ReachedEnd()) {
+      const auto pickle = base::Pickle::WithUnownedBuffer(pickle_span);
+      if (pickle.size() == 0) {
         // The Pickle header was invalid.
         had_error = true;
         break;
       }
+      base::PickleIterator iter(pickle);
       auto maybe_type = ReadValueFromPickle<JournalEntryType>(iter);
       if (!maybe_type) {
         had_error = true;
@@ -461,18 +457,17 @@ class NoVarySearchCacheStorage::Loader final {
       }
       switch (maybe_type.value()) {
         case JournalEntryType::kInsert: {
-          std::string partition_key;
-          std::string base_url;
+          std::string base_url_cache_key;
           auto nvs_data = CreateHttpNoVarySearchData();
           std::optional<std::string> query;
           base::Time update_time;
-          if (!ReadPickleInto(iter, partition_key, base_url, nvs_data, query,
+          if (!ReadPickleInto(iter, base_url_cache_key, nvs_data, query,
                               update_time) ||
               !iter.ReachedEnd()) {
             had_error = true;
             break;
           }
-          cache_->ReplayInsert(std::move(partition_key), std::move(base_url),
+          cache_->ReplayInsert(std::move(base_url_cache_key),
                                std::move(nvs_data), std::move(query),
                                update_time);
           ++replayed_journal_entries;
@@ -480,16 +475,15 @@ class NoVarySearchCacheStorage::Loader final {
         }
 
         case JournalEntryType::kErase: {
-          std::string partition_key;
-          std::string base_url;
+          std::string base_url_cache_key;
           auto nvs_data = CreateHttpNoVarySearchData();
           std::optional<std::string> query;
-          if (!ReadPickleInto(iter, partition_key, base_url, nvs_data, query) ||
+          if (!ReadPickleInto(iter, base_url_cache_key, nvs_data, query) ||
               !iter.ReachedEnd()) {
             had_error = true;
             break;
           }
-          cache_->ReplayErase(partition_key, base_url, nvs_data, query);
+          cache_->ReplayErase(base_url_cache_key, nvs_data, query);
           ++replayed_journal_entries;
           break;
         }
@@ -629,25 +623,23 @@ void NoVarySearchCacheStorage::TakeSnapshot() {
                      base::Unretained(journal_.get()), std::move(pickle)));
 }
 
-void NoVarySearchCacheStorage::OnInsert(const std::string& partition_key,
-                                        const std::string& base_url,
+void NoVarySearchCacheStorage::OnInsert(const std::string& base_url_cache_key,
                                         const HttpNoVarySearchData& nvs_data,
                                         const std::optional<std::string>& query,
                                         base::Time update_time) {
   base::Pickle pickle;
-  WriteToPickle(pickle, JournalEntryType::kInsert, partition_key, base_url,
-                nvs_data, query, update_time);
+  WriteToPickle(pickle, JournalEntryType::kInsert, base_url_cache_key, nvs_data,
+                query, update_time);
   AppendToJournal(std::move(pickle));
 }
 
 void NoVarySearchCacheStorage::OnErase(
-    const std::string& partition_key,
-    const std::string& base_url,
+    const std::string& base_url_cache_key,
     const HttpNoVarySearchData& nvs_data,
     const std::optional<std::string>& query) {
   base::Pickle pickle;
-  WriteToPickle(pickle, JournalEntryType::kErase, partition_key, base_url,
-                nvs_data, query);
+  WriteToPickle(pickle, JournalEntryType::kErase, base_url_cache_key, nvs_data,
+                query);
   AppendToJournal(std::move(pickle));
 }
 

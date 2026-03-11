@@ -8,8 +8,6 @@
 #include <map>
 
 #include "base/memory/raw_ptr.h"
-#include "base/observer_list.h"
-#include "base/observer_list_types.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/install_gate.h"
@@ -25,6 +23,7 @@ class BrowserContext;
 
 namespace extensions {
 class ExtensionPrefs;
+class ExtensionRegistrar;
 class InstallGate;
 
 // Manages a set of extension installs delayed for various reasons.  The reason
@@ -32,13 +31,6 @@ class InstallGate;
 // ExtensionRegistry because they are not yet installed.
 class DelayedInstallManager : public KeyedService {
  public:
-  class Observer : public base::CheckedObserver {
-   public:
-    // Called when a delayed installation is ready to be finished.
-    virtual void OnDelayedInstallFinished(
-        scoped_refptr<const Extension> extension) = 0;
-  };
-
   explicit DelayedInstallManager(content::BrowserContext* context);
   DelayedInstallManager(const DelayedInstallManager&) = delete;
   DelayedInstallManager& operator=(const DelayedInstallManager&) = delete;
@@ -48,9 +40,6 @@ class DelayedInstallManager : public KeyedService {
 
   // KeyedService:
   void Shutdown() override;
-
-  void AddObserver(Observer* observer);
-  void RemoveObserver(Observer* observer);
 
   // Returns true if an extension is in the delayed install set.
   bool Contains(const ExtensionId& id) const;
@@ -90,8 +79,8 @@ class DelayedInstallManager : public KeyedService {
   // or if we should delay the install until further notice, or if the install
   // should be aborted. A pending install is delayed or aborted when any of the
   // delayers say so and only proceeds when all delayers return INSTALL.
-  // `extension` is the extension to be installed. `install_immediately` is the
-  // install flag set with the install. `reason` is the reason associated with
+  // |extension| is the extension to be installed. |install_immediately| is the
+  // install flag set with the install. |reason| is the reason associated with
   // the install delayer that wants to defer or abort the install.
   InstallGate::Action ShouldDelayExtensionInstall(
       const Extension* extension,
@@ -102,14 +91,13 @@ class DelayedInstallManager : public KeyedService {
 
  private:
   raw_ptr<ExtensionPrefs> extension_prefs_;
+  raw_ptr<ExtensionRegistrar> extension_registrar_;
 
   ExtensionSet delayed_installs_;
 
   using InstallGateRegistry = std::map<ExtensionPrefs::DelayReason,
                                        raw_ptr<InstallGate, CtnExperimental>>;
   InstallGateRegistry install_delayer_registry_;
-
-  base::ObserverList<Observer> observers_;
 };
 
 }  // namespace extensions

@@ -345,7 +345,7 @@ TEST_F(AutoscrollControllerTest, TextSelectionAutoScroll) {
   </body>
   )HTML");
 
-  script->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  script->setInnerHTML(R"HTML(
     let eventCounts = {pointerdown: 0, scroll: 0};
     let target = document.getElementById('targetDiv');
     for (let evt in eventCounts) {

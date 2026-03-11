@@ -4,5 +4,5 @@
 
 module content.mojom;
 
-[EnableIf=is_mac, Native]
+[Native]
 struct DropData;

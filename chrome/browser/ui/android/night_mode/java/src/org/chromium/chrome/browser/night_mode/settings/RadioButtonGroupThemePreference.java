@@ -5,6 +5,7 @@
 package org.chromium.chrome.browser.night_mode.settings;
 
 import android.content.Context;
+import android.os.Build;
 import android.util.AttributeSet;
 import android.view.View;
 import android.widget.CheckBox;
@@ -12,6 +13,7 @@ import android.widget.LinearLayout;
 import android.widget.RadioGroup;
 
 import androidx.annotation.VisibleForTesting;
+import androidx.preference.Preference;
 import androidx.preference.PreferenceViewHolder;
 
 import org.chromium.build.annotations.EnsuresNonNull;
@@ -22,7 +24,6 @@ import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.night_mode.NightModeUtils;
 import org.chromium.chrome.browser.night_mode.R;
 import org.chromium.chrome.browser.night_mode.ThemeType;
-import org.chromium.components.browser_ui.settings.ContainedRadioButtonGroupPreference;
 import org.chromium.components.browser_ui.widget.RadioButtonWithDescription;
 import org.chromium.components.browser_ui.widget.RadioButtonWithDescriptionLayout;
 
@@ -36,12 +37,12 @@ import java.util.Collections;
  * to be darkened (active for System default and Dark).
  */
 @NullMarked
-public class RadioButtonGroupThemePreference extends ContainedRadioButtonGroupPreference
+public class RadioButtonGroupThemePreference extends Preference
         implements RadioGroup.OnCheckedChangeListener {
     private @ThemeType int mSetting;
     private @MonotonicNonNull RadioButtonWithDescription mSettingRadioButton;
     private @MonotonicNonNull RadioButtonWithDescriptionLayout mGroup;
-    private final ArrayList<RadioButtonWithDescription> mButtons;
+    private ArrayList<RadioButtonWithDescription> mButtons;
 
     // Additional view that darkens website contents.
     private @MonotonicNonNull LinearLayout mCheckboxContainer;
@@ -95,6 +96,11 @@ public class RadioButtonGroupThemePreference extends ContainedRadioButtonGroupPr
         mButtons.set(
                 ThemeType.SYSTEM_DEFAULT,
                 (RadioButtonWithDescription) holder.findViewById(R.id.system_default));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            mButtons.get(ThemeType.SYSTEM_DEFAULT)
+                    .setDescriptionText(
+                            getContext().getString(R.string.themes_system_default_summary_api_29));
+        }
         mButtons.set(ThemeType.LIGHT, (RadioButtonWithDescription) holder.findViewById(R.id.light));
         mButtons.set(ThemeType.DARK, (RadioButtonWithDescription) holder.findViewById(R.id.dark));
 
@@ -106,21 +112,6 @@ public class RadioButtonGroupThemePreference extends ContainedRadioButtonGroupPr
         mSettingRadioButton = mButtons.get(mSetting);
         mSettingRadioButton.setChecked(true);
         positionCheckbox();
-
-        if (ChromeFeatureList.sAndroidSettingsContainment.isEnabled()) {
-            // TODO(crbug.com/439911511): Set the value directly in the layout instead.
-            int verticalPadding =
-                    getContext()
-                            .getResources()
-                            .getDimensionPixelSize(R.dimen.settings_item_default_padding);
-            for (RadioButtonWithDescription button : mButtons) {
-                button.setPadding(
-                        button.getPaddingLeft(),
-                        verticalPadding,
-                        button.getPaddingRight(),
-                        verticalPadding);
-            }
-        }
     }
 
     /** Remove and insert the checkbox to the view, based on the current theme preference. */
@@ -174,10 +165,5 @@ public class RadioButtonGroupThemePreference extends ContainedRadioButtonGroupPr
 
     public @Nullable LinearLayout getCheckboxContainerForTesting() {
         return mCheckboxContainer;
-    }
-
-    @Override
-    public @BackgroundStyle int getCustomBackgroundStyle() {
-        return BackgroundStyle.NONE;
     }
 }

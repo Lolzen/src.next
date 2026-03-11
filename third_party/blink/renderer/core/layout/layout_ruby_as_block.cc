@@ -36,12 +36,10 @@ void LayoutRubyAsBlock::AddChild(LayoutObject* child,
   inline_ruby->AddChild(child, before_child);
 }
 
-void LayoutRubyAsBlock::StyleDidChange(
-    StyleDifference diff,
-    const ComputedStyle* old_style,
-    const StyleChangeContext& style_change_context) {
+void LayoutRubyAsBlock::StyleDidChange(StyleDifference diff,
+                                       const ComputedStyle* old_style) {
   NOT_DESTROYED();
-  LayoutBlockFlow::StyleDidChange(diff, old_style, style_change_context);
+  LayoutBlockFlow::StyleDidChange(diff, old_style);
   PropagateStyleToAnonymousChildren();
 
   // Because LayoutInline::AnonymousHasStylePropagationOverride() returns

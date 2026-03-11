@@ -9,6 +9,7 @@
 #include <optional>
 
 #include "cc/paint/paint_flags.h"
+#include "third_party/blink/renderer/platform/graphics/dark_mode_settings.h"
 #include "third_party/blink/renderer/platform/graphics/dark_mode_types.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 
@@ -21,11 +22,10 @@ class ColorFilter;
 namespace blink {
 
 class DarkModeColorClassifier;
-class DarkModeColorFilter;
 class DarkModeImageClassifier;
+class DarkModeColorFilter;
 class DarkModeInvertedColorCache;
 class Image;
-struct DarkModeSettings;
 
 class PLATFORM_EXPORT DarkModeFilter {
  public:
@@ -76,6 +76,7 @@ class PLATFORM_EXPORT DarkModeFilter {
   struct ImmutableData {
     explicit ImmutableData(const DarkModeSettings& settings);
 
+    DarkModeSettings settings;
     std::unique_ptr<DarkModeColorClassifier> foreground_classifier;
     std::unique_ptr<DarkModeColorClassifier> background_classifier;
     std::unique_ptr<DarkModeImageClassifier> image_classifier;
@@ -93,6 +94,8 @@ class PLATFORM_EXPORT DarkModeFilter {
   // only if image policy is set to DarkModeImagePolicy::kFilterAll or image is
   // classified as ImageType::kIcon or kSeparator. This API is thread-safe.
   sk_sp<cc::ColorFilter> GetImageFilter() const;
+
+  DarkModeImagePolicy GetDarkModeImagePolicy() const;
 
   // This is read-only data and is thread-safe.
   const ImmutableData immutable_;

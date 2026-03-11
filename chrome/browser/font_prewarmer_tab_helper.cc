@@ -45,7 +45,7 @@ const void* const kUserDataKey = &kUserDataKey;
 // Returns the font names previously stored to the specified key.
 std::vector<std::string> GetFontNamesFromPrefsForKey(Profile* profile,
                                                      const char* pref_name) {
-  const base::ListValue& font_name_list =
+  const base::Value::List& font_name_list =
       profile->GetPrefs()->GetList(pref_name);
   if (font_name_list.empty())
     return {};
@@ -62,7 +62,7 @@ std::vector<std::string> GetFontNamesFromPrefsForKey(Profile* profile,
 void SaveFontNamesToPref(Profile* profile,
                          const char* pref_name,
                          const std::vector<std::string>& font_family_names) {
-  base::ListValue font_family_names_values;
+  base::Value::List font_family_names_values;
   for (auto& name : font_family_names)
     font_family_names_values.Append(name);
   profile->GetPrefs()->SetList(pref_name, std::move(font_family_names_values));
@@ -102,13 +102,12 @@ class FontPrewarmerCoordinator : public base::SupportsUserData::Data,
   // a search page. Prewarming is done at most once per RenderProcessHost.
   void SendFontsToPrewarm(content::RenderProcessHost* rph) {
     // Only need to prewarm a particular host once.
-    bool inserted = prewarmed_hosts_.insert(rph).second;
-    if (!inserted) {
+    if (prewarmed_hosts_.count(rph))
       return;
-    }
 
     // The following code may early out. Insert the entry to ensure an early out
     // doesn't attempt to send the fonts again.
+    prewarmed_hosts_.insert(rph);
     rph->AddObserver(this);
 
     std::vector<std::string> font_names =

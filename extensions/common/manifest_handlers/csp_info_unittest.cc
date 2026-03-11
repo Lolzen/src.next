@@ -106,7 +106,7 @@ TEST_F(CSPInfoUnitTest, SandboxedPages) {
                GetInvalidManifestKeyError(keys::kSandboxedPagesCSP)),
       Testcase("sandboxed_pages_invalid_5.json",
                GetInvalidManifestKeyError(keys::kSandboxedPagesCSP))};
-  RunTestcases(testcases, ExpectType::kError);
+  RunTestcases(testcases, EXPECT_TYPE_ERROR);
 }
 
 TEST_F(CSPInfoUnitTest, CSPStringKey) {
@@ -124,7 +124,7 @@ TEST_F(CSPInfoUnitTest, CSPStringKey) {
 
   RunTestcase(Testcase("csp_invalid_1.json", GetInvalidManifestKeyError(
                                                  keys::kContentSecurityPolicy)),
-              ExpectType::kError);
+              EXPECT_TYPE_ERROR);
 }
 
 TEST_F(CSPInfoUnitTest, CSPDictionary_ExtensionPages) {
@@ -162,7 +162,7 @@ TEST_F(CSPInfoUnitTest, CSPDictionary_ExtensionPages) {
                    keys::kContentSecurityPolicy_ExtensionPagesPath,
                    "'unsafe-eval'", "worker-src")),
   };
-  RunTestcases(testcases, ExpectType::kError);
+  RunTestcases(testcases, EXPECT_TYPE_ERROR);
 }
 
 // Tests the requirements for object-src specifications.
@@ -355,7 +355,7 @@ TEST_F(CSPInfoUnitTest, CSPDictionary_Sandbox) {
       {"unsandboxed_csp.json",
        GetInvalidManifestKeyError(
            keys::kContentSecurityPolicy_SandboxedPagesPath)}};
-  RunTestcases(testcases, ExpectType::kError);
+  RunTestcases(testcases, EXPECT_TYPE_ERROR);
 }
 
 // Ensures that using a dictionary for the keys::kContentSecurityPolicy manifest

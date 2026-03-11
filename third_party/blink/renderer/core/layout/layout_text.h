@@ -27,6 +27,7 @@
 
 #include "base/check_op.h"
 #include "base/dcheck_is_on.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/notreached.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/text.h"
@@ -78,6 +79,11 @@ class CORE_EXPORT LayoutText : public LayoutObject {
   const char* GetName() const override {
     NOT_DESTROYED();
     return "LayoutText";
+  }
+
+  bool IsLayoutNGObject() const override {
+    NOT_DESTROYED();
+    return true;
   }
 
   bool IsTextFragment() const {
@@ -140,8 +146,7 @@ class CORE_EXPORT LayoutText : public LayoutObject {
   void AbsoluteQuadsForRange(Vector<gfx::QuadF>&,
                              unsigned start_offset = 0,
                              unsigned end_offset = INT_MAX) const;
-  gfx::RectF LocalBoundingBoxRectForAccessibility(
-      IncludeDescendants include_descendants) const final;
+  gfx::RectF LocalBoundingBoxRectForAccessibility() const final;
 
   std::optional<bool> IgnoreWhitespaceForAccessibility() const {
     NOT_DESTROYED();
@@ -197,7 +202,7 @@ class CORE_EXPORT LayoutText : public LayoutObject {
                                 TextOffsetMap& offset_map) const;
 
   PhysicalRect LocalSelectionVisualRect() const final;
-  PhysicalRect LocalCaretRect(int caret_offset, CaretShape) const override;
+  PhysicalRect LocalCaretRect(int caret_offset) const override;
 
   // Compute the rect and offset of text boxes for this LayoutText.
   struct TextBoxInfo {
@@ -372,13 +377,9 @@ class CORE_EXPORT LayoutText : public LayoutObject {
  protected:
   void WillBeDestroyed() override;
 
-  void StyleWillChange(StyleDifference,
-                       const ComputedStyle& new_style,
-                       StyleChangeContext&) override;
+  void StyleWillChange(StyleDifference, const ComputedStyle&) final;
 
-  void StyleDidChange(StyleDifference,
-                      const ComputedStyle* old_style,
-                      const StyleChangeContext&) override;
+  void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
 
   void InLayoutNGInlineFormattingContextWillChange(bool) final;
 

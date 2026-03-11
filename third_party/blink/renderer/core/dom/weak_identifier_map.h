@@ -98,9 +98,8 @@ class WeakIdentifierMap final
 
   void ObjectDestroyed(T* object) {
     IdentifierType identifier = object_to_identifier_.Take(object);
-    if (!IsHashTraitsEmptyValue<HashTraits<IdentifierType>>(identifier)) {
+    if (!WTF::IsHashTraitsEmptyValue<HashTraits<IdentifierType>>(identifier))
       identifier_to_object_.erase(identifier);
-    }
     DCHECK_EQ(object_to_identifier_.size(), identifier_to_object_.size());
   }
 

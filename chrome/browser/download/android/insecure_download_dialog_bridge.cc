@@ -24,7 +24,7 @@
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "chrome/browser/download/android/jni_headers/InsecureDownloadDialogBridge_jni.h"
 
-using base::android::JavaRef;
+using base::android::JavaParamRef;
 using InsecureDownloadStatus = download::DownloadItem::InsecureDownloadStatus;
 
 // static
@@ -65,8 +65,8 @@ void InsecureDownloadDialogBridge::CreateDialog(
 }
 
 void InsecureDownloadDialogBridge::OnConfirmed(JNIEnv* env,
-                                               int64_t callback_id,
-                                               bool accepted) {
+                                               jlong callback_id,
+                                               jboolean accepted) {
   if (!validator_.ValidateAndClearJavaCallback(callback_id))
     return;
   // Convert java long long int to c++ pointer, take ownership.
@@ -74,5 +74,3 @@ void InsecureDownloadDialogBridge::OnConfirmed(JNIEnv* env,
       reinterpret_cast<InsecureDownloadDialogCallback*>(callback_id));
   std::move(*cb).Run(accepted);
 }
-
-DEFINE_JNI(InsecureDownloadDialogBridge)

@@ -17,8 +17,7 @@ using AgentClusterKeyTest = testing::Test;
 
 TEST_F(AgentClusterKeyTest, SiteKeyed) {
   GURL url = GURL("https://a.com");
-  AgentClusterKey key = AgentClusterKey::CreateSiteKeyed(
-      url, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
+  AgentClusterKey key = AgentClusterKey::CreateSiteKeyed(url);
   EXPECT_TRUE(key.IsSiteKeyed());
   EXPECT_FALSE(key.IsOriginKeyed());
   EXPECT_EQ(url, key.GetSite());
@@ -29,8 +28,7 @@ TEST_F(AgentClusterKeyTest, SiteKeyed) {
 TEST_F(AgentClusterKeyTest, OriginKeyed) {
   url::Origin origin =
       url::Origin::CreateFromNormalizedTuple("https", "example.com", 443);
-  AgentClusterKey key = AgentClusterKey::CreateOriginKeyed(
-      origin, AgentClusterKey::OACStatus::kOriginKeyedByDefault);
+  AgentClusterKey key = AgentClusterKey::CreateOriginKeyed(origin);
   EXPECT_FALSE(key.IsSiteKeyed());
   EXPECT_TRUE(key.IsOriginKeyed());
   EXPECT_EQ(origin, key.GetOrigin());
@@ -44,10 +42,9 @@ TEST_F(AgentClusterKeyTest, WithCrossOriginIsolationKey) {
   url::Origin common_coi_origin = url::Origin::CreateFromNormalizedTuple(
       "https", "isolation.example.com", 443);
   AgentClusterKey::CrossOriginIsolationKey isolation_key(
-      common_coi_origin, blink::mojom::CrossOriginIsolationMode::kConcrete,
-      true);
-  AgentClusterKey key = AgentClusterKey::CreateWithCrossOriginIsolationKey(
-      origin, isolation_key, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
+      common_coi_origin, CrossOriginIsolationMode::kConcrete);
+  AgentClusterKey key =
+      AgentClusterKey::CreateWithCrossOriginIsolationKey(origin, isolation_key);
 
   EXPECT_FALSE(key.IsSiteKeyed());
   EXPECT_TRUE(key.IsOriginKeyed());
@@ -61,10 +58,8 @@ TEST_F(AgentClusterKeyTest, Comparisons) {
   GURL site_a = GURL("https://a.com");
   GURL site_b = GURL("https://b.com");
 
-  AgentClusterKey key_site_a = AgentClusterKey::CreateSiteKeyed(
-      site_a, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
-  AgentClusterKey key_site_b = AgentClusterKey::CreateSiteKeyed(
-      site_b, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
+  AgentClusterKey key_site_a = AgentClusterKey::CreateSiteKeyed(site_a);
+  AgentClusterKey key_site_b = AgentClusterKey::CreateSiteKeyed(site_b);
 
   EXPECT_EQ(key_site_a, key_site_a);
   EXPECT_NE(key_site_a, key_site_b);
@@ -73,10 +68,8 @@ TEST_F(AgentClusterKeyTest, Comparisons) {
   url::Origin origin_a = url::Origin::Create(site_a);
   url::Origin origin_b = url::Origin::Create(site_b);
 
-  AgentClusterKey key_origin_a = AgentClusterKey::CreateOriginKeyed(
-      origin_a, AgentClusterKey::OACStatus::kOriginKeyedByDefault);
-  AgentClusterKey key_origin_b = AgentClusterKey::CreateOriginKeyed(
-      origin_b, AgentClusterKey::OACStatus::kOriginKeyedByDefault);
+  AgentClusterKey key_origin_a = AgentClusterKey::CreateOriginKeyed(origin_a);
+  AgentClusterKey key_origin_b = AgentClusterKey::CreateOriginKeyed(origin_b);
 
   EXPECT_EQ(key_origin_a, key_origin_a);
   EXPECT_NE(key_origin_a, key_origin_b);
@@ -84,35 +77,28 @@ TEST_F(AgentClusterKeyTest, Comparisons) {
 
   // With isolation key
   AgentClusterKey::CrossOriginIsolationKey coi_a(
-      origin_a, blink::mojom::CrossOriginIsolationMode::kConcrete, true);
+      origin_a, CrossOriginIsolationMode::kConcrete);
   AgentClusterKey::CrossOriginIsolationKey coi_b(
-      origin_b, blink::mojom::CrossOriginIsolationMode::kConcrete, true);
+      origin_b, CrossOriginIsolationMode::kConcrete);
   AgentClusterKey::CrossOriginIsolationKey non_coi_a(
-      origin_a, blink::mojom::CrossOriginIsolationMode::kLogical, true);
+      origin_a, CrossOriginIsolationMode::kLogical);
   AgentClusterKey::CrossOriginIsolationKey non_coi_b(
-      origin_b, blink::mojom::CrossOriginIsolationMode::kLogical, true);
-  AgentClusterKey::CrossOriginIsolationKey coi_a_no_dip(
-      origin_a, blink::mojom::CrossOriginIsolationMode::kConcrete, false);
+      origin_b, CrossOriginIsolationMode::kLogical);
 
   EXPECT_EQ(coi_a, coi_a);
   EXPECT_EQ(non_coi_a, non_coi_a);
   EXPECT_NE(coi_a, coi_b);
   EXPECT_NE(coi_a, non_coi_a);
   EXPECT_NE(non_coi_a, non_coi_b);
-  EXPECT_EQ(coi_a, coi_a_no_dip);
 
   AgentClusterKey key_origin_a_coi_a =
-      AgentClusterKey::CreateWithCrossOriginIsolationKey(
-          origin_a, coi_a, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
+      AgentClusterKey::CreateWithCrossOriginIsolationKey(origin_a, coi_a);
   AgentClusterKey key_origin_b_coi_a =
-      AgentClusterKey::CreateWithCrossOriginIsolationKey(
-          origin_b, coi_a, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
+      AgentClusterKey::CreateWithCrossOriginIsolationKey(origin_b, coi_a);
   AgentClusterKey key_origin_a_coi_b =
-      AgentClusterKey::CreateWithCrossOriginIsolationKey(
-          origin_a, coi_b, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
+      AgentClusterKey::CreateWithCrossOriginIsolationKey(origin_a, coi_b);
   AgentClusterKey key_origin_a_non_coi_a =
-      AgentClusterKey::CreateWithCrossOriginIsolationKey(
-          origin_a, non_coi_a, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
+      AgentClusterKey::CreateWithCrossOriginIsolationKey(origin_a, non_coi_a);
 
   EXPECT_EQ(key_origin_a_coi_a, key_origin_a_coi_a);
   EXPECT_NE(key_origin_a_coi_a, key_origin_b_coi_a);
@@ -124,79 +110,26 @@ TEST_F(AgentClusterKeyTest, Comparisons) {
   EXPECT_NE(key_origin_a_non_coi_a, key_site_a);
 }
 
-TEST_F(AgentClusterKeyTest, ComparisonsIgnoreOACStatus) {
-  GURL site = GURL("https://a.com");
-
-  AgentClusterKey key_site_1 = AgentClusterKey::CreateSiteKeyed(
-      site, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
-  AgentClusterKey key_site_2 = AgentClusterKey::CreateSiteKeyed(
-      site, AgentClusterKey::OACStatus::kSiteKeyedByHeader);
-
-  EXPECT_EQ(key_site_1, key_site_2);
-
-  // Origin-keyed
-  url::Origin origin = url::Origin::Create(site);
-
-  AgentClusterKey key_origin_1 = AgentClusterKey::CreateOriginKeyed(
-      origin, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
-  AgentClusterKey key_origin_2 = AgentClusterKey::CreateOriginKeyed(
-      origin, AgentClusterKey::OACStatus::kSiteKeyedByHeader);
-  AgentClusterKey key_origin_3 = AgentClusterKey::CreateOriginKeyed(
-      origin, AgentClusterKey::OACStatus::kOriginKeyedByDefault);
-  AgentClusterKey key_origin_4 = AgentClusterKey::CreateOriginKeyed(
-      origin, AgentClusterKey::OACStatus::kOriginKeyedByHeader);
-
-  EXPECT_EQ(key_origin_1, key_origin_2);
-  EXPECT_EQ(key_origin_1, key_origin_3);
-  EXPECT_EQ(key_origin_1, key_origin_4);
-
-  // With isolation key
-  AgentClusterKey::CrossOriginIsolationKey coi(
-      origin, blink::mojom::CrossOriginIsolationMode::kConcrete, true);
-
-  AgentClusterKey key_origin_a_coi_1 =
-      AgentClusterKey::CreateWithCrossOriginIsolationKey(
-          origin, coi, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
-  AgentClusterKey key_origin_a_coi_2 =
-      AgentClusterKey::CreateWithCrossOriginIsolationKey(
-          origin, coi, AgentClusterKey::OACStatus::kSiteKeyedByHeader);
-  AgentClusterKey key_origin_a_coi_3 =
-      AgentClusterKey::CreateWithCrossOriginIsolationKey(
-          origin, coi, AgentClusterKey::OACStatus::kOriginKeyedByDefault);
-  AgentClusterKey key_origin_a_coi_4 =
-      AgentClusterKey::CreateWithCrossOriginIsolationKey(
-          origin, coi, AgentClusterKey::OACStatus::kOriginKeyedByHeader);
-
-  EXPECT_EQ(key_origin_a_coi_1, key_origin_a_coi_2);
-  EXPECT_EQ(key_origin_a_coi_1, key_origin_a_coi_3);
-  EXPECT_EQ(key_origin_a_coi_1, key_origin_a_coi_4);
-}
-
 TEST_F(AgentClusterKeyTest, StreamOutput) {
   std::stringstream dump;
   GURL url_a("https://a.com");
   url::Origin origin_a = url::Origin::Create(url_a);
   url::Origin origin_b = url::Origin::Create(GURL("https://b.com"));
 
-  AgentClusterKey key_site_a = AgentClusterKey::CreateSiteKeyed(
-      url_a, AgentClusterKey::OACStatus::kSiteKeyedByDefault);
+  AgentClusterKey key_site_a = AgentClusterKey::CreateSiteKeyed(url_a);
   dump << key_site_a;
   EXPECT_EQ(dump.str(), "{site_: https://a.com/}");
   dump.str("");
 
-  AgentClusterKey key_origin_a = AgentClusterKey::CreateOriginKeyed(
-      origin_a, AgentClusterKey::OACStatus::kOriginKeyedByDefault);
+  AgentClusterKey key_origin_a = AgentClusterKey::CreateOriginKeyed(origin_a);
   dump << key_origin_a;
   EXPECT_EQ(dump.str(), "{origin_: https://a.com}");
   dump.str("");
 
   AgentClusterKey key_origin_a_coi_b =
       AgentClusterKey::CreateWithCrossOriginIsolationKey(
-          origin_a,
-          AgentClusterKey::CrossOriginIsolationKey(
-              origin_b, blink::mojom::CrossOriginIsolationMode::kConcrete,
-              true),
-          AgentClusterKey::OACStatus::kSiteKeyedByDefault);
+          origin_a, AgentClusterKey::CrossOriginIsolationKey(
+                        origin_b, CrossOriginIsolationMode::kConcrete));
   dump << key_origin_a_coi_b;
   EXPECT_EQ(dump.str(),
             "{origin_: https://a.com, cross_origin_isolation_key_: "

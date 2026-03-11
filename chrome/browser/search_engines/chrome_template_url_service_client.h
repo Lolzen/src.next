@@ -37,7 +37,8 @@ class ChromeTemplateURLServiceClient : public TemplateURLServiceClient,
 
   // history::HistoryServiceObserver:
   void OnURLVisited(history::HistoryService* history_service,
-                    const history::VisitedURLInfo& visited_url_info) override;
+                    const history::URLRow& url_row,
+                    const history::VisitRow& new_visit) override;
 
  private:
   raw_ptr<TemplateURLService> owner_;

@@ -102,8 +102,11 @@ class ImageClipboardCopyManager : public ImageDecoder::ImageRequest {
     scw.Reset();
 
     if (!decoded_image.empty() && !decoded_image.isNull()) {
-      scw.WriteFilenames(ui::FileInfosToURIList(
-          {ui::FileInfo(file_path_, file_name_to_report_user_)}));
+      if (base::FeatureList::IsEnabled(
+              download::features::kCopyImageFilenameToClipboard)) {
+        scw.WriteFilenames(ui::FileInfosToURIList(
+            {ui::FileInfo(file_path_, file_name_to_report_user_)}));
+      }
       scw.WriteImage(decoded_image);
     }
 

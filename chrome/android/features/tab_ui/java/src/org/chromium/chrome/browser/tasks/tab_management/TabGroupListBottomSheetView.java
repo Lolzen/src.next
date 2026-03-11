@@ -4,11 +4,6 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static android.view.View.LAYOUT_DIRECTION_LTR;
-import static android.view.View.LAYOUT_DIRECTION_RTL;
-
-import static org.chromium.ui.base.LocalizationUtils.isLayoutRtl;
-
 import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -51,9 +46,6 @@ public class TabGroupListBottomSheetView implements BottomSheetContent {
                 (ViewGroup)
                         LayoutInflater.from(context)
                                 .inflate(R.layout.tab_group_list_bottom_sheet, /* root= */ null);
-        mContentView.setLayoutDirection(
-                isLayoutRtl() ? LAYOUT_DIRECTION_RTL : LAYOUT_DIRECTION_LTR);
-
         mRecyclerView = mContentView.findViewById(R.id.tab_group_parity_recycler_view);
         mRecyclerView.setLayoutManager(new LinearLayoutManager(context));
         mBottomsheetController = bottomSheetController;
@@ -91,9 +83,7 @@ public class TabGroupListBottomSheetView implements BottomSheetContent {
 
     @Override
     public int getPriority() {
-        // Since this is the result of a user action, this needs to be able to override
-        // more persistent bottom sheets.
-        return ContentPriority.HIGH;
+        return ContentPriority.LOW;
     }
 
     @Override
@@ -105,6 +95,11 @@ public class TabGroupListBottomSheetView implements BottomSheetContent {
     @Override
     public float getHalfHeightRatio() {
         return Math.min(getFullHeightRatio(), 0.5f);
+    }
+
+    @Override
+    public int getPeekHeight() {
+        return HeightMode.DISABLED;
     }
 
     @Override

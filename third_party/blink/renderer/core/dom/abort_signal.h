@@ -208,8 +208,6 @@ class CORE_EXPORT AbortSignal : public EventTarget,
 
   // Handle for the delayed task associated with `SignalType::kTimeout` signals.
   TaskHandle timout_task_handle_;
-
-  bool is_running_abort_steps_ = false;
 };
 
 }  // namespace blink

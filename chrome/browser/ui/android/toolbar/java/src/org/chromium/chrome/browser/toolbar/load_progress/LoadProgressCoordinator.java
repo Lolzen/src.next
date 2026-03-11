@@ -4,7 +4,7 @@
 
 package org.chromium.chrome.browser.toolbar.load_progress;
 
-import org.chromium.base.supplier.NullableObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.toolbar.ToolbarProgressBar;
@@ -24,7 +24,7 @@ public class LoadProgressCoordinator {
      * @param progressBarView Toolbar progress bar view.
      */
     public LoadProgressCoordinator(
-            NullableObservableSupplier<Tab> tabSupplier, ToolbarProgressBar progressBarView) {
+            ObservableSupplier<Tab> tabSupplier, ToolbarProgressBar progressBarView) {
         mProgressBarView = progressBarView;
         mModel = new PropertyModel(LoadProgressProperties.ALL_KEYS);
         mMediator = new LoadProgressMediator(tabSupplier, mModel);

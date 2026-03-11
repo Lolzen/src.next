@@ -87,6 +87,7 @@ def _CheckForWrongMojomIncludes(input_api, output_api):
         'third_party/blink/public/mojom/loader/transferrable_url_loader',
         'third_party/blink/public/mojom/navigation/renderer_content_settings',
         'third_party/blink/public/mojom/page/prerender_page_param',
+        'third_party/blink/public/mojom/partitioned_popins/partitioned_popin_params',
         'third_party/blink/public/mojom/worker/subresource_loader_updater',
         'third_party/blink/public/mojom/worker/worklet_global_scope_creation_params',
         'media/mojo/mojom/interface_factory', 'media/mojo/mojom/audio_decoder',
@@ -267,14 +268,6 @@ def _CheckForForbiddenChromiumCode(input_api, output_api):
             errors = audit_non_blink_usage.check(path, f.ChangedContents())
             if errors:
                 for error in errors:
-                    if not results:
-                        results.append(
-                            output_api.PresubmitNotifyResult(
-                                'Non-Blink usage violations detected. Please '
-                                'check if there are usable Blink equivalents; '
-                                'if none exist, please allowlist the new uses '
-                                'in third_party/blink/tools/blinkpy/presubmit/'
-                                'audit_non_blink_usage.py'))
                     msg = '%s:%d uses disallowed identifier %s' % (
                         path, error.line, error.identifier)
                     if error.advice:
@@ -292,12 +285,10 @@ def CheckChangeOnUpload(input_api, output_api):
     results.extend(_CheckStyle(input_api, output_api))
     results.extend(_CheckForPrintfDebugging(input_api, output_api))
     results.extend(_CheckForForbiddenChromiumCode(input_api, output_api))
-    results.extend(input_api.canned_checks.CheckAyeAye(input_api, output_api))
     return results
 
 
 def CheckChangeOnCommit(input_api, output_api):
     results = []
     results.extend(_CommonChecks(input_api, output_api))
-    results.extend(input_api.canned_checks.CheckAyeAye(input_api, output_api))
     return results

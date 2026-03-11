@@ -9,7 +9,6 @@
 #include "net/base/net_errors.h"
 #include "net/cookies/cookie_setting_override.h"
 #include "net/cookies/cookie_util.h"
-#include "net/ssl/ssl_info.h"
 
 namespace net {
 
@@ -32,8 +31,7 @@ int NetworkDelegateImpl::OnHeadersReceived(
     const HttpResponseHeaders* original_response_headers,
     scoped_refptr<HttpResponseHeaders>* override_response_headers,
     const IPEndPoint& endpoint,
-    std::optional<GURL>* preserve_fragment_on_redirect_url,
-    const std::optional<net::SSLInfo>& ssl_info) {
+    std::optional<GURL>* preserve_fragment_on_redirect_url) {
   return OK;
 }
 

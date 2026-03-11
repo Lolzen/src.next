@@ -13,12 +13,9 @@
 #include "extensions/browser/extension_pref_value_map_factory.h"
 #include "extensions/browser/extension_prefs_helper.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_set.h"
 #include "url/gurl.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -98,7 +95,7 @@ const Extension* GetExtensionOverridingNewTabPage(
   if (ntp_url.SchemeIs(kExtensionScheme)) {
     return ExtensionRegistry::Get(browser_context)
         ->enabled_extensions()
-        .GetByID(ntp_url.GetHost());
+        .GetByID(ntp_url.host());
   }
   return nullptr;
 }

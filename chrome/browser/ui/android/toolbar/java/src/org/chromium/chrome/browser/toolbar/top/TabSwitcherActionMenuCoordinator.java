@@ -5,6 +5,7 @@
 package org.chromium.chrome.browser.toolbar.top;
 
 import static org.chromium.build.NullUtil.assumeNonNull;
+import static org.chromium.components.browser_ui.widget.BrowserUiListMenuUtils.buildMenuListItem;
 import static org.chromium.ui.listmenu.BasicListMenu.buildMenuDivider;
 
 import android.content.Context;
@@ -18,20 +19,18 @@ import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.Callback;
 import org.chromium.base.metrics.RecordUserAction;
-import org.chromium.base.supplier.MonotonicObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.incognito.IncognitoUtils;
 import org.chromium.chrome.browser.profiles.Profile;
-import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.toolbar.MenuBuilderHelper;
 import org.chromium.chrome.browser.toolbar.R;
 import org.chromium.components.browser_ui.widget.BrowserUiListMenuUtils;
-import org.chromium.components.browser_ui.widget.ListItemBuilder;
 import org.chromium.components.feature_engagement.EventConstants;
 import org.chromium.ui.listmenu.BasicListMenu;
 import org.chromium.ui.listmenu.ListMenu;
@@ -57,22 +56,22 @@ public class TabSwitcherActionMenuCoordinator {
         MenuItemType.CLOSE_TAB,
         MenuItemType.NEW_TAB,
         MenuItemType.NEW_INCOGNITO_TAB,
+        MenuItemType.SWITCH_TO_INCOGNITO,
+        MenuItemType.SWITCH_OUT_OF_INCOGNITO,
         MenuItemType.CLOSE_ALL_INCOGNITO_TABS,
         MenuItemType.ADD_TAB_TO_GROUP,
         MenuItemType.ADD_TAB_TO_NEW_GROUP,
-        MenuItemType.NEW_WINDOW,
-        MenuItemType.NEW_INCOGNITO_WINDOW,
     })
     public @interface MenuItemType {
         int DIVIDER = 0;
         int CLOSE_TAB = 1;
         int NEW_TAB = 2;
         int NEW_INCOGNITO_TAB = 3;
-        int CLOSE_ALL_INCOGNITO_TABS = 4;
-        int ADD_TAB_TO_GROUP = 5;
-        int ADD_TAB_TO_NEW_GROUP = 6;
-        int NEW_WINDOW = 7;
-        int NEW_INCOGNITO_WINDOW = 8;
+        int SWITCH_TO_INCOGNITO = 4;
+        int SWITCH_OUT_OF_INCOGNITO = 5;
+        int CLOSE_ALL_INCOGNITO_TABS = 6;
+        int ADD_TAB_TO_GROUP = 7;
+        int ADD_TAB_TO_NEW_GROUP = 8;
     }
 
     /**
@@ -83,7 +82,7 @@ public class TabSwitcherActionMenuCoordinator {
     public static OnLongClickListener createOnLongClickListener(
             Callback<Integer> onItemClicked,
             Profile profile,
-            MonotonicObservableSupplier<TabModelSelector> tabModelSelectorSupplier) {
+            ObservableSupplier<TabModelSelector> tabModelSelectorSupplier) {
         return createOnLongClickListener(
                 new TabSwitcherActionMenuCoordinator(profile, tabModelSelectorSupplier),
                 profile,
@@ -120,6 +119,10 @@ public class TabSwitcherActionMenuCoordinator {
             RecordUserAction.record("MobileMenuNewIncognitoTab.LongTapMenu");
         } else if (id == R.id.close_all_incognito_tabs_menu_id) {
             RecordUserAction.record("MobileMenuCloseAllIncognitoTabs.LongTapMenu");
+        } else if (id == R.id.switch_to_incognito_menu_id) {
+            RecordUserAction.record("MobileMenuSwitchToIncognito.LongTapMenu");
+        } else if (id == R.id.switch_out_of_incognito_menu_id) {
+            RecordUserAction.record("MobileMenuSwitchOutOfIncognito.LongTapMenu");
         } else if (id == R.id.add_tab_to_group_menu_id) {
             RecordUserAction.record("MobileMenuAddToGroup.LongTapMenu");
         } else if (id == R.id.add_tab_to_new_group_menu_id) {
@@ -127,7 +130,7 @@ public class TabSwitcherActionMenuCoordinator {
         }
     }
 
-    private final MonotonicObservableSupplier<TabModelSelector> mTabModelSelectorSupplier;
+    private final ObservableSupplier<TabModelSelector> mTabModelSelectorSupplier;
     private final Profile mProfile;
 
     // For test.
@@ -135,8 +138,7 @@ public class TabSwitcherActionMenuCoordinator {
 
     /** Construct a coordinator for the given {@link Profile}. */
     TabSwitcherActionMenuCoordinator(
-            Profile profile,
-            MonotonicObservableSupplier<TabModelSelector> tabModelSelectorSupplier) {
+            Profile profile, ObservableSupplier<TabModelSelector> tabModelSelectorSupplier) {
         mProfile = profile;
         mTabModelSelectorSupplier = tabModelSelectorSupplier;
     }
@@ -160,7 +162,7 @@ public class TabSwitcherActionMenuCoordinator {
                 BrowserUiListMenuUtils.getBasicListMenu(
                         context,
                         listItems,
-                        (model, view) -> {
+                        (model) -> {
                             onItemClicked.onResult(model.get(ListMenuItemProperties.MENU_ITEM_ID));
                         });
 
@@ -197,108 +199,78 @@ public class TabSwitcherActionMenuCoordinator {
     }
 
     ModelList buildMenuItems() {
-        TabModelSelector selector = mTabModelSelectorSupplier.get();
         boolean isCurrentModelIncognito =
-                selector != null && selector.isIncognitoBrandedModelSelected();
-        boolean hasIncognitoTabs = selector != null && selector.getModel(true).getCount() > 0;
-        boolean supportedMixedWindows = !IncognitoUtils.shouldOpenIncognitoAsWindow();
+                mTabModelSelectorSupplier.hasValue()
+                        && mTabModelSelectorSupplier.get().isIncognitoBrandedModelSelected();
+        boolean hasIncognitoTabs =
+                mTabModelSelectorSupplier.hasValue()
+                        && mTabModelSelectorSupplier.get().getModel(true).getCount() > 0;
+        boolean incognitoMigrationFFEnabled =
+                ChromeFeatureList.sTabStripIncognitoMigration.isEnabled();
         ModelList itemList = new ModelList();
         itemList.add(buildListItemByMenuItemType(MenuItemType.CLOSE_TAB));
-        if (!supportedMixedWindows && isCurrentModelIncognito && hasIncognitoTabs) {
+        if (incognitoMigrationFFEnabled && isCurrentModelIncognito && hasIncognitoTabs) {
             itemList.add(buildListItemByMenuItemType(MenuItemType.CLOSE_ALL_INCOGNITO_TABS));
         }
         itemList.add(buildListItemByMenuItemType(MenuItemType.DIVIDER));
-        if (supportedMixedWindows || !isCurrentModelIncognito) {
-            itemList.add(buildListItemByMenuItemType(MenuItemType.NEW_TAB));
+        itemList.add(buildListItemByMenuItemType(MenuItemType.NEW_TAB));
+        itemList.add(buildListItemByMenuItemType(MenuItemType.NEW_INCOGNITO_TAB));
+        if (ChromeFeatureList.sTabGroupEntryPointsAndroid.isEnabled()) {
+            if (doTabGroupsExist()) {
+                itemList.add(buildListItemByMenuItemType(MenuItemType.ADD_TAB_TO_GROUP));
+            } else {
+                itemList.add(buildListItemByMenuItemType(MenuItemType.ADD_TAB_TO_NEW_GROUP));
+            }
         }
-        if (supportedMixedWindows || isCurrentModelIncognito) {
-            itemList.add(buildListItemByMenuItemType(MenuItemType.NEW_INCOGNITO_TAB));
+        if (incognitoMigrationFFEnabled) {
+            if (isCurrentModelIncognito) {
+                itemList.add(buildListItemByMenuItemType(MenuItemType.SWITCH_OUT_OF_INCOGNITO));
+            } else if (hasIncognitoTabs) {
+                // Show switch into incognito when incognito model has tabs.
+                itemList.add(buildListItemByMenuItemType(MenuItemType.SWITCH_TO_INCOGNITO));
+            }
         }
-        if (!supportedMixedWindows) {
-            itemList.add(buildListItemByMenuItemType(MenuItemType.NEW_WINDOW));
-            itemList.add(buildListItemByMenuItemType(MenuItemType.NEW_INCOGNITO_WINDOW));
-        }
-        maybeBuildAddToGroup(itemList);
         return itemList;
     }
 
-    private void maybeBuildAddToGroup(ModelList itemList) {
-        if (ChromeFeatureList.sTabModelInitFixes.isEnabled()) {
-            TabModelSelector selector = mTabModelSelectorSupplier.get();
-            if (selector == null || !selector.isTabStateInitialized()) return;
-            TabGroupModelFilter filter = selector.getCurrentTabGroupModelFilter();
-            if (filter == null || !filter.isTabModelRestored()) return;
-        }
-
-        if (doTabGroupsExist()) {
-            itemList.add(buildListItemByMenuItemType(MenuItemType.ADD_TAB_TO_GROUP));
-        } else {
-            itemList.add(buildListItemByMenuItemType(MenuItemType.ADD_TAB_TO_NEW_GROUP));
-        }
-    }
-
     protected ListItem buildListItemByMenuItemType(@MenuItemType int type) {
-        boolean enabled = IncognitoUtils.isIncognitoModeEnabled(mProfile);
         switch (type) {
             case MenuItemType.CLOSE_TAB:
-                return new ListItemBuilder()
-                        .withTitleRes(R.string.close_tab)
-                        .withMenuId(R.id.close_tab)
-                        .withStartIconRes(R.drawable.btn_close)
-                        .build();
+                return buildMenuListItem(R.string.close_tab, R.id.close_tab, R.drawable.btn_close);
             case MenuItemType.NEW_TAB:
-                return new ListItemBuilder()
-                        .withTitleRes(R.string.menu_new_tab)
-                        .withMenuId(R.id.new_tab_menu_id)
-                        .withStartIconRes(
-                                IncognitoUtils.shouldOpenIncognitoAsWindow()
-                                        ? R.drawable.ic_add_box_rounded_corner
-                                        : R.drawable.new_tab_icon)
-                        .build();
+                return buildMenuListItem(
+                        R.string.menu_new_tab, R.id.new_tab_menu_id, R.drawable.new_tab_icon);
             case MenuItemType.NEW_INCOGNITO_TAB:
-                return new ListItemBuilder()
-                        .withTitleRes(R.string.menu_new_incognito_tab)
-                        .withMenuId(R.id.new_incognito_tab_menu_id)
-                        .withStartIconRes(
-                                IncognitoUtils.shouldOpenIncognitoAsWindow()
-                                        ? R.drawable.ic_add_box_rounded_corner
-                                        : R.drawable.ic_incognito)
-                        .withEnabled(enabled)
-                        .build();
+                return buildMenuListItem(
+                        R.string.menu_new_incognito_tab,
+                        R.id.new_incognito_tab_menu_id,
+                        R.drawable.incognito_simple,
+                        IncognitoUtils.isIncognitoModeEnabled(mProfile));
             case MenuItemType.CLOSE_ALL_INCOGNITO_TABS:
-                return new ListItemBuilder()
-                        .withTitleRes(R.string.menu_close_all_incognito_tabs)
-                        .withMenuId(R.id.close_all_incognito_tabs_menu_id)
-                        .withStartIconRes(R.drawable.ic_close_all_tabs)
-                        .build();
+                return buildMenuListItem(
+                        R.string.menu_close_all_incognito_tabs,
+                        R.id.close_all_incognito_tabs_menu_id,
+                        R.drawable.ic_close_all_tabs);
+            case MenuItemType.SWITCH_TO_INCOGNITO:
+                return buildMenuListItem(
+                        R.string.menu_switch_to_incognito,
+                        R.id.switch_to_incognito_menu_id,
+                        R.drawable.ic_switch_to_incognito);
+            case MenuItemType.SWITCH_OUT_OF_INCOGNITO:
+                return buildMenuListItem(
+                        R.string.menu_switch_out_of_incognito,
+                        R.id.switch_out_of_incognito_menu_id,
+                        R.drawable.ic_switch_out_of_incognito);
             case MenuItemType.ADD_TAB_TO_GROUP:
-                return new ListItemBuilder()
-                        .withTitleRes(
-                                isCurrentTabInGroup()
-                                        ? R.string.menu_move_tab_to_group
-                                        : R.string.menu_add_tab_to_group)
-                        .withMenuId(R.id.add_tab_to_group_menu_id)
-                        .withStartIconRes(R.drawable.ic_widgets)
-                        .build();
+                return buildMenuListItem(
+                        R.string.menu_add_tab_to_group,
+                        R.id.add_tab_to_group_menu_id,
+                        R.drawable.ic_widgets);
             case MenuItemType.ADD_TAB_TO_NEW_GROUP:
-                return new ListItemBuilder()
-                        .withTitleRes(R.string.menu_add_tab_to_new_group)
-                        .withMenuId(R.id.add_tab_to_new_group_menu_id)
-                        .withStartIconRes(R.drawable.ic_widgets)
-                        .build();
-            case MenuItemType.NEW_WINDOW:
-                return new ListItemBuilder()
-                        .withTitleRes(R.string.menu_new_window)
-                        .withMenuId(R.id.new_window_menu_id)
-                        .withStartIconRes(R.drawable.ic_new_window)
-                        .build();
-            case MenuItemType.NEW_INCOGNITO_WINDOW:
-                return new ListItemBuilder()
-                        .withTitleRes(R.string.menu_new_incognito_window)
-                        .withMenuId(R.id.new_incognito_window_menu_id)
-                        .withStartIconRes(R.drawable.ic_incognito)
-                        .withEnabled(enabled)
-                        .build();
+                return buildMenuListItem(
+                        R.string.menu_add_tab_to_new_group,
+                        R.id.add_tab_to_new_group_menu_id,
+                        R.drawable.ic_widgets);
             case MenuItemType.DIVIDER:
             default:
                 return buildMenuDivider(mProfile.isIncognitoBranded());
@@ -309,18 +281,11 @@ public class TabSwitcherActionMenuCoordinator {
         TabModelSelector tabModelSelector = mTabModelSelectorSupplier.get();
         if (tabModelSelector != null) {
             TabGroupModelFilter currentTabGroupModelFilter =
-                    tabModelSelector.getCurrentTabGroupModelFilter();
+                    tabModelSelector
+                            .getTabGroupModelFilterProvider()
+                            .getCurrentTabGroupModelFilter();
             assumeNonNull(currentTabGroupModelFilter);
             return currentTabGroupModelFilter.getTabGroupCount() != 0;
-        }
-        return false;
-    }
-
-    private boolean isCurrentTabInGroup() {
-        TabModelSelector tabModelSelector = mTabModelSelectorSupplier.get();
-        if (tabModelSelector != null) {
-            Tab tab = tabModelSelector.getCurrentTabSupplier().get();
-            return tab != null && tab.getTabGroupId() != null;
         }
         return false;
     }

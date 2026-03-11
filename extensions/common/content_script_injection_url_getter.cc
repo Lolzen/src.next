@@ -4,8 +4,7 @@
 
 #include "extensions/common/content_script_injection_url_getter.h"
 
-#include <algorithm>
-
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/notreached.h"
 #include "base/trace_event/typed_macros.h"
@@ -61,8 +60,8 @@ GURL ContentScriptInjectionUrlGetter::Get(
         TRACE_EVENT_INSTANT("extensions",
                             "ContentScriptInjectionUrlGetter::Get/"
                             "should_consider_origin: origin-always");
-        result = std::ranges::contains(kAllowedSchemesToMatchOriginAsFallback,
-                                       document_url.GetScheme());
+        result = base::Contains(kAllowedSchemesToMatchOriginAsFallback,
+                                document_url.scheme());
         break;
       }
     }
@@ -166,7 +165,8 @@ GURL ContentScriptInjectionUrlGetter::Get(
 
     // Avoid an infinite loop - see https://crbug.com/568432 and
     // https://crbug.com/883526.
-    if (already_visited_frame_ids.contains(parent_context_data->GetId())) {
+    if (base::Contains(already_visited_frame_ids,
+                       parent_context_data->GetId())) {
       TRACE_EVENT_INSTANT("extensions",
                           "ContentScriptInjectionUrlGetter::Get/infinite-loop");
       return document_url;

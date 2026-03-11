@@ -16,7 +16,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
-#include "chrome/browser/supervised_user/supervised_user_url_filtering_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "components/google/core/common/google_util.h"
@@ -25,10 +25,10 @@
 #include "components/search_engines/search_engine_type.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/supervised_user/core/browser/supervised_user_preferences.h"
-#include "components/supervised_user/core/browser/supervised_user_url_filtering_service.h"
+#include "components/supervised_user/core/browser/supervised_user_service.h"
+#include "components/supervised_user/core/browser/supervised_user_url_filter.h"  // nogncheck
 #include "components/supervised_user/core/browser/supervised_user_utils.h"
 #include "components/supervised_user/core/common/buildflags.h"
-#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -49,9 +49,9 @@ namespace {
 const char kServiceWorkerFileName[] = "newtab-serviceworker.js";
 
 bool MatchesOrigin(const GURL& my_url, const GURL& other_url) {
-  return my_url.scheme() == other_url.scheme() &&
-         my_url.host() == other_url.host() &&
-         my_url.GetPort() == other_url.GetPort();
+  return my_url.scheme_piece() == other_url.scheme_piece() &&
+         my_url.host_piece() == other_url.host_piece() &&
+         my_url.port() == other_url.port();
 }
 
 }  // namespace
@@ -61,7 +61,8 @@ bool MatchesOrigin(const GURL& my_url, const GURL& other_url) {
 // Defined outside of the anonymous namespace so that it's accessible to unit
 // tests.
 bool MatchesOriginAndPath(const GURL& my_url, const GURL& other_url) {
-  return MatchesOrigin(my_url, other_url) && my_url.path() == other_url.path();
+  return MatchesOrigin(my_url, other_url) &&
+         my_url.path_piece() == other_url.path_piece();
 }
 
 namespace {
@@ -118,11 +119,11 @@ bool IsMatchingServiceWorker(const GURL& my_url, const GURL& document_url) {
   }
 
   // The paths up to the filenames should be the same.
-  std::string my_path_without_filename = my_url.GetPath();
+  std::string my_path_without_filename = my_url.path();
   my_path_without_filename = my_path_without_filename.substr(
       0, my_path_without_filename.length() - my_filename.length());
   std::string document_filename = document_url.ExtractFileName();
-  std::string document_path_without_filename = document_url.GetPath();
+  std::string document_path_without_filename = document_url.path();
   document_path_without_filename = document_path_without_filename.substr(
       0, document_path_without_filename.length() - document_filename.length());
 
@@ -145,11 +146,11 @@ bool IsURLAllowedForSupervisedUser(const GURL& url, Profile& profile) {
   if (!profile.IsChild()) {
     return true;
   }
-
-  supervised_user::SupervisedUserUrlFilteringService* url_filtering_service =
-      supervised_user::SupervisedUserUrlFilteringServiceFactory::GetForProfile(
-          &profile);
-  if (url_filtering_service->GetFilteringBehavior(url).IsBlocked()) {
+  supervised_user::SupervisedUserService* supervised_user_service =
+      SupervisedUserServiceFactory::GetForProfile(&profile);
+  supervised_user::SupervisedUserURLFilter* url_filter =
+      supervised_user_service->GetURLFilter();
+  if (url_filter->GetFilteringBehavior(url).IsBlocked()) {
     return false;
   }
   return true;
@@ -252,7 +253,7 @@ bool IsNTPOrRelatedURL(const GURL& url, Profile* profile) {
 
 bool IsNTPURL(const GURL& url) {
   if (url.SchemeIs(chrome::kChromeSearchScheme) &&
-      url.host() == chrome::kChromeSearchRemoteNtpHost) {
+      url.host_piece() == chrome::kChromeSearchRemoteNtpHost) {
     return true;
   }
 #if BUILDFLAG(IS_ANDROID)
@@ -303,10 +304,6 @@ bool IsInstantNTPURL(const GURL& url, Profile* profile) {
   return new_tab_url.is_valid() && MatchesOriginAndPath(url, new_tab_url);
 }
 
-bool IsSplitViewNewTabPage(const GURL& url) {
-  return url.spec() == chrome::kChromeUISplitViewNewTabPageURL;
-}
-
 GURL GetNewTabPageURL(Profile* profile) {
   return NewTabURLDetails::ForProfile(profile).url;
 }
@@ -326,16 +323,15 @@ bool ShouldAssignURLToInstantRenderer(const GURL& url, Profile* profile) {
 bool ShouldUseProcessPerSiteForInstantSiteURL(const GURL& site_url,
                                               Profile* profile) {
   return ShouldAssignURLToInstantRenderer(site_url, profile) &&
-         site_url.host() == chrome::kChromeSearchRemoteNtpHost;
+         site_url.host_piece() == chrome::kChromeSearchRemoteNtpHost;
 }
 
-std::optional<GURL> GetEffectiveURLForInstant(const GURL& url,
-                                              Profile* profile) {
+GURL GetEffectiveURLForInstant(const GURL& url, Profile* profile) {
   CHECK(ShouldAssignURLToInstantRenderer(url, profile))
       << "Error granting Instant access.";
 
   if (url.SchemeIs(chrome::kChromeSearchScheme)) {
-    return std::nullopt;
+    return url;
   }
 
   // Replace the scheme with "chrome-search:", and clear the port, since
@@ -364,7 +360,7 @@ bool HandleNewTabURLRewrite(GURL* url,
   }
 
   if (!(url->SchemeIs(content::kChromeUIScheme) &&
-        url->GetHost() == chrome::kChromeUINewTabHost)) {
+        url->host() == chrome::kChromeUINewTabHost)) {
     return false;
   }
 

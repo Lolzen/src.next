@@ -74,8 +74,7 @@ public final class TabModelSelectorTabRegistrationObserver {
                     }
 
                     @Override
-                    public void onFinishingTabClosure(
-                            Tab tab, @TabClosingSource int closingSource) {
+                    public void onFinishingTabClosure(Tab tab) {
                         if (mTabsToClose.get(tab.getId()) != null) {
                             mTabsToClose.remove(tab.getId());
                             onTabUnregistered(tab);
@@ -96,8 +95,8 @@ public final class TabModelSelectorTabRegistrationObserver {
                         for (int i = 0; i < tabModels.size(); i++) {
                             TabModel tabModel = tabModels.get(i);
                             TabList comprehensiveTabList = tabModel.getComprehensiveModel();
-                            for (Tab tab : comprehensiveTabList) {
-                                onTabRegistered(tab);
+                            for (int j = 0; j < comprehensiveTabList.getCount(); j++) {
+                                onTabRegistered(comprehensiveTabList.getTabAtChecked(j));
                             }
                         }
                     }

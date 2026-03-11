@@ -139,9 +139,6 @@ struct NET_EXPORT HttpRequestInfo {
   // Used to notify when a reconnect-attempt may be invoked (e.g. when a
   // connection was closed, or when the connection could not be established).
   std::optional<ConnectionManagementConfig> connection_management_config;
-
-  // True if the request is for a pervasive, shared third-party resource.
-  bool is_shared_resource = false;
 };
 
 }  // namespace net

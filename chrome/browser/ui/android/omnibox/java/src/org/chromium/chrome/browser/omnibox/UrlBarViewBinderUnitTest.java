@@ -16,11 +16,10 @@ import static org.chromium.chrome.browser.omnibox.UrlBarProperties.SELECT_ALL_ON
 import static org.chromium.chrome.browser.omnibox.UrlBarProperties.TEXT_COLOR;
 
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.Color;
 import android.view.View.OnLongClickListener;
 
-import androidx.constraintlayout.widget.ConstraintLayout;
-import androidx.constraintlayout.widget.ConstraintLayout.LayoutParams;
 import androidx.test.filters.SmallTest;
 
 import org.junit.Assert;
@@ -33,18 +32,24 @@ import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 import org.robolectric.Robolectric;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.Implementation;
+import org.robolectric.annotation.Implements;
 
 import org.chromium.base.Callback;
 import org.chromium.base.ContextUtils;
+import org.chromium.base.MathUtils;
 import org.chromium.base.test.BaseRobolectricTestRunner;
-import org.chromium.base.test.util.Features.DisableFeatures;
+import org.chromium.chrome.browser.omnibox.UrlBarViewBinderUnitTest.ShadowOmniboxResourceProvider;
 import org.chromium.chrome.browser.omnibox.styles.OmniboxResourceProvider;
-import org.chromium.components.omnibox.OmniboxFeatureList;
+import org.chromium.chrome.browser.ui.theme.BrandedColorScheme;
 import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.modelutil.PropertyModelChangeProcessor;
 
 /** Unit tests for {@link UrlBarViewBinder}. */
 @RunWith(BaseRobolectricTestRunner.class)
+@Config(
+        manifest = Config.NONE,
+        shadows = {ShadowOmniboxResourceProvider.class})
 public class UrlBarViewBinderUnitTest {
     @Rule public final MockitoRule mMockitoRule = MockitoJUnit.rule();
     @Mock Callback<Boolean> mFocusChangeCallback;
@@ -53,12 +58,24 @@ public class UrlBarViewBinderUnitTest {
     PropertyModel mModel;
     UrlBarMediator mMediator;
     UrlBar mUrlBar;
-    ConstraintLayout.LayoutParams mUrlBarLayoutParams = new LayoutParams(0, 100);
+
+    @Implements(OmniboxResourceProvider.class)
+    static class ShadowOmniboxResourceProvider {
+        @Implementation
+        public static int getUrlBarPrimaryTextColor(
+                Context context, @BrandedColorScheme int brandedColorScheme) {
+            return Color.LTGRAY;
+        }
+
+        @Implementation
+        public static int getUrlBarHintTextColor(
+                Context context, @BrandedColorScheme int brandedColorScheme) {
+            return Color.LTGRAY;
+        }
+    }
 
     @Before
     public void setUp() {
-        OmniboxResourceProvider.setUrlBarPrimaryTextColorForTesting(Color.LTGRAY);
-        OmniboxResourceProvider.setUrlBarHintTextColorForTesting(Color.LTGRAY);
         mActivity = Robolectric.buildActivity(Activity.class).setup().get();
 
         mModel = new PropertyModel(UrlBarProperties.ALL_KEYS);
@@ -67,7 +84,6 @@ public class UrlBarViewBinderUnitTest {
                 new UrlBarMediator(
                         ContextUtils.getApplicationContext(), mModel, mFocusChangeCallback);
         mUrlBar = new UrlBarApi26(mActivity, null);
-        mUrlBar.setLayoutParams(mUrlBarLayoutParams);
         PropertyModelChangeProcessor.create(mModel, mUrlBar, UrlBarViewBinder::bind);
     }
 
@@ -82,12 +98,8 @@ public class UrlBarViewBinderUnitTest {
         Assert.assertEquals(newExpectColor, mUrlBar.getHintTextColors().getDefaultColor());
     }
 
-    // TODO(crbug.com/481749859): Fix failure on SDK 30+ due to focus behavior changes in
-    // Robolectric.
-    @Config(sdk = 29)
     @Test
     @SmallTest
-    @DisableFeatures(OmniboxFeatureList.MULTILINE_EDIT_FIELD)
     public void testSetSelectAllOnFocus() {
         testSetSelectAllOnFocus(
                 /* selectAllOnFocus= */ true,
@@ -95,9 +107,6 @@ public class UrlBarViewBinderUnitTest {
                 /* expectSelection= */ true);
     }
 
-    // TODO(crbug.com/481749859): Fix failure on SDK 30+ due to focus behavior changes in
-    // Robolectric.
-    @Config(sdk = 29)
     @Test
     @SmallTest
     public void testSetSelectAllOnFocus_whileFocused() {
@@ -107,9 +116,6 @@ public class UrlBarViewBinderUnitTest {
                 /* expectSelection= */ false);
     }
 
-    // TODO(crbug.com/481749859): Fix failure on SDK 30+ due to focus behavior changes in
-    // Robolectric.
-    @Config(sdk = 29)
     @Test
     @SmallTest
     public void testUnsetSelectAllOnFocus() {
@@ -119,9 +125,6 @@ public class UrlBarViewBinderUnitTest {
                 /* expectSelection= */ false);
     }
 
-    // TODO(crbug.com/481749859): Fix failure on SDK 30+ due to focus behavior changes in
-    // Robolectric.
-    @Config(sdk = 29)
     @Test
     @SmallTest
     public void testUnsetSelectAllOnFocus_whileFocused() {
@@ -187,20 +190,11 @@ public class UrlBarViewBinderUnitTest {
     @Test
     @SmallTest
     public void testSetHintText() {
-        mModel.set(HINT_TEXT, "Hint Text");
-        Assert.assertEquals("Hint Text", mUrlBar.getHint());
-        mModel.set(HINT_TEXT, "Different Hint Text");
-        Assert.assertEquals("Different Hint Text", mUrlBar.getHint());
-
-        mModel.set(UrlBarProperties.USE_SMALL_TEXT, true);
-        Assert.assertNull(mUrlBar.getHint());
-        mModel.set(HINT_TEXT, "Hint Text");
-        Assert.assertNull(mUrlBar.getHint());
-        mModel.set(UrlBarProperties.USE_SMALL_TEXT, false);
-        Assert.assertEquals("Hint Text", mUrlBar.getHint());
-
-        mModel.set(UrlBarProperties.SHOW_HINT_TEXT, false);
-        Assert.assertNull(mUrlBar.getHint());
+        mModel.set(HINT_TEXT, R.string.hub_search_empty_hint);
+        Assert.assertEquals(mActivity.getString(R.string.hub_search_empty_hint), mUrlBar.getHint());
+        mModel.set(HINT_TEXT, R.string.hub_search_empty_hint_incognito);
+        Assert.assertEquals(
+                mActivity.getString(R.string.hub_search_empty_hint_incognito), mUrlBar.getHint());
     }
 
     @Test
@@ -214,23 +208,12 @@ public class UrlBarViewBinderUnitTest {
     @Test
     @SmallTest
     public void testTextSize() {
-        mUrlBar.setPaddingRelative(13, 0, 17, 0);
-        int normalPadding =
-                mActivity.getResources().getDimensionPixelSize(R.dimen.url_bar_vertical_padding);
-        int smallPadding = 0;
+        float normalTextSize =
+                mActivity.getResources().getDimension(R.dimen.location_bar_url_text_size);
+        float smallTextSize = mActivity.getResources().getDimension(R.dimen.text_size_small);
+        Assert.assertEquals(normalTextSize, mUrlBar.getTextSize(), MathUtils.EPSILON);
 
         mModel.set(UrlBarProperties.USE_SMALL_TEXT, true);
-        Assert.assertEquals(LayoutParams.WRAP_CONTENT, mUrlBarLayoutParams.width);
-        Assert.assertEquals(smallPadding, mUrlBar.getPaddingBottom());
-        Assert.assertEquals(smallPadding, mUrlBar.getPaddingTop());
-        Assert.assertEquals(13, mUrlBar.getPaddingStart());
-        Assert.assertEquals(17, mUrlBar.getPaddingEnd());
-
-        mModel.set(UrlBarProperties.USE_SMALL_TEXT, false);
-        Assert.assertEquals(LayoutParams.MATCH_CONSTRAINT, mUrlBarLayoutParams.width);
-        Assert.assertEquals(normalPadding, mUrlBar.getPaddingBottom());
-        Assert.assertEquals(normalPadding, mUrlBar.getPaddingTop());
-        Assert.assertEquals(13, mUrlBar.getPaddingStart());
-        Assert.assertEquals(17, mUrlBar.getPaddingEnd());
+        Assert.assertEquals(smallTextSize, mUrlBar.getTextSize(), MathUtils.EPSILON);
     }
 }

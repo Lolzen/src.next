@@ -22,7 +22,7 @@ import org.chromium.chrome.browser.tab.Tab;
  */
 @NullMarked
 public class OmniboxPrerender {
-    private final long mNativeOmniboxPrerender;
+    private long mNativeOmniboxPrerender;
 
     /** Constructor for creating a OmniboxPrerender instanace. */
     public OmniboxPrerender() {
@@ -36,7 +36,7 @@ public class OmniboxPrerender {
      * @param profile profile instance corresponding to the active profile.
      */
     public void clear(Profile profile) {
-        OmniboxPrerenderJni.get().clear(mNativeOmniboxPrerender, profile);
+        OmniboxPrerenderJni.get().clear(mNativeOmniboxPrerender, OmniboxPrerender.this, profile);
     }
 
     /**
@@ -47,7 +47,8 @@ public class OmniboxPrerender {
      * @param profile profile instance corresponding to active profile.
      */
     public void initializeForProfile(Profile profile) {
-        OmniboxPrerenderJni.get().initializeForProfile(mNativeOmniboxPrerender, profile);
+        OmniboxPrerenderJni.get()
+                .initializeForProfile(mNativeOmniboxPrerender, OmniboxPrerender.this, profile);
     }
 
     /**
@@ -70,6 +71,7 @@ public class OmniboxPrerender {
         OmniboxPrerenderJni.get()
                 .prerenderMaybe(
                         mNativeOmniboxPrerender,
+                        OmniboxPrerender.this,
                         url,
                         currentUrl,
                         nativeAutocompleteResult,
@@ -79,15 +81,21 @@ public class OmniboxPrerender {
 
     @NativeMethods
     interface Natives {
-        long init(OmniboxPrerender self);
+        long init(OmniboxPrerender caller);
 
-        void clear(long nativeOmniboxPrerender, @JniType("Profile*") Profile profile);
+        void clear(
+                long nativeOmniboxPrerender,
+                OmniboxPrerender caller,
+                @JniType("Profile*") Profile profile);
 
         void initializeForProfile(
-                long nativeOmniboxPrerender, @JniType("Profile*") Profile profile);
+                long nativeOmniboxPrerender,
+                OmniboxPrerender caller,
+                @JniType("Profile*") Profile profile);
 
         void prerenderMaybe(
                 long nativeOmniboxPrerender,
+                OmniboxPrerender caller,
                 String url,
                 String currentUrl,
                 long nativeAutocompleteResult,

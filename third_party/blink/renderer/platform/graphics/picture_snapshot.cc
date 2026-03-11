@@ -43,6 +43,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
+#include "third_party/skia/include/encode/SkPngEncoder.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/skia_conversions.h"
@@ -118,10 +119,11 @@ Vector<uint8_t> PictureSnapshot::Replay(unsigned from_step,
   bool peekResult = bitmap.peekPixels(&src);
   DCHECK(peekResult);
 
-  if (!ImageEncoder::Encode(&encoded_image, src,
-                            SkPngRustEncoder::CompressionLevel::kLow)) {
+  SkPngEncoder::Options options;
+  options.fFilterFlags = SkPngEncoder::FilterFlag::kSub;
+  options.fZLibLevel = 3;
+  if (!ImageEncoder::Encode(&encoded_image, src, options))
     return Vector<uint8_t>();
-  }
 
   return encoded_image;
 }

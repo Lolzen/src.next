@@ -10,7 +10,6 @@ import android.os.Process;
 
 import org.jni_zero.CalledByNative;
 
-import org.chromium.base.task.Location;
 import org.chromium.base.task.PostTask;
 import org.chromium.base.task.TaskTraits;
 import org.chromium.build.BuildConfig;
@@ -19,6 +18,7 @@ import org.chromium.build.annotations.NullUnmarked;
 import org.chromium.build.annotations.Nullable;
 
 import java.util.concurrent.Callable;
+import java.util.concurrent.FutureTask;
 
 /** Helper methods to deal with threading related tasks. */
 @NullMarked
@@ -53,7 +53,6 @@ public class ThreadUtils {
     // TODO(b/274802355): Add @CheckDiscard once R8 can remove this.
     public static class ThreadChecker {
         private @Nullable Thread mThread;
-        private @Nullable Throwable mOriginThrowable;
 
         public ThreadChecker() {
             resetThreadId();
@@ -62,7 +61,6 @@ public class ThreadUtils {
         public void resetThreadId() {
             if (BuildConfig.ENABLE_ASSERTS) {
                 mThread = Thread.currentThread();
-                mOriginThrowable = new Throwable("vvv Originally created here vvv");
             }
         }
 
@@ -90,26 +88,23 @@ public class ThreadUtils {
                     return;
                 }
                 Thread uiThread = getUiThreadLooper().getThread();
-                String msg;
                 if (curThread == uiThread) {
-                    msg =
-                            "Class was initialized on a background thread, but current operation"
-                                    + " was performed on the UI thread (expected: "
+                    assert false
+                            : "Class was initialized on a background thread, but current operation"
+                                  + " was performed on the UI thread (expected: "
                                     + mThread
                                     + ")";
                 } else if (mThread == uiThread) {
-                    msg =
-                            "Class was initialized on the UI thread, but current operation was"
-                                    + " performed on a background thread: "
-                                    + curThread;
-                } else {
-                    msg =
-                            "Method called from wrong background thread. Expected: "
-                                    + mThread
-                                    + " Actual: "
+                    assert false
+                            : "Class was initialized on the UI thread, but current operation was"
+                                  + " performed on a background thread: "
                                     + curThread;
                 }
-                throw new AssertionError(msg, mOriginThrowable);
+                assert false
+                        : "Method called from wrong background thread. Expected: "
+                                + mThread
+                                + " Actual: "
+                                + curThread;
             }
         }
     }
@@ -188,17 +183,7 @@ public class ThreadUtils {
      * @param r The Runnable to run.
      */
     public static void runOnUiThreadBlocking(Runnable r) {
-        runOnUiThreadBlocking(r, null);
-    }
-
-    /**
-     * Do not call this method directly unless forwarding a location object. Use {@link
-     * #runOnUiThreadBlocking(Runnable)} instead.
-     *
-     * <p>Overload of {@link #runOnUiThreadBlocking(Runnable)} for the Java location rewriter.
-     */
-    public static void runOnUiThreadBlocking(Runnable r, @Nullable Location location) {
-        PostTask.runSynchronously(TaskTraits.UI_DEFAULT, r, location);
+        PostTask.runSynchronously(TaskTraits.UI_DEFAULT, r);
     }
 
     /**
@@ -213,18 +198,20 @@ public class ThreadUtils {
      */
     @NullUnmarked // https://github.com/uber/NullAway/issues/1075
     public static <T extends @Nullable Object> T runOnUiThreadBlocking(Callable<T> c) {
-        return runOnUiThreadBlocking(c, null);
+        return PostTask.runSynchronously(TaskTraits.UI_DEFAULT, c);
     }
 
     /**
-     * Do not call this method directly unless forwarding a location object. Use {@link
-     * #runOnUiThreadBlocking(Callable)} instead.
+     * Run the supplied FutureTask on the main thread. The method will block only if the current
+     * thread is the main thread.
      *
-     * <p>Overload of {@link #runOnUiThreadBlocking(Callable)} for the Java location rewriter.
+     * @param task The FutureTask to run
+     * @return The queried task (to aid inline construction)
      */
-    public static <T extends @Nullable Object> T runOnUiThreadBlocking(
-            Callable<T> c, @Nullable Location location) {
-        return PostTask.runSynchronously(TaskTraits.UI_DEFAULT, c, location);
+    @NullUnmarked // https://github.com/uber/NullAway/issues/1075
+    public static <T extends @Nullable Object> FutureTask<T> runOnUiThread(FutureTask<T> task) {
+        PostTask.runOrPostTask(TaskTraits.UI_DEFAULT, task);
+        return task;
     }
 
     /**
@@ -234,17 +221,20 @@ public class ThreadUtils {
      * @param r The Runnable to run
      */
     public static void runOnUiThread(Runnable r) {
-        runOnUiThread(r, null);
+        PostTask.runOrPostTask(TaskTraits.UI_DEFAULT, r);
     }
 
     /**
-     * Do not call this method directly unless forwarding a location object. Use {@link
-     * #runOnUiThread(Runnable)} instead.
+     * Post the supplied FutureTask to run on the main thread. The method will not block, even if
+     * called on the UI thread.
      *
-     * <p>Overload of {@link #runOnUiThread(Runnable)} for the Java location rewriter.
+     * @param task The FutureTask to run
+     * @return The queried task (to aid inline construction)
      */
-    public static void runOnUiThread(Runnable r, @Nullable Location location) {
-        PostTask.runOrPostTask(TaskTraits.UI_DEFAULT, r, location);
+    @NullUnmarked // https://github.com/uber/NullAway/issues/1075
+    public static <T extends @Nullable Object> FutureTask<T> postOnUiThread(FutureTask<T> task) {
+        PostTask.postTask(TaskTraits.UI_DEFAULT, task);
+        return task;
     }
 
     /**
@@ -254,17 +244,7 @@ public class ThreadUtils {
      * @param r The Runnable to run
      */
     public static void postOnUiThread(Runnable r) {
-        postOnUiThread(r, null);
-    }
-
-    /**
-     * Do not call this method directly unless forwarding a location object. Use {@link
-     * #postOnUiThread(Runnable)} instead.
-     *
-     * <p>Overload of {@link #postOnUiThread(Runnable)} for the Java location rewriter.
-     */
-    public static void postOnUiThread(Runnable r, @Nullable Location location) {
-        PostTask.postTask(TaskTraits.UI_DEFAULT, r, location);
+        PostTask.postTask(TaskTraits.UI_DEFAULT, r);
     }
 
     /**
@@ -275,18 +255,7 @@ public class ThreadUtils {
      * @param delayMillis The delay in milliseconds until the Runnable will be run
      */
     public static void postOnUiThreadDelayed(Runnable r, long delayMillis) {
-        postOnUiThreadDelayed(r, delayMillis, null);
-    }
-
-    /**
-     * Do not call this method directly unless forwarding a location object. Use {@link
-     * #postOnUiThreadDelayed(Runnable, long)} instead.
-     *
-     * <p>Overload of {@link #postOnUiThreadDelayed(Runnable, long)} for the Java location rewriter.
-     */
-    public static void postOnUiThreadDelayed(
-            Runnable r, long delayMillis, @Nullable Location location) {
-        PostTask.postDelayedTask(TaskTraits.UI_DEFAULT, r, delayMillis, location);
+        PostTask.postDelayedTask(TaskTraits.UI_DEFAULT, r, delayMillis);
     }
 
     /**

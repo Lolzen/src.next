@@ -4,19 +4,18 @@
 
 #include "content/browser/back_forward_cache_browsertest.h"
 
-#include <algorithm>
 #include <climits>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/metrics_hashes.h"
 #include "base/run_loop.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/system/sys_info.h"
 #include "base/task/common/task_annotator.h"
 #include "base/task/single_thread_task_runner.h"
@@ -71,7 +70,6 @@
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/controllable_http_response.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-#include "net/test/embedded_test_server/install_default_websocket_handlers.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/cpp/features.h"
@@ -104,6 +102,39 @@ namespace content {
 using NotRestoredReasons =
     BackForwardCacheCanStoreDocumentResult::NotRestoredReasons;
 using NotRestoredReason = BackForwardCacheMetrics::NotRestoredReason;
+
+namespace {
+
+class DOMContentLoadedObserver : public WebContentsObserver {
+ public:
+  explicit DOMContentLoadedObserver(RenderFrameHostImpl* render_frame_host)
+      : WebContentsObserver(
+            WebContents::FromRenderFrameHost(render_frame_host)),
+        render_frame_host_(render_frame_host) {}
+
+  void DOMContentLoaded(RenderFrameHost* render_frame_host) override {
+    if (render_frame_host_ == render_frame_host)
+      run_loop_.Quit();
+  }
+
+  [[nodiscard]] bool Wait() {
+    if (render_frame_host_->IsDOMContentLoaded())
+      run_loop_.Quit();
+    run_loop_.Run();
+    return render_frame_host_->IsDOMContentLoaded();
+  }
+
+ private:
+  raw_ptr<RenderFrameHostImpl> render_frame_host_;
+  base::RunLoop run_loop_;
+};
+
+}  // namespace
+
+bool WaitForDOMContentLoaded(RenderFrameHostImpl* rfh) {
+  DOMContentLoadedObserver observer(rfh);
+  return observer.Wait();
+}
 
 EvalJsResult GetLocalStorage(RenderFrameHostImpl* rfh, std::string key) {
   return EvalJs(rfh, JsReplace("localStorage.getItem($1)", key));
@@ -205,8 +236,10 @@ void BackForwardCacheBrowserTest::SetUpCommandLine(
 #endif
     // Allow BackForwardCache for all devices regardless of their memory.
     DisableFeature(features::kBackForwardCacheMemoryControls);
-    // Many browser tests assume a cache size of 1.
-    EnableCacheSize(1, std::nullopt);
+    // Disables BackForwardCache cache size overwritten by
+    // `content::kBackForwardCacheSize`, as many browser tests here assume
+    // specific or smaller cache size (e.g. 1) rather than 6.
+    DisableFeature(kBackForwardCacheSize);
 
     SetupFeaturesAndParameters();
 
@@ -216,7 +249,6 @@ void BackForwardCacheBrowserTest::SetUpCommandLine(
     // Unfortunately needed for one test on slow bots, TextInputStateUpdated,
     // where deferred commits delays input too much.
     command_line->AppendSwitch(blink::switches::kAllowPreCommitInput);
-    ContentBrowserTest::SetUpCommandLine(command_line);
 }
 
 void BackForwardCacheBrowserTest::SetUpInProcessBrowserTestFixture() {
@@ -245,45 +277,14 @@ void BackForwardCacheBrowserTest::EnableFeatureAndSetParams(
     const base::Feature& feature,
     std::string param_name,
     std::string param_value) {
-  const auto& it = features_with_params_.find(feature);
-  if (it != features_with_params_.end()) {
-    // If the feature-param has been set already, do not update it.
-    if (it->second.contains(param_name)) {
-      return;
-    }
-  }
   features_with_params_[feature][param_name] = param_value;
 }
 
 void BackForwardCacheBrowserTest::DisableFeature(const base::Feature& feature) {
-  if (features_with_params_.contains(feature)) {
-    // If the feature has been explicitly enabled, ignore any subsequent
-    // disables.
-    return;
-  }
   disabled_features_.push_back(feature);
 }
 
-void BackForwardCacheBrowserTest::EnableCacheSize(
-    std::optional<int> cache_size,
-    std::optional<int> foreground_cache_size) {
-  if (cache_size) {
-    EnableFeatureAndSetParams(content::kBackForwardCacheSize,
-                              kBackForwardCacheSizeCacheSize.name,
-                              base::NumberToString(cache_size.value()));
-  }
-  if (foreground_cache_size) {
-    EnableFeatureAndSetParams(
-        content::kBackForwardCacheSize,
-        kBackForwardCacheSizeForegroundCacheSize.name,
-        base::NumberToString(foreground_cache_size.value()));
-  }
-}
-
 void BackForwardCacheBrowserTest::SetUpOnMainThread() {
-  // Set up WebSocket handlers, as a number of tests use them.
-  net::test_server::InstallDefaultWebSocketHandlers(embedded_test_server());
-
   mock_cert_verifier_.mock_cert_verifier()->set_default_result(net::OK);
   host_resolver()->AddRule("*", "127.0.0.1");
   // TestAutoSetUkmRecorder's constructor requires a sequenced context.
@@ -317,8 +318,8 @@ std::string BackForwardCacheBrowserTest::DepictFrameTree(FrameTreeNode* node) {
 bool BackForwardCacheBrowserTest::HistogramContainsIntValue(
     base::HistogramBase::Sample32 sample,
     std::vector<base::Bucket> histogram_values) {
-  return std::ranges::contains(histogram_values, static_cast<int>(sample),
-                               &base::Bucket::min);
+  return base::Contains(histogram_values, static_cast<int>(sample),
+                        &base::Bucket::min);
 }
 
 void BackForwardCacheBrowserTest::EvictByJavaScript(RenderFrameHostImpl* rfh) {
@@ -802,7 +803,8 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest, ResponseHeaders) {
 
 void HighCacheSizeBackForwardCacheBrowserTest::SetUpCommandLine(
     base::CommandLine* command_line) {
-  EnableCacheSize(kBackForwardCacheSize, std::nullopt);
+  EnableFeatureAndSetParams(features::kBackForwardCache, "cache_size",
+                            base::NumberToString(kBackForwardCacheSize));
   BackForwardCacheBrowserTest::SetUpCommandLine(command_line);
 }
 
@@ -1297,8 +1299,8 @@ class BackForwardCacheBrowserTestForLowMemoryDevices
 
     // Set the value of memory threshold more than the physical memory and check
     // if back-forward cache is disabled or not.
-    std::string memory_threshold = base::NumberToString(
-        base::SysInfo::AmountOfPhysicalMemory().InMiB() + 1);
+    std::string memory_threshold =
+        base::NumberToString(base::SysInfo::AmountOfPhysicalMemoryMB() + 1);
     scoped_feature_list_.InitWithFeaturesAndParameters(
         {{features::kBackForwardCacheMemoryControls,
           {{"memory_threshold_for_back_forward_cache_in_mb",
@@ -1442,8 +1444,8 @@ class BackForwardCacheBrowserTestForHighMemoryDevices
 
     // Set the value of memory threshold less than the physical memory and check
     // if back-forward cache is enabled or not.
-    std::string memory_threshold = base::NumberToString(
-        base::SysInfo::AmountOfPhysicalMemory().InMiB() - 1);
+    std::string memory_threshold =
+        base::NumberToString(base::SysInfo::AmountOfPhysicalMemoryMB() - 1);
     scoped_feature_list_.InitWithFeaturesAndParameters(
         {{features::kBackForwardCacheMemoryControls,
           {{"memory_threshold_for_back_forward_cache_in_mb",
@@ -1566,8 +1568,8 @@ class BackForwardCacheBrowserTestForHighMemoryDevicesWithBFCacheDisabled
 
     // Set the value of memory threshold less than the physical memory and check
     // if back-forward cache is enabled or not.
-    std::string memory_threshold = base::NumberToString(
-        base::SysInfo::AmountOfPhysicalMemory().InMiB() - 1);
+    std::string memory_threshold =
+        base::NumberToString(base::SysInfo::AmountOfPhysicalMemoryMB() - 1);
     scoped_feature_list_.InitWithFeaturesAndParameters(
         /*enabled_features=*/
         {{features::kBackForwardCacheMemoryControls,
@@ -1809,7 +1811,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
 // Tests that we're getting the correct TextInputState and focus updates when a
 // page enters the back-forward cache and when it gets restored.
 // TODO(b/324570785): Re-enable the test for Android.
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_ANDROID)
 #define MAYBE_TextInputStateUpdated DISABLED_TextInputStateUpdated
 #else
 #define MAYBE_TextInputStateUpdated TextInputStateUpdated
@@ -1822,7 +1824,6 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
 
   // 1) Navigate to |url_1| and add a text input with "foo" as the value.
   EXPECT_TRUE(NavigateToURL(shell(), url_1));
-  SimulateEndOfPaintHoldingOnPrimaryMainFrame(web_contents());
   RenderFrameHostImpl* rfh_1 = current_frame_host();
   EXPECT_TRUE(ExecJs(rfh_1,
                      "document.title='bfcached';"
@@ -1923,7 +1924,6 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
   // 1) Navigate to |url_1| and add a text input with "foo" as the value in the
   // a.com subframe.
   EXPECT_TRUE(NavigateToURL(shell(), url_1));
-  SimulateEndOfPaintHoldingOnPrimaryMainFrame(web_contents());
   RenderFrameHostImpl* rfh_a = current_frame_host();
   RenderFrameHostImpl* rfh_b = rfh_a->child_at(0)->current_frame_host();
   RenderFrameHostImpl* rfh_subframe_a =
@@ -3046,7 +3046,8 @@ class BackForwardCacheWithSubframeNavigationBrowserTest
   }
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
-    EnableCacheSize(2, std::nullopt);
+    EnableFeatureAndSetParams(features::kBackForwardCache, "cache_size",
+                              base::NumberToString(2));
     BackForwardCacheBrowserTest::SetUpCommandLine(command_line);
   }
 

@@ -86,22 +86,10 @@ bool IsRequestBlockedError(int error) {
     case ERR_BLOCKED_BY_CLIENT:
     case ERR_BLOCKED_BY_ADMINISTRATOR:
     case ERR_BLOCKED_BY_CSP:
-    case ERR_BLOCKED_IN_INCOGNITO_BY_ADMINISTRATOR:
       return true;
     default:
       return false;
   }
-}
-
-bool IsOkOrDefinedError(int error) {
-  switch (error) {
-    case OK:
-#define NET_ERROR(label, value) case value:
-#include "net/base/net_error_list.h"
-#undef NET_ERROR
-      return true;
-  }
-  return false;
 }
 
 Error FileErrorToNetError(base::File::Error file_error) {

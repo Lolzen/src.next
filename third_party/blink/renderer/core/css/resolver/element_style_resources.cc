@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/core/dom/tree_scope.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/loader/lazy_image_helper.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/style/content_data.h"
@@ -79,6 +80,8 @@ class StyleImageLoader {
 
   StyleImage* Load(CSSValue&,
                    const CSSLengthResolver& length_resolver,
+                   FetchParameters::ImageRequestBehavior =
+                       FetchParameters::ImageRequestBehavior::kNone,
                    CrossOriginAttributeValue = kCrossOriginAttributeNotSet,
                    const float override_image_resolution = 0.0f);
 
@@ -87,6 +90,7 @@ class StyleImageLoader {
                                 CrossOriginAttributeValue,
                                 const CSSLengthResolver&);
   StyleImage* ResolveImageSet(CSSImageSetValue& image_set_value,
+                              FetchParameters::ImageRequestBehavior,
                               CrossOriginAttributeValue,
                               const CSSLengthResolver&);
 
@@ -99,11 +103,12 @@ class StyleImageLoader {
 StyleImage* StyleImageLoader::Load(
     CSSValue& value,
     const CSSLengthResolver& length_resolver,
+    FetchParameters::ImageRequestBehavior image_request_behavior,
     CrossOriginAttributeValue cross_origin,
     const float override_image_resolution) {
   if (auto* image_value = DynamicTo<CSSImageValue>(value)) {
-    return image_value->CacheImage(document_, cross_origin,
-                                   override_image_resolution);
+    return image_value->CacheImage(document_, image_request_behavior,
+                                   cross_origin, override_image_resolution);
   }
 
   if (auto* paint_value = DynamicTo<CSSPaintValue>(value)) {
@@ -136,8 +141,11 @@ StyleImage* StyleImageLoader::Load(
 
   if (auto* image_set_value = DynamicTo<CSSImageSetValue>(value)) {
     StyleImage* style_image =
-        ResolveImageSet(*image_set_value, cross_origin, length_resolver);
-    return image_set_value->CacheImage(style_image, device_scale_factor_);
+        ResolveImageSet(*image_set_value, image_request_behavior, cross_origin,
+                        length_resolver);
+    return image_set_value->CacheImage(
+        style_image, device_scale_factor_,
+        !style_image || style_image->IsOriginClean());
   }
 
   NOTREACHED();
@@ -159,11 +167,13 @@ StyleImage* StyleImageLoader::CrossfadeArgument(
   if (IsA<CSSPaintValue>(value)) {
     return nullptr;
   }
-  return Load(value, length_resolver, cross_origin);
+  return Load(value, length_resolver,
+              FetchParameters::ImageRequestBehavior::kNone, cross_origin);
 }
 
 StyleImage* StyleImageLoader::ResolveImageSet(
     CSSImageSetValue& image_set_value,
+    FetchParameters::ImageRequestBehavior image_request_behavior,
     CrossOriginAttributeValue cross_origin,
     const CSSLengthResolver& length_resolver) {
   const CSSImageSetOptionValue* option =
@@ -177,8 +187,8 @@ StyleImage* StyleImageLoader::ResolveImageSet(
       !IsA<cssvalue::CSSGradientValue>(image_value)) {
     return nullptr;
   }
-  return Load(image_value, length_resolver, cross_origin,
-              option->ComputedResolution(length_resolver));
+  return Load(image_value, length_resolver, image_request_behavior,
+              cross_origin, option->ComputedResolution(length_resolver));
 }
 
 }  // namespace
@@ -268,14 +278,18 @@ StyleImage* ElementStyleResources::GetStyleImage(CSSPropertyID property,
 }
 
 static bool AllowExternalResources(CSSPropertyID property) {
+  if (RuntimeEnabledFeatures::SvgExternalResourcesEnabled()) {
+    if (property == CSSPropertyID::kClipPath ||
+        property == CSSPropertyID::kFill ||
+        property == CSSPropertyID::kMarkerEnd ||
+        property == CSSPropertyID::kMarkerMid ||
+        property == CSSPropertyID::kMarkerStart ||
+        property == CSSPropertyID::kStroke) {
+      return true;
+    }
+  }
   return property == CSSPropertyID::kBackdropFilter ||
-         property == CSSPropertyID::kClipPath ||
-         property == CSSPropertyID::kFill ||
-         property == CSSPropertyID::kFilter ||
-         property == CSSPropertyID::kMarkerEnd ||
-         property == CSSPropertyID::kMarkerMid ||
-         property == CSSPropertyID::kMarkerStart ||
-         property == CSSPropertyID::kStroke;
+         property == CSSPropertyID::kFilter;
 }
 
 SVGResource* ElementStyleResources::GetSVGResourceFromValue(
@@ -315,6 +329,7 @@ static SVGResource* GetSVGResourceOrNull(StyleSVGResource* style_resource) {
 
 static SVGResource* GetSingleSVGResource(CSSPropertyID property,
                                          ComputedStyleBuilder& builder) {
+  CHECK(RuntimeEnabledFeatures::SvgExternalResourcesEnabled());
   switch (property) {
     case CSSPropertyID::kClipPath: {
       auto* reference_clip =
@@ -383,8 +398,9 @@ StyleImage* ElementStyleResources::LoadMaskSource(CSSValue& pending_value) {
         image_value->NormalizedFragmentIdentifier());
     return MakeGarbageCollected<StyleMaskSourceImage>(resource, image_value);
   }
-  StyleImage* image = image_value->CacheImage(element_.GetDocument(),
-                                              kCrossOriginAttributeAnonymous);
+  StyleImage* image = image_value->CacheImage(
+      element_.GetDocument(), FetchParameters::ImageRequestBehavior::kNone,
+      kCrossOriginAttributeAnonymous);
   return MakeGarbageCollected<StyleMaskSourceImage>(
       To<StyleFetchedImage>(image), image_value->EnsureSVGResource(),
       image_value);
@@ -419,8 +435,13 @@ void ElementStyleResources::LoadPendingImages(
              background_layer; background_layer = background_layer->Next()) {
           if (auto* pending_value =
                   PendingCssValue(background_layer->GetImage())) {
-            StyleImage* new_image =
-                loader.Load(*pending_value, length_resolver);
+            FetchParameters::ImageRequestBehavior image_request_behavior =
+                FetchParameters::ImageRequestBehavior::kNone;
+            StyleImage* new_image = loader.Load(*pending_value, length_resolver,
+                                                image_request_behavior);
+            if (new_image && new_image->IsLazyloadPossiblyDeferred()) {
+              LazyImageHelper::StartMonitoring(&element_);
+            }
             background_layer->SetImage(new_image);
           }
         }
@@ -495,6 +516,7 @@ void ElementStyleResources::LoadPendingImages(
             StyleImage* image = LoadMaskSource(*pending_value);
             if (!image) {
               image = loader.Load(*pending_value, length_resolver,
+                                  FetchParameters::ImageRequestBehavior::kNone,
                                   kCrossOriginAttributeAnonymous);
             }
             mask_layer->SetImage(image);
@@ -507,6 +529,7 @@ void ElementStyleResources::LoadPendingImages(
           if (auto* pending_value = PendingCssValue(shape_value->GetImage())) {
             shape_value->SetImage(
                 loader.Load(*pending_value, length_resolver,
+                            FetchParameters::ImageRequestBehavior::kNone,
                             kCrossOriginAttributeAnonymous));
           }
         }

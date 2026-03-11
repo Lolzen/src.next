@@ -12,11 +12,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/install_warning.h"
 #include "extensions/common/manifest_constants.h"
-#include "extensions/common/mojom/manifest.mojom-shared.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using extensions::ErrorUtils;
@@ -446,36 +444,36 @@ TEST(ExtensionCSPValidator, IsSecure) {
 
 TEST(ExtensionCSPValidator, IsSandboxed) {
   EXPECT_FALSE(ContentSecurityPolicyIsSandboxed(std::string(),
-                                                Manifest::Type::kExtension));
+                                                Manifest::TYPE_EXTENSION));
   EXPECT_FALSE(ContentSecurityPolicyIsSandboxed("img-src https://google.com",
-                                                Manifest::Type::kExtension));
+                                                Manifest::TYPE_EXTENSION));
 
   // Sandbox directive is required.
-  EXPECT_TRUE(
-      ContentSecurityPolicyIsSandboxed("sandbox", Manifest::Type::kExtension));
+  EXPECT_TRUE(ContentSecurityPolicyIsSandboxed(
+      "sandbox", Manifest::TYPE_EXTENSION));
 
   // Additional sandbox tokens are OK.
-  EXPECT_TRUE(ContentSecurityPolicyIsSandboxed("sandbox allow-scripts",
-                                               Manifest::Type::kExtension));
+  EXPECT_TRUE(ContentSecurityPolicyIsSandboxed(
+      "sandbox allow-scripts", Manifest::TYPE_EXTENSION));
   // Except for allow-same-origin.
-  EXPECT_FALSE(ContentSecurityPolicyIsSandboxed("sandbox allow-same-origin",
-                                                Manifest::Type::kExtension));
+  EXPECT_FALSE(ContentSecurityPolicyIsSandboxed(
+      "sandbox allow-same-origin", Manifest::TYPE_EXTENSION));
 
   // Additional directives are OK.
   EXPECT_TRUE(ContentSecurityPolicyIsSandboxed(
-      "sandbox; img-src https://google.com", Manifest::Type::kExtension));
+      "sandbox; img-src https://google.com", Manifest::TYPE_EXTENSION));
 
   // Extensions allow navigation, platform apps don't.
-  EXPECT_TRUE(ContentSecurityPolicyIsSandboxed("sandbox allow-top-navigation",
-                                               Manifest::Type::kExtension));
-  EXPECT_FALSE(ContentSecurityPolicyIsSandboxed("sandbox allow-top-navigation",
-                                                Manifest::Type::kPlatformApp));
+  EXPECT_TRUE(ContentSecurityPolicyIsSandboxed(
+      "sandbox allow-top-navigation", Manifest::TYPE_EXTENSION));
+  EXPECT_FALSE(ContentSecurityPolicyIsSandboxed(
+      "sandbox allow-top-navigation", Manifest::TYPE_PLATFORM_APP));
 
   // Popups are OK.
-  EXPECT_TRUE(ContentSecurityPolicyIsSandboxed("sandbox allow-popups",
-                                               Manifest::Type::kExtension));
-  EXPECT_TRUE(ContentSecurityPolicyIsSandboxed("sandbox allow-popups",
-                                               Manifest::Type::kPlatformApp));
+  EXPECT_TRUE(ContentSecurityPolicyIsSandboxed(
+      "sandbox allow-popups", Manifest::TYPE_EXTENSION));
+  EXPECT_TRUE(ContentSecurityPolicyIsSandboxed(
+      "sandbox allow-popups", Manifest::TYPE_PLATFORM_APP));
 }
 
 TEST(ExtensionCSPValidator, EffectiveSandboxedPageCSP) {
@@ -635,38 +633,12 @@ TEST(ExtensionCSPValidator, DoesCSPDisallowRemoteCode) {
       {"script-src 'unsafe-eval'; worker-src; default-src;",
        insecure_value_error("script-src", "'unsafe-eval'")}};
 
-  std::string mock_extension_id = "abcd";
-  auto mock_location = extensions::mojom::ManifestLocation::kInternal;
   for (const auto& test_case : test_cases) {
     SCOPED_TRACE(test_case.policy);
     std::u16string error;
     bool result = extensions::csp_validator::DoesCSPDisallowRemoteCode(
-        mock_extension_id, mock_location, test_case.policy, kManifestKey,
-        &error);
+        test_case.policy, kManifestKey, &error);
     EXPECT_EQ(test_case.expected_error.empty(), result);
     EXPECT_EQ(base::ASCIIToUTF16(test_case.expected_error), error);
   }
-}
-
-TEST(ExtensionCSPValidator, DoesCSPDisallowRemoteCodeChromeResources) {
-  const char* kManifestKey = "mock_key";
-  auto location = extensions::mojom::ManifestLocation::kComponent;
-  const char* policy =
-      "default-src 'none'; script-src 'self' chrome://resources "
-      "'wasm-unsafe-eval';";
-  std::u16string error;
-
-  // ChromeVox is allowed to access scripts from chrome://resources.
-  EXPECT_TRUE(extensions::csp_validator::DoesCSPDisallowRemoteCode(
-      extension_misc::kChromeVoxExtensionId, location, policy, kManifestKey,
-      &error));
-  EXPECT_EQ(u"", error);
-
-  // Other component extensions do not get the same privilege.
-  std::string expected_error = ErrorUtils::FormatErrorMessage(
-      extensions::manifest_errors::kInvalidCSPInsecureValueError, kManifestKey,
-      "chrome://resources", "script-src");
-  EXPECT_FALSE(extensions::csp_validator::DoesCSPDisallowRemoteCode(
-      extension_misc::kPdfExtensionId, location, policy, kManifestKey, &error));
-  EXPECT_EQ(base::ASCIIToUTF16(expected_error), error);
 }

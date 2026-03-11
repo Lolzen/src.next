@@ -29,14 +29,13 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/task/task_traits.h"
+#include "base/types/optional_ref.h"
 #include "build/build_config.h"
 #include "build/buildflag.h"
-#include "components/unexportable_keys/unexportable_key_service.h"
 #include "net/base/net_export.h"
 #include "net/base/network_delegate.h"
 #include "net/base/network_handle.h"
 #include "net/base/proxy_delegate.h"
-#include "net/disk_cache/buildflags.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/stale_host_resolver.h"
@@ -64,7 +63,6 @@ class HostResolverManager;
 class NetworkQualityEstimator;
 class ProxyConfigService;
 class URLRequestContext;
-class CacheEncryptionDelegate;
 
 #if BUILDFLAG(ENABLE_REPORTING)
 struct ReportingPolicy;
@@ -111,11 +109,6 @@ class NET_EXPORT URLRequestContextBuilder {
       DISK_BLOCKFILE,
       // Disk cache using "simple" backend (SimpleBackendImpl).
       DISK_SIMPLE,
-#if BUILDFLAG(ENABLE_DISK_CACHE_SQL_BACKEND)
-      // Disk cache using "sql" backend (SqlBackendImpl).
-      // This is still under experiment.
-      DISK_EXPERIMENTAL_SQL,
-#endif  // ENABLE_DISK_CACHE_SQL_BACKEND
     };
 
     HttpCacheParams();
@@ -133,9 +126,6 @@ class NET_EXPORT URLRequestContextBuilder {
 
     // The cache path (when type is DISK).
     base::FilePath path;
-
-    // The path for persisting the NoVarySearchCache.
-    base::FilePath no_vary_search_path;
 
     // A factory to broker file operations. This is needed for network process
     // sandboxing in some platforms.
@@ -338,6 +328,9 @@ class NET_EXPORT URLRequestContextBuilder {
   void set_persistent_reporting_and_nel_store(
       std::unique_ptr<PersistentReportingAndNelStore>
           persistent_reporting_and_nel_store);
+
+  void set_enterprise_reporting_endpoints(
+      const base::flat_map<std::string, GURL>& enterprise_reporting_endpoints);
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
   // Override the default in-memory cookie store. If |cookie_store| is NULL,
@@ -390,6 +383,10 @@ class NET_EXPORT URLRequestContextBuilder {
     client_socket_factory_ = std::move(client_socket_factory);
   }
 
+  void set_cookie_deprecation_label(const std::string& label) {
+    cookie_deprecation_label_ = label;
+  }
+
 #if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
   void set_device_bound_session_service(
       std::unique_ptr<device_bound_sessions::SessionService>
@@ -404,26 +401,6 @@ class NET_EXPORT URLRequestContextBuilder {
 #endif  // BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
   }
 
-  void set_device_bound_sessions_restricted_sites(
-      const std::vector<SchemefulSite>& restricted_sites) {
-#if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
-    device_bound_sessions_restricted_sites_ = restricted_sites;
-#else
-    NOTREACHED();
-#endif  // BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
-  }
-
-  // Must be called in conjunction with
-  // `set_has_device_bound_session_service(true)`.
-  void set_unexportable_key_service(
-      std::unique_ptr<unexportable_keys::UnexportableKeyService> uks) {
-#if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
-    unexportable_key_service_ = std::move(uks);
-#else
-    NOTREACHED();
-#endif  // BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
-  }
-
   void set_device_bound_sessions_file_path(
       const base::FilePath& device_bound_sessions_file_path) {
 #if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
@@ -432,9 +409,6 @@ class NET_EXPORT URLRequestContextBuilder {
     NOTREACHED();
 #endif  // BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
   }
-
-  void set_cache_encryption_delegate(
-      std::unique_ptr<net::CacheEncryptionDelegate> cache_encryption_delegate);
 
   // Binds the context to `network`. All requests scheduled through the context
   // built by this builder will be sent using `network`. Requests will fail if
@@ -499,6 +473,8 @@ class NET_EXPORT URLRequestContextBuilder {
   std::string user_agent_;
   std::unique_ptr<HttpUserAgentSettings> http_user_agent_settings_;
 
+  std::optional<std::string> cookie_deprecation_label_;
+
   bool http_cache_enabled_ = true;
   bool cookie_store_set_by_client_ = false;
   bool suppress_setting_socket_performance_watcher_factory_for_testing_ = false;
@@ -539,16 +515,13 @@ class NET_EXPORT URLRequestContextBuilder {
   std::unique_ptr<NetworkErrorLoggingService> network_error_logging_service_;
   std::unique_ptr<PersistentReportingAndNelStore>
       persistent_reporting_and_nel_store_;
+  base::flat_map<std::string, GURL> enterprise_reporting_endpoints_ = {};
 #endif  // BUILDFLAG(ENABLE_REPORTING)
   std::unique_ptr<HttpServerProperties> http_server_properties_;
   std::map<std::string, std::unique_ptr<URLRequestJobFactory::ProtocolHandler>>
       protocol_handlers_;
-  std::unique_ptr<net::CacheEncryptionDelegate> cache_encryption_delegate_;
 #if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
   bool has_device_bound_session_service_ = false;
-  std::vector<SchemefulSite> device_bound_sessions_restricted_sites_;
-  std::unique_ptr<unexportable_keys::UnexportableKeyService>
-      unexportable_key_service_;
   std::unique_ptr<device_bound_sessions::SessionService>
       device_bound_session_service_;
   base::FilePath device_bound_sessions_file_path_;

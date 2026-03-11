@@ -6,13 +6,12 @@
 #define EXTENSIONS_BROWSER_CONTENT_HASH_FETCHER_H_
 
 #include <map>
-#include <optional>
 #include <set>
 #include <string>
 #include <utility>
 
 #include "base/functional/callback.h"
-#include "base/sequence_checker.h"
+#include "base/memory/weak_ptr.h"
 #include "extensions/browser/content_verifier/content_hash.h"
 #include "extensions/common/extension_id.h"
 
@@ -43,11 +42,11 @@ namespace internals {
 class ContentHashFetcher {
  public:
   // A callback for when fetch is complete.
-  // The response contents is passed through std::optional<std::string>. In
+  // The response contents is passed through std::unique_ptr<std::string>. In
   // case of failure the error code is passed as a last argument.
   using HashFetcherCallback =
       base::OnceCallback<void(ContentHash::FetchKey,
-                              std::optional<std::string>,
+                              std::unique_ptr<std::string>,
                               ContentHash::FetchErrorCode)>;
 
   ContentHashFetcher(ContentHash::FetchKey fetch_key);
@@ -55,7 +54,7 @@ class ContentHashFetcher {
   ContentHashFetcher(const ContentHashFetcher&) = delete;
   ContentHashFetcher& operator=(const ContentHashFetcher&) = delete;
 
-  // Note: `this` is deleted once OnSimpleLoaderComplete() completes.
+  // Note: |this| is deleted once OnSimpleLoaderComplete() completes.
   void Start(HashFetcherCallback hash_fetcher_callback);
 
  private:
@@ -63,7 +62,7 @@ class ContentHashFetcher {
 
   ~ContentHashFetcher();
 
-  void OnSimpleLoaderComplete(std::optional<std::string> response_body);
+  void OnSimpleLoaderComplete(std::unique_ptr<std::string> response_body);
 
   ContentHash::FetchKey fetch_key_;
 

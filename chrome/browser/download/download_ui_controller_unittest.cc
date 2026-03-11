@@ -97,7 +97,6 @@ class DownloadUIControllerTest : public ChromeRenderViewHostTestHarness {
  protected:
   // testing::Test
   void SetUp() override;
-  void TearDown() override;
 
   // Returns a TestDelegate. Invoking OnNewDownloadReady on the returned
   // delegate results in the DownloadItem* being stored in |notified_item_|.
@@ -154,13 +153,13 @@ class DownloadUIControllerTest : public ChromeRenderViewHostTestHarness {
 
   std::unique_ptr<MockDownloadManager> manager_;
   raw_ptr<content::DownloadManager::Observer>
-      download_history_manager_observer_ = nullptr;
-  raw_ptr<content::DownloadManager::Observer> manager_observer_ = nullptr;
-  raw_ptr<download::DownloadItem> notified_item_ = nullptr;
+      download_history_manager_observer_;
+  raw_ptr<content::DownloadManager::Observer> manager_observer_;
+  raw_ptr<download::DownloadItem> notified_item_;
   base::WeakPtrFactory<raw_ptr<download::DownloadItem>>
       notified_item_receiver_factory_;
 
-  raw_ptr<HistoryAdapter> history_adapter_ = nullptr;
+  raw_ptr<HistoryAdapter, DanglingUntriaged> history_adapter_;
 };
 
 // static
@@ -212,11 +211,6 @@ void DownloadUIControllerTest::SetUp() {
               base::BindRepeating(&TestingDownloadCoreServiceFactory)));
   ASSERT_TRUE(download_core_service);
   download_core_service->set_download_history(std::move(download_history));
-}
-
-void DownloadUIControllerTest::TearDown() {
-  history_adapter_ = nullptr;
-  ChromeRenderViewHostTestHarness::TearDown();
 }
 
 std::unique_ptr<MockDownloadItem>

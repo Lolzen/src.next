@@ -2,15 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "chrome/browser/extensions/extension_management.h"
 
-#include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "base/command_line.h"
-#include "base/containers/flat_set.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -25,7 +29,6 @@
 #include "base/values.h"
 #include "base/version.h"
 #include "build/chromeos_buildflags.h"
-#include "chrome/browser/enterprise/util/managed_browser_utils.h"
 #include "chrome/browser/extensions/cws_info_service.h"
 #include "chrome/browser/extensions/extension_management_constants.h"
 #include "chrome/browser/extensions/extension_management_internal.h"
@@ -46,11 +49,8 @@
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/common/content_switches.h"
-#include "extensions/browser/blocklist_extension_prefs.h"
 #include "extensions/browser/extension_prefs.h"
-#include "extensions/browser/forced_extensions/install_stage_tracker.h"
 #include "extensions/browser/pref_names.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_features.h"
 #include "extensions/common/extension_urls.h"
@@ -60,10 +60,6 @@
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/url_pattern.h"
 #include "url/gurl.h"
-
-#if BUILDFLAG(IS_ANDROID)
-#include "google_apis/gaia/gaia_auth_util.h"
-#endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/themes/theme_service.h"
@@ -80,18 +76,12 @@
 #include "chrome/browser/extensions/management/management_util.h"
 #endif
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
-
 namespace extensions {
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 // Disables off-store force-installed extensions in low trust environments.
 BASE_FEATURE(kDisableOffstoreForceInstalledExtensionsInLowTrustEnviroment,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Disables force-installed extensions in low trust environments when
-// greylisted.
-BASE_FEATURE(kDisableForceInstalledExtensionsInLowTrustEnviromentWhenGreylisted,
+             "DisableOffstoreForceInstalledExtensionsInLowTrustEnviroment",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -126,7 +116,6 @@ ExtensionManagement::ExtensionManagement(Profile* profile)
                              pref_change_callback);
   pref_change_registrar_.Add(pref_names::kExtensionUnpublishedAvailability,
                              pref_change_callback);
-
   // Note that both |global_settings_| and |default_settings_| will be null
   // before first call to Refresh(), so in order to resolve this, Refresh() must
   // be called in the initialization of ExtensionManagement.
@@ -177,40 +166,9 @@ ManagedInstallationMode ExtensionManagement::GetInstallationMode(
                              update_url ? *update_url : std::string());
 }
 
-#if BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
-bool ExtensionManagement::ExtensionsEnabledForDesktopAndroid() const {
-  // If Finch has enabled extensions for corp, allow them.
-  if (base::FeatureList::IsEnabled(
-          extensions_features::kEnableExtensionsForCorpDesktopAndroid)) {
-    return true;
-  }
-  // Disable extensions only for specific domains.
-  // This check keeps many tests from failing.
-  std::string user_name = profile_->GetProfileUserName();
-  // Crude check to avoid passing invalid strings to `ExtractDomainName`.
-  if (user_name.contains("@")) {
-    std::string domain = gaia::ExtractDomainName(user_name);
-    if (domain == "google.com" || domain == "managedchrome.com") {
-      return false;
-    }
-  }
-  return true;
-}
-#endif  // BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
-
 ManagedInstallationMode ExtensionManagement::GetInstallationMode(
     const ExtensionId& extension_id,
     const std::string& update_url) {
-#if BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
-  // Block extensions for managed profiles on Desktop Android. This is
-  // temporary until extensions are ready for dogfooding.
-  // TODO(crbug.com/422307625): Remove this check once extensions are ready for
-  // dogfooding.
-  if (!ExtensionsEnabledForDesktopAndroid()) {
-    return ManagedInstallationMode::kRemoved;
-  }
-#endif  // BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
-
   // Check per-extension installation mode setting first.
   auto* setting = GetSettingsForId(extension_id);
   if (setting)
@@ -225,11 +183,11 @@ ManagedInstallationMode ExtensionManagement::GetInstallationMode(
   return default_settings_->installation_mode;
 }
 
-base::DictValue ExtensionManagement::GetForceInstallList() const {
+base::Value::Dict ExtensionManagement::GetForceInstallList() const {
   return GetInstallListByMode(ManagedInstallationMode::kForced);
 }
 
-base::DictValue ExtensionManagement::GetRecommendedInstallList() const {
+base::Value::Dict ExtensionManagement::GetRecommendedInstallList() const {
   return GetInstallListByMode(ManagedInstallationMode::kRecommended);
 }
 
@@ -250,22 +208,16 @@ bool ExtensionManagement::HasAllowlistedExtension() {
   }
 
   // If there are deferred extensions try loading them.
-  if (deferred_ids_.empty()) {
-    return false;
-  }
-
   while (!deferred_ids_.empty()) {
     auto extension_id = *deferred_ids_.begin();
     // This will remove the entry from |deferred_ids_|.
     LoadDeferredExtensionSetting(extension_id);
-    DCHECK(!deferred_ids_.contains(extension_id));
+    DCHECK(!base::Contains(deferred_ids_, extension_id));
     if (AccessById(extension_id)->installation_mode ==
         ManagedInstallationMode::kAllowed) {
-      NotifyExtensionManagementPrefChanged();
       return true;
     }
   }
-  NotifyExtensionManagementPrefChanged();
 
   return false;
 }
@@ -309,10 +261,8 @@ bool ExtensionManagement::IsInstallationExplicitlyAllowed(
     const ExtensionId& id) {
   auto* setting = GetSettingsForId(id);
   // No settings explicitly specified for |id|.
-  if (setting == nullptr) {
+  if (setting == nullptr)
     return false;
-  }
-
   // Checks if the extension is on the automatically installed list or
   // install allow-list.
   ManagedInstallationMode mode = setting->installation_mode;
@@ -365,7 +315,7 @@ bool ExtensionManagement::IsAllowedManifestType(
     return true;
   const std::vector<Manifest::Type>& allowed_types =
       *global_settings_->allowed_types;
-  return std::ranges::contains(allowed_types, manifest_type);
+  return base::Contains(allowed_types, manifest_type);
 }
 
 bool ExtensionManagement::IsAllowedManifestVersion(
@@ -490,32 +440,6 @@ bool ExtensionManagement::IsAllowedByUnpackedDeveloperModePolicy(
   bool in_developer_mode =
       profile_->GetPrefs()->GetBoolean(prefs::kExtensionsUIDeveloperMode);
   return in_developer_mode;
-}
-
-bool ExtensionManagement::IsGreylistedForceInstalledInLowTrustEnvironment(
-    const ExtensionId& extension_id) {
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
-  if (!base::FeatureList::IsEnabled(
-          kDisableForceInstalledExtensionsInLowTrustEnviromentWhenGreylisted)) {
-    return false;
-  }
-
-  if (!blocklist_prefs::IsExtensionGreylisted(extension_id,
-                                              ExtensionPrefs::Get(profile_))) {
-    return false;
-  }
-
-  auto* setting = GetSettingsForId(extension_id);
-  if (setting == nullptr ||
-      setting->installation_mode != ManagedInstallationMode::kForced) {
-    return false;
-  }
-
-  return GetHigherManagementAuthorityTrustworthiness(profile_) <
-         policy::ManagementAuthorityTrustworthiness::TRUSTED;
-#else
-  return false;
-#endif
 }
 
 bool ExtensionManagement::IsForceInstalledInLowTrustEnvironment(
@@ -677,15 +601,6 @@ bool ExtensionManagement::IsFileUrlNavigationAllowed(const ExtensionId& id) {
   return setting && setting->file_url_navigation_allowed;
 }
 
-extensions::ManagedToolbarPinMode ExtensionManagement::GetToolbarPinMode(
-    const ExtensionId& extension_id) {
-  auto* setting = GetSettingsForId(extension_id);
-  if (setting) {
-    return setting->toolbar_pin;
-  }
-  return extensions::ManagedToolbarPinMode::kDefaultUnpinned;
-}
-
 bool ExtensionManagement::CheckMinimumVersion(const Extension* extension,
                                               std::string* required_version) {
   auto* setting = GetSettingsForId(extension->id());
@@ -704,19 +619,19 @@ void ExtensionManagement::Refresh() {
   TRACE_EVENT0("browser,startup", "ExtensionManagement::Refresh");
   SCOPED_UMA_HISTOGRAM_TIMER("Extensions.Management_Refresh");
   // Load all extension management settings preferences.
-  const base::ListValue* allowed_list_pref =
+  const base::Value::List* allowed_list_pref =
       LoadListPreference(pref_names::kInstallAllowList, true);
   // Allow user to use preference to block certain extensions. Note that policy
   // managed forcelist or allowlist will always override this.
-  const base::ListValue* denied_list_pref =
+  const base::Value::List* denied_list_pref =
       LoadListPreference(pref_names::kInstallDenyList, false);
-  const base::DictValue* forced_list_pref =
+  const base::Value::Dict* forced_list_pref =
       LoadDictPreference(pref_names::kInstallForceList, true);
-  const base::ListValue* install_sources_pref =
+  const base::Value::List* install_sources_pref =
       LoadListPreference(pref_names::kAllowedInstallSites, true);
-  const base::ListValue* allowed_types_pref =
+  const base::Value::List* allowed_types_pref =
       LoadListPreference(pref_names::kAllowedTypes, true);
-  const base::DictValue* dict_pref =
+  const base::Value::Dict* dict_pref =
       LoadDictPreference(pref_names::kExtensionManagement, true);
   const base::Value* extension_request_pref = LoadPreference(
       prefs::kCloudExtensionRequestEnabled, false, base::Value::Type::BOOLEAN);
@@ -735,12 +650,13 @@ void ExtensionManagement::Refresh() {
   default_settings_ = std::make_unique<internal::IndividualSettings>();
 
   // Parse default settings.
-  if ((denied_list_pref && denied_list_pref->contains("*")) ||
+  const base::Value wildcard("*");
+  if ((denied_list_pref && base::Contains(*denied_list_pref, wildcard)) ||
       (extension_request_pref && extension_request_pref->GetBool())) {
     default_settings_->installation_mode = ManagedInstallationMode::kBlocked;
   }
 
-  if (const base::DictValue* subdict =
+  if (const base::Value::Dict* subdict =
           dict_pref ? dict_pref->FindDict(schema_constants::kWildcard)
                     : nullptr) {
     if (!default_settings_->Parse(
@@ -750,7 +666,7 @@ void ExtensionManagement::Refresh() {
     }
 
     // Settings from new preference have higher priority over legacy ones.
-    const base::ListValue* list_value =
+    const base::Value::List* list_value =
         subdict->FindList(schema_constants::kInstallSources);
     if (list_value)
       install_sources_pref = list_value;
@@ -827,20 +743,17 @@ void ExtensionManagement::Refresh() {
   if (dict_pref) {
     // Parse new extension management preference.
 
+    std::unordered_set<std::string> installed_extensions;
     auto* extension_prefs = ExtensionPrefs::Get(profile_);
     auto extensions_info = extension_prefs->GetInstalledExtensionsInfo();
-    std::vector<std::string> installed_extension_ids;
-    installed_extension_ids.reserve(extensions_info.size());
-    for (auto& extension_info : extensions_info) {
-      installed_extension_ids.push_back(std::move(extension_info.extension_id));
+    for (const auto& extension_info : extensions_info) {
+      installed_extensions.insert(extension_info.extension_id);
     }
-    base::flat_set<std::string> installed_extension_ids_set(
-        std::move(installed_extension_ids));
 
     for (auto iter : *dict_pref) {
       if (iter.first == schema_constants::kWildcard)
         continue;
-      const base::DictValue* subdict = iter.second.GetIfDict();
+      const base::Value::Dict* subdict = iter.second.GetIfDict();
       if (!subdict)
         continue;
       std::optional<std::string_view> remainder =
@@ -869,15 +782,15 @@ void ExtensionManagement::Refresh() {
             continue;
           }
 
-          auto should_defer = [&extension_id, &installed_extension_ids_set](
-                                  const base::DictValue& dict,
+          auto should_defer = [&extension_id, &installed_extensions](
+                                  const base::Value::Dict& dict,
                                   const SettingsIdMap* settings_by_id) {
             // If in legacy force list, don't defer since already have an
             // entry. This ensures that the entry in these settings matches
             // the entry in the forcelist. Also don't defer if the extension
             // is installed.
-            if (settings_by_id->contains(extension_id) ||
-                installed_extension_ids_set.contains(extension_id)) {
+            if (base::Contains(*settings_by_id, extension_id) ||
+                base::Contains(installed_extensions, extension_id)) {
               return false;
             }
             auto* install_mode =
@@ -906,10 +819,9 @@ void ExtensionManagement::Refresh() {
           // installed and will get stuck in CREATED stage.
           if (included_in_forcelist &&
               by_id->installation_mode != ManagedInstallationMode::kForced) {
-            InstallStageTrackerFactory::GetForBrowserContext(profile_)
-                ->ReportFailure(
-                    extension_id,
-                    InstallStageTracker::FailureReason::OVERRIDDEN_BY_SETTINGS);
+            InstallStageTracker::Get(profile_)->ReportFailure(
+                extension_id,
+                InstallStageTracker::FailureReason::OVERRIDDEN_BY_SETTINGS);
           }
         }
       }
@@ -918,13 +830,13 @@ void ExtensionManagement::Refresh() {
 }
 
 bool ExtensionManagement::ParseById(const std::string& extension_id,
-                                    const base::DictValue& subdict) {
+                                    const base::Value::Dict& subdict) {
   internal::IndividualSettings* by_id = AccessById(extension_id);
   if (by_id->Parse(subdict, internal::IndividualSettings::SCOPE_INDIVIDUAL))
     return true;
 
   settings_by_id_.erase(extension_id);
-  InstallStageTrackerFactory::GetForBrowserContext(profile_)->ReportFailure(
+  InstallStageTracker::Get(profile_)->ReportFailure(
       extension_id,
       InstallStageTracker::FailureReason::MALFORMED_EXTENSION_SETTINGS);
   SYSLOG(WARNING) << "Malformed Extension Management settings for "
@@ -934,10 +846,8 @@ bool ExtensionManagement::ParseById(const std::string& extension_id,
 
 internal::IndividualSettings* ExtensionManagement::GetSettingsForId(
     const std::string& extension_id) {
-  if (deferred_ids_.contains(extension_id)) {
+  if (base::Contains(deferred_ids_, extension_id))
     LoadDeferredExtensionSetting(extension_id);
-    NotifyExtensionManagementPrefChanged();
-  }
 
   auto iter_id = settings_by_id_.find(extension_id);
   if (iter_id == settings_by_id_.end())
@@ -948,12 +858,12 @@ internal::IndividualSettings* ExtensionManagement::GetSettingsForId(
 
 void ExtensionManagement::LoadDeferredExtensionSetting(
     const std::string& extension_id) {
-  DCHECK(deferred_ids_.contains(extension_id));
+  DCHECK(base::Contains(deferred_ids_, extension_id));
 
   // No need to check again later.
   deferred_ids_.erase(extension_id);
 
-  const base::DictValue* dict_pref =
+  const base::Value::Dict* dict_pref =
       LoadDictPreference(pref_names::kExtensionManagement, true);
   bool found = false;
   for (auto iter : *dict_pref) {
@@ -962,13 +872,13 @@ void ExtensionManagement::LoadDeferredExtensionSetting(
                          base::CompareCase::SENSITIVE)) {
       continue;
     }
-    const base::DictValue* subdict = iter.second.GetIfDict();
+    const base::Value::Dict* subdict = iter.second.GetIfDict();
     if (!subdict)
       continue;
 
     auto extension_ids = base::SplitStringPiece(
         iter.first, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-    if (std::ranges::contains(extension_ids, extension_id)) {
+    if (base::Contains(extension_ids, extension_id)) {
       // Found our settings. After parsing, continue looking for more entries.
       ParseById(extension_id, *subdict);
       found = true;
@@ -995,7 +905,7 @@ const base::Value* ExtensionManagement::LoadPreference(
   return nullptr;
 }
 
-const base::DictValue* ExtensionManagement::LoadDictPreference(
+const base::Value::Dict* ExtensionManagement::LoadDictPreference(
     const char* pref_name,
     bool force_managed) const {
   const base::Value* value =
@@ -1003,7 +913,7 @@ const base::DictValue* ExtensionManagement::LoadDictPreference(
   return value ? &value->GetDict() : nullptr;
 }
 
-const base::ListValue* ExtensionManagement::LoadListPreference(
+const base::Value::List* ExtensionManagement::LoadListPreference(
     const char* pref_name,
     bool force_managed) const {
   const base::Value* value =
@@ -1029,7 +939,7 @@ void ExtensionManagement::ReportExtensionManagementInstallCreationStage(
     InstallStageTracker::InstallCreationStage forced_stage,
     InstallStageTracker::InstallCreationStage other_stage) {
   InstallStageTracker* install_stage_tracker =
-      InstallStageTrackerFactory::GetForBrowserContext(profile_);
+      InstallStageTracker::Get(profile_);
   for (const auto& entry : settings_by_id_) {
     if (entry.second->installation_mode == ManagedInstallationMode::kForced) {
       install_stage_tracker->ReportInstallCreationStage(entry.first,
@@ -1041,14 +951,14 @@ void ExtensionManagement::ReportExtensionManagementInstallCreationStage(
   }
 }
 
-base::DictValue ExtensionManagement::GetInstallListByMode(
+base::Value::Dict ExtensionManagement::GetInstallListByMode(
     ManagedInstallationMode installation_mode) const {
   // This is only meaningful if we 've loaded the extensions for the given
   // installation mode.
   DCHECK(installation_mode == ManagedInstallationMode::kForced ||
          installation_mode == ManagedInstallationMode::kRecommended);
 
-  base::DictValue extension_dict;
+  base::Value::Dict extension_dict;
   for (const auto& [id, settings] : settings_by_id_) {
     if (settings->installation_mode == installation_mode) {
       ExternalPolicyLoader::AddExtension(extension_dict, id,
@@ -1059,19 +969,19 @@ base::DictValue ExtensionManagement::GetInstallListByMode(
 }
 
 void ExtensionManagement::UpdateForcedExtensions(
-    const base::DictValue* extension_dict) {
+    const base::Value::Dict* extension_dict) {
   if (!extension_dict)
     return;
 
   InstallStageTracker* install_stage_tracker =
-      InstallStageTrackerFactory::GetForBrowserContext(profile_);
+      InstallStageTracker::Get(profile_);
   for (auto it : *extension_dict) {
     if (!crx_file::id_util::IdIsValid(it.first)) {
       install_stage_tracker->ReportFailure(
           it.first, InstallStageTracker::FailureReason::INVALID_ID);
       continue;
     }
-    const base::DictValue* dict_value = it.second.GetIfDict();
+    const base::Value::Dict* dict_value = it.second.GetIfDict();
     if (!dict_value) {
       install_stage_tracker->ReportFailure(
           it.first, InstallStageTracker::FailureReason::NO_UPDATE_URL);

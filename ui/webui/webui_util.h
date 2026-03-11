@@ -17,8 +17,6 @@ namespace webui {
 
 inline constexpr char kDefaultTrustedTypesPolicies[] =
     "trusted-types parse-html-subset sanitize-inner-html static-types "
-    // Add TrustedTypes policies for cr-lottie.
-    "lottie-worker-script-loader "
     // Add TrustedTypes policies used during tests.
     "webui-test-script webui-test-html "
     // Add TrustedTypes policies necessary for using Polymer.

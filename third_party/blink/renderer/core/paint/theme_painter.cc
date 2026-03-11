@@ -239,7 +239,6 @@ bool ThemePainter::PaintBorderOnly(const Node* node,
       // Supported appearance values don't need CSS border painting.
       return false;
     case AppearanceValue::kBaseSelect:
-    case AppearanceValue::kBase:
       return true;
     case AppearanceValue::kNone:
     case AppearanceValue::kAuto:
@@ -341,10 +340,8 @@ void ThemePainter::PaintSliderTicks(const LayoutObject& o,
       input->UserAgentShadowRoot()
           ->getElementById(shadow_element_names::kIdSliderThumb)
           ->GetLayoutObject();
-  if (thumb_layout_object && thumb_layout_object->IsBox()) {
-    thumb_size =
-        ToFlooredSize(To<LayoutBox>(thumb_layout_object)->StitchedSize());
-  }
+  if (thumb_layout_object && thumb_layout_object->IsBox())
+    thumb_size = ToFlooredSize(To<LayoutBox>(thumb_layout_object)->Size());
 
   gfx::Size tick_size = LayoutTheme::GetTheme().SliderTickSize();
   float zoom_factor = style.EffectiveZoom();
@@ -359,7 +356,7 @@ void ThemePainter::PaintSliderTicks(const LayoutObject& o,
   if (track_layout_object && track_layout_object->IsBox()) {
     track_bounds = gfx::Rect(
         ToCeiledPoint(track_layout_object->FirstFragment().PaintOffset()),
-        ToFlooredSize(To<LayoutBox>(track_layout_object)->StitchedSize()));
+        ToFlooredSize(To<LayoutBox>(track_layout_object)->Size()));
   }
 
   const float tick_offset_from_center =

@@ -10,11 +10,11 @@ import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Process;
 
 import org.jni_zero.CalledByNative;
 import org.jni_zero.JNINamespace;
-import org.jni_zero.JniType;
 import org.jni_zero.NativeMethods;
 
 import org.chromium.base.version_info.VersionInfo;
@@ -39,17 +39,47 @@ public final class ApkInfo {
     private static @Nullable PackageInfo sBrowserPackageInfo;
 
     private final ApplicationInfo mBrowserApplicationInfo;
-    private final IApkInfo mIApkInfo;
+
+    /**
+     * The package name of the host app which has loaded WebView, retrieved from the application
+     * context. In the context of the SDK Runtime, the package name of the app that owns this
+     * particular instance of the SDK Runtime will also be included. e.g.
+     * com.google.android.sdksandbox:com:com.example.myappwithads
+     */
+    private final String mHostPackageName;
+
+    /**
+     * The application name (e.g. "Chrome"). For WebView, this is name of the embedding app. In the
+     * context of the SDK Runtime, this is the name of the app that owns this particular instance of
+     * the SDK Runtime.
+     */
+    private final String mHostPackageLabel;
+
+    /**
+     * By default: same as versionCode. For WebView: versionCode of the embedding app. In the
+     * context of the SDK Runtime, this is the versionCode of the app that owns this particular
+     * instance of the SDK Runtime.
+     */
+    private final long mHostVersionCode;
+
+    /** The versionName of Chrome/WebView. Use application context for host app versionName. */
+    private final String mVersionName;
+
+    /** Result of PackageManager.getInstallerPackageName(). Never null, but may be "". */
+    private final String mInstallerPackageName;
+
+    /**
+     * The packageName of Chrome/WebView. Use application context for host app packageName. Same as
+     * the host information within any child process.
+     */
+    private final String mPackageName;
+
+    /** Product version as stored in Android resources. */
+    private final String mResourcesVersion;
 
     private static volatile @Nullable ApkInfo sInstance;
 
     private static final Object CREATION_LOCK = new Object();
-
-    /**
-     * The SHA256 of the public certificate used to sign the host application. This will default to
-     * an empty string if we were unable to retrieve it.
-     */
-    private static @Nullable String sHostSigningCertSha256;
 
     // Called by the native code to retrieve field values. There is no easy way to
     // return several fields from Java to native, so instead this calls back into
@@ -58,70 +88,65 @@ public final class ApkInfo {
     // function.
     @CalledByNative
     private static void nativeReadyForFields() {
-        sendToNative(getInstance().mIApkInfo);
-    }
-
-    public static void sendToNative(IApkInfo info) {
+        ApkInfo instance = getInstance();
         ApkInfoJni.get()
                 .fillFields(
-                        /* hostPackageName= */ info.hostPackageName,
-                        /* hostVersionCode= */ info.hostVersionCode,
-                        /* hostPackageLabel= */ info.hostPackageLabel,
-                        /* packageVersionCode= */ info.packageVersionCode,
-                        /* packageVersionName= */ info.packageVersionName,
-                        /* packageName= */ info.packageName,
-                        /* resourcesVersion= */ info.resourcesVersion,
-                        /* installerPackageName= */ info.installerPackageName,
-                        /* isDebugApp= */ info.isDebugApp,
-                        /* targetSdkVersion= */ info.targetSdkVersion);
-    }
-
-    public static IApkInfo getAidlInfo() {
-        return getInstance().mIApkInfo;
+                        /* hostPackageName= */ instance.mHostPackageName,
+                        /* hostVersionCode= */ String.valueOf(instance.mHostVersionCode),
+                        /* hostPackageLabel= */ instance.mHostPackageLabel,
+                        /* packageVersionCode= */ String.valueOf(BuildConfig.VERSION_CODE),
+                        /* packageVersionName= */ instance.mVersionName,
+                        /* packageName= */ instance.mPackageName,
+                        /* resourcesVersion= */ instance.mResourcesVersion,
+                        /* installerPackageName= */ instance.mInstallerPackageName,
+                        /* isDebugApp= */ isDebugApp(),
+                        /* targetsAtleastU= */ targetsAtLeastU(),
+                        /* targetSdkVersion= */ ContextUtils.getApplicationContext()
+                                .getApplicationInfo()
+                                .targetSdkVersion);
     }
 
     public static String getHostPackageName() {
-        return getInstance().mIApkInfo.hostPackageName;
+        return getInstance().mHostPackageName;
     }
 
-    public static String getHostVersionCode() {
-        return getInstance().mIApkInfo.hostVersionCode;
+    public static long getHostVersionCode() {
+        return getInstance().mHostVersionCode;
     }
 
     public static String getHostPackageLabel() {
-        return getInstance().mIApkInfo.hostPackageLabel;
+        return getInstance().mHostPackageLabel;
     }
 
     public static String getPackageName() {
-        return getInstance().mIApkInfo.packageName;
+        return getInstance().mPackageName;
     }
 
     public static String getPackageVersionCode() {
-        return getInstance().mIApkInfo.packageVersionCode;
+        return String.valueOf(BuildConfig.VERSION_CODE);
     }
 
     public static String getPackageVersionName() {
-        return getInstance().mIApkInfo.packageVersionName;
+        return getInstance().mVersionName;
     }
 
     public static String getInstallerPackageName() {
-        return getInstance().mIApkInfo.installerPackageName;
+        return getInstance().mInstallerPackageName;
     }
 
     public static String getResourcesVersion() {
-        return getInstance().mIApkInfo.resourcesVersion;
-    }
-
-    public static boolean isDebugApp() {
-        return getInstance().mIApkInfo.isDebugApp;
+        return getInstance().mResourcesVersion;
     }
 
     /**
-     * Check if this is either a debuggable build of Android or of the host app. Use this to enable
-     * developer-only features.
+     * Checks if the application targets pre-release SDK U. This must be manually maintained as the
+     * SDK goes through finalization! Avoid depending on this if possible; this is only intended for
+     * WebView.
      */
-    public static boolean isDebugAndroidOrApp() {
-        return AndroidInfo.isDebugAndroid() || isDebugApp();
+    public static boolean targetsAtLeastU() {
+        int target = ContextUtils.getApplicationContext().getApplicationInfo().targetSdkVersion;
+
+        return target >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE;
     }
 
     /**
@@ -149,7 +174,7 @@ public final class ApkInfo {
     }
 
     public static ApkInfo getInstance() {
-        // Some tests mock out things ApkInfo is based on, so disable caching in tests to ensure
+        // Some tests mock out things BuildInfo is based on, so disable caching in tests to ensure
         // such mocking is not defeated by caching.
         if (BuildConfig.IS_FOR_TEST) {
             return new ApkInfo();
@@ -186,7 +211,6 @@ public final class ApkInfo {
 
     private ApkInfo() {
         sInitialized = true;
-        mIApkInfo = new IApkInfo();
         Context appContext = ContextUtils.getApplicationContext();
         String appContextPackageName = appContext.getPackageName();
         PackageManager pm = appContext.getPackageManager();
@@ -196,7 +220,6 @@ public final class ApkInfo {
         String providedPackageName = null;
         String providedPackageVersionName = null;
         Long providedHostVersionCode = null;
-        mIApkInfo.packageVersionCode = String.valueOf(BuildConfig.VERSION_CODE);
 
         // The child processes are running in an isolated process so they can't grab a lot of
         // package information in the same way that we normally would retrieve them. To get around
@@ -228,15 +251,13 @@ public final class ApkInfo {
         // SDK.
         String appInstalledPackageName = appContextPackageName;
         ApplicationInfo appInfo = appContext.getApplicationInfo();
-        mIApkInfo.isDebugApp = (appInfo.flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
 
         if (hostInformationProvided) {
-            mIApkInfo.hostPackageName = assumeNonNull(providedHostPackageName);
-            mIApkInfo.hostPackageLabel = assumeNonNull(providedHostPackageLabel);
-            mIApkInfo.hostVersionCode = String.valueOf(assumeNonNull(providedHostVersionCode));
-            mIApkInfo.packageVersionName = assumeNonNull(providedPackageVersionName);
-            mIApkInfo.packageName = assumeNonNull(providedPackageName);
-            mBrowserApplicationInfo = appInfo;
+            mHostPackageName = assumeNonNull(providedHostPackageName);
+            mHostPackageLabel = assumeNonNull(providedHostPackageLabel);
+            mHostVersionCode = assumeNonNull(providedHostVersionCode);
+            mVersionName = assumeNonNull(providedPackageVersionName);
+            mPackageName = assumeNonNull(providedPackageName);
         } else {
             // The SDK Qualified package name will retrieve the same information as
             // appInstalledPackageName but prefix it with the SDK Sandbox process so that we can
@@ -262,28 +283,27 @@ public final class ApkInfo {
                 }
             }
 
-            mIApkInfo.hostPackageName = sdkQualifiedName;
-            mIApkInfo.hostPackageLabel = nullToEmpty(pm.getApplicationLabel(appInfo));
+            mHostPackageName = sdkQualifiedName;
+            mHostPackageLabel = nullToEmpty(pm.getApplicationLabel(appInfo));
 
             if (sBrowserPackageInfo != null) {
                 PackageInfo pi =
                         assumeNonNull(PackageUtils.getPackageInfo(appInstalledPackageName, 0));
-                mIApkInfo.hostVersionCode = String.valueOf(PackageUtils.packageVersionCode(pi));
-                mIApkInfo.packageName = sBrowserPackageInfo.packageName;
-                mIApkInfo.packageVersionName = nullToEmpty(sBrowserPackageInfo.versionName);
-                mBrowserApplicationInfo = sBrowserPackageInfo.applicationInfo;
+                mHostVersionCode = PackageUtils.packageVersionCode(pi);
+                mPackageName = sBrowserPackageInfo.packageName;
+                mVersionName = nullToEmpty(sBrowserPackageInfo.versionName);
+                appInfo = sBrowserPackageInfo.applicationInfo;
                 sBrowserPackageInfo = null;
             } else {
-                mIApkInfo.packageName = appContextPackageName;
-                mIApkInfo.hostVersionCode = String.valueOf(BuildConfig.VERSION_CODE);
-                mIApkInfo.packageVersionName = VersionInfo.getProductVersion();
-                mBrowserApplicationInfo = appInfo;
+                mPackageName = appContextPackageName;
+                mHostVersionCode = BuildConfig.VERSION_CODE;
+                mVersionName = VersionInfo.getProductVersion();
             }
         }
-        assert mBrowserApplicationInfo != null;
+        assert appInfo != null;
+        mBrowserApplicationInfo = appInfo;
 
-        mIApkInfo.installerPackageName =
-                nullToEmpty(pm.getInstallerPackageName(appInstalledPackageName));
+        mInstallerPackageName = nullToEmpty(pm.getInstallerPackageName(appInstalledPackageName));
 
         String currentResourcesVersion = "Not Enabled";
         // Controlled by target specific build flags.
@@ -300,41 +320,31 @@ public final class ApkInfo {
                 currentResourcesVersion = "Not found";
             }
         }
-        mIApkInfo.resourcesVersion = currentResourcesVersion;
-        // Important that we do not pull this from the Browser application info - if we are
-        // currently in WebView, the host application's targetSdk is what we care about, to enable
-        // compatibility modes.
-        mIApkInfo.targetSdkVersion = appInfo.targetSdkVersion;
+        mResourcesVersion = currentResourcesVersion;
     }
 
-    @CalledByNative
-    public static @JniType("std::string") String getHostSigningCertSha256() {
-        synchronized (CREATION_LOCK) {
-            // We currently only make use of this certificate for calls from the storage access API
-            // within WebView. So we rather lazy load this value to avoid impacting app startup.
-            String ret = sHostSigningCertSha256;
-            if (ret == null) {
-                String certificate =
-                        PackageUtils.computeCertSignatureSha256ForPackage(getHostPackageName());
-                ret = certificate == null ? "" : certificate;
-                sHostSigningCertSha256 = ret;
-            }
-            return ret;
-        }
+    /*
+     * Check if the app is declared debuggable in its manifest.
+     * In WebView, this refers to the host app.
+     */
+    public static boolean isDebugApp() {
+        int appFlags = ContextUtils.getApplicationContext().getApplicationInfo().flags;
+        return (appFlags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     @NativeMethods
     interface Natives {
         void fillFields(
-                @JniType("std::string") String hostPackageName,
-                @JniType("std::string") String hostVersionCode,
-                @JniType("std::string") String hostPackageLabel,
-                @JniType("std::string") String packageVersionCode,
-                @JniType("std::string") String packageVersionName,
-                @JniType("std::string") String packageName,
-                @JniType("std::string") String resourcesVersion,
-                @JniType("std::string") String installerPackageName,
+                String hostPackageName,
+                String hostVersionCode,
+                String hostPackageLabel,
+                String packageVersionCode,
+                String packageVersionName,
+                String packageName,
+                String resourcesVersion,
+                String installerPackageName,
                 boolean isDebugApp,
+                boolean targetsAtleastU,
                 int targetSdkVersion);
     }
 }

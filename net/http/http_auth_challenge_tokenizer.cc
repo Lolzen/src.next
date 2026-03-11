@@ -48,7 +48,8 @@ void HttpAuthChallengeTokenizer::Init(std::string_view challenge) {
   }
 
   // Save the scheme's position.
-  lower_case_scheme_ = base::ToLowerASCII(tok.token_piece());
+  lower_case_scheme_ = base::ToLowerASCII(
+      base::MakeStringPiece(tok.token_begin(), tok.token_end()));
 
   params_ =
       HttpUtil::TrimLWS(std::string_view(tok.token_end(), challenge.end()));

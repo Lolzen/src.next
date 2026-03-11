@@ -5,7 +5,6 @@
 #include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/stringprintf.h"
 #include "content/browser/back_forward_cache_browsertest.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/browser_test.h"
@@ -17,7 +16,11 @@ class BackgroundForegroundProcessLimitBackForwardCacheBrowserTest
     : public BackForwardCacheBrowserTest {
  protected:
   void SetUpCommandLine(base::CommandLine* command_line) override {
-    EnableCacheSize(kBackForwardCacheSize, kForegroundBackForwardCacheSize);
+    EnableFeatureAndSetParams(features::kBackForwardCache, "cache_size",
+                              base::NumberToString(kBackForwardCacheSize));
+    EnableFeatureAndSetParams(
+        features::kBackForwardCache, "foreground_cache_size",
+        base::NumberToString(kForegroundBackForwardCacheSize));
     BackForwardCacheBrowserTest::SetUpCommandLine(command_line);
   }
 

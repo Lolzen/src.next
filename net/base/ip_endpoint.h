@@ -11,7 +11,6 @@
 #include <ostream>
 #include <string>
 
-#include "base/containers/span.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "net/base/address_family.h"
@@ -42,7 +41,7 @@ class NET_EXPORT IPEndPoint {
  public:
   // Function signatures of if_nametoindex() and if_indextoname().
   using NameToIndexFunc = uint32_t (*)(const char*);
-  using IndexToNameFunc = char* (*)(unsigned int, base::span<char>);
+  using IndexToNameFunc = char* (*)(unsigned int, char*);
 
   // Set fake if_nametoindex() and if_indextoname() functions for testing.
   static void SetNameToIndexFuncForTesting(NameToIndexFunc func);
@@ -109,7 +108,8 @@ class NET_EXPORT IPEndPoint {
   std::string ToStringWithoutPort() const;
 
   bool operator<(const IPEndPoint& that) const;
-  friend bool operator==(const IPEndPoint&, const IPEndPoint&) = default;
+  bool operator==(const IPEndPoint& that) const;
+  bool operator!=(const IPEndPoint& that) const;
 
   base::Value ToValue() const;
 
@@ -119,7 +119,7 @@ class NET_EXPORT IPEndPoint {
 
   // Returns a scope ID from `dict` when `dict` has a valid interface name that
   // can be converted to an interface index.
-  static std::optional<uint32_t> ScopeIdFromDict(const base::DictValue& dict);
+  static std::optional<uint32_t> ScopeIdFromDict(const base::Value::Dict& dict);
 
   // Converts `scope_id` to an interface name as a base::Value.
   static base::Value ScopeIdToValue(std::optional<uint32_t> scope_id);

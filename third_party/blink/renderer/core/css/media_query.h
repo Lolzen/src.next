@@ -31,7 +31,6 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/geometry/axis.h"
-#include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/heap/visitor.h"
@@ -41,9 +40,10 @@
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
-
-class ConditionalExpNode;
 class MediaQueryExp;
+class MediaQueryExpNode;
+
+using ExpressionHeapVector = Vector<MediaQueryExp>;
 
 class CORE_EXPORT MediaQuery : public GarbageCollected<MediaQuery> {
  public:
@@ -51,22 +51,15 @@ class CORE_EXPORT MediaQuery : public GarbageCollected<MediaQuery> {
 
   static MediaQuery* CreateNotAll();
 
-  MediaQuery(RestrictorType, String media_type, const ConditionalExpNode*);
+  MediaQuery(RestrictorType, String media_type, const MediaQueryExpNode*);
   MediaQuery(const MediaQuery&);
   MediaQuery& operator=(const MediaQuery&) = delete;
   ~MediaQuery();
   void Trace(Visitor*) const;
 
-  static void CollectExpressions(const ConditionalExpNode& root,
-                                 HeapVector<MediaQueryExp>&);
-  void CollectExpressions(HeapVector<MediaQueryExp>& expressions) const {
-    if (exp_node_) {
-      CollectExpressions(*exp_node_, expressions);
-    }
-  }
-
+  bool HasUnknown() const { return has_unknown_; }
   RestrictorType Restrictor() const;
-  const ConditionalExpNode* ExpNode() const;
+  const MediaQueryExpNode* ExpNode() const;
   const String& MediaType() const;
   bool operator==(const MediaQuery& other) const;
   String CssText() const;
@@ -74,9 +67,17 @@ class CORE_EXPORT MediaQuery : public GarbageCollected<MediaQuery> {
  private:
   String media_type_;
   String serialization_cache_;
-  Member<const ConditionalExpNode> exp_node_;
+  Member<const MediaQueryExpNode> exp_node_;
 
   RestrictorType restrictor_;
+  // Set if |exp_node_| contains any MediaQueryUnknownExpNode instances.
+  //
+  // If the runtime flag CSSMediaQueries4 is *not* enabled, this will cause the
+  // MediaQuery to appear as a "not all".
+  //
+  // Knowing whether or not something is unknown is useful for use-counting and
+  // testing purposes.
+  bool has_unknown_;
 
   String Serialize() const;
 };

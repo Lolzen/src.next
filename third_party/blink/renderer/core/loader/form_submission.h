@@ -31,7 +31,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_FORM_SUBMISSION_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_FORM_SUBMISSION_H_
 
-#include "base/time/time.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/frame/remote_frame.mojom-blink-forward.h"
@@ -129,7 +128,7 @@ class FormSubmission final : public GarbageCollected<FormSubmission> {
       LocalDOMWindow* origin_window,
       const LocalFrameToken& initiator_frame_token,
       bool has_rel_opener,
-      SourceLocation* source_location,
+      std::unique_ptr<SourceLocation> source_location,
       mojo::PendingRemote<mojom::blink::NavigationStateKeepAliveHandle>
           initiator_navigation_state_keep_alive_handle);
   // FormSubmission for DialogMethod
@@ -168,13 +167,12 @@ class FormSubmission final : public GarbageCollected<FormSubmission> {
   Member<LocalDOMWindow> origin_window_;
   LocalFrameToken initiator_frame_token_;
   bool has_rel_opener_ = false;
-  base::TimeTicks input_start_time_;
 
   // Since form submissions are scheduled asynchronously, we need to store the
   // source location when we create the form submission and then pass it over to
   // the `FrameLoadRequest`. Capturing the source location later when creating
   // the `FrameLoadRequest` will not return the correct location.
-  Member<SourceLocation> source_location_;
+  std::unique_ptr<SourceLocation> source_location_;
 
   // Since form submissions are scheduled asynchronously, we need to keep a
   // handle to the initiator NavigationStateKeepAliveHandle. This ensures that

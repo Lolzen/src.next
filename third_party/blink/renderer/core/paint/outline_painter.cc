@@ -8,8 +8,6 @@
 
 #include "build/build_config.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
-#include "third_party/blink/renderer/core/paint/border_shape_painter.h"
-#include "third_party/blink/renderer/core/paint/border_shape_utils.h"
 #include "third_party/blink/renderer/core/paint/box_border_painter.h"
 #include "third_party/blink/renderer/core/paint/contoured_border_geometry.h"
 #include "third_party/blink/renderer/core/paint/paint_auto_dark_mode.h"
@@ -25,8 +23,6 @@
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/styled_stroke_data.h"
-#include "third_party/skia/include/core/SkPath.h"
-#include "third_party/skia/include/core/SkPathBuilder.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/skia_conversions.h"
@@ -40,11 +36,13 @@ float FocusRingStrokeWidth(const ComputedStyle& style) {
   DCHECK(style.OutlineStyleIsAuto());
   // Draw focus ring with thickness in proportion to the zoom level, but never
   // so narrow that it becomes invisible.
-  static constexpr float kWidth = 3.0f;
-  return (style.EffectiveZoom() >= 1.0f)
-             ? ui::NativeTheme::AdjustBorderWidthByZoom(kWidth,
-                                                        style.EffectiveZoom())
-             : kWidth;
+  float width = 3.f;
+  if (style.EffectiveZoom() >= 1.0f) {
+    width = ui::NativeTheme::GetInstanceForWeb()->AdjustBorderWidthByZoom(
+        width, style.EffectiveZoom());
+    DCHECK_GE(width, 3.f);
+  }
+  return std::max(style.EffectiveZoom(), width);
 }
 
 float FocusRingOuterStrokeWidth(const ComputedStyle& style) {
@@ -61,7 +59,8 @@ int FocusRingOffset(const ComputedStyle& style,
   DCHECK(style.OutlineStyleIsAuto());
   // How much space the focus ring would like to take from the actual border.
   const float max_inside_border_width =
-      ui::NativeTheme::AdjustBorderWidthByZoom(1.0f, style.EffectiveZoom());
+      ui::NativeTheme::GetInstanceForWeb()->AdjustBorderWidthByZoom(
+          1.0f, style.EffectiveZoom());
   int offset = info.offset;
   // Focus ring is dependent on whether the border is large enough to have an
   // inset outline. Use the smallest border edge for that test.
@@ -96,8 +95,7 @@ bool ComputeRightAnglePath(SkPath& path,
     rect.Outset(additional_outset);
     region.op(gfx::RectToSkIRect(rect), SkRegion::kUnion_Op);
   }
-  path = region.getBoundaryPath();
-  return !path.isEmpty();
+  return region.getBoundaryPath(&path);
 }
 
 using Line = OutlinePainter::Line;
@@ -181,8 +179,9 @@ SkPoint ShrinkCorner(const SkPoint& p1,
                          : p2 + SkVector::Make(inset, -inset);
 }
 
-SkPath ShrinkRightAnglePath(const SkPath& input, int inset) {
-  SkPathBuilder path;
+void ShrinkRightAnglePath(SkPath& path, int inset) {
+  SkPath input;
+  std::swap(input, path);
   IterateRightAnglePath(input, [&path, inset](const Vector<Line>& lines) {
     for (wtf_size_t i = 0; i < lines.size(); i++) {
       const SkPoint& prev_point =
@@ -197,8 +196,6 @@ SkPath ShrinkRightAnglePath(const SkPath& input, int inset) {
     }
     path.close();
   });
-
-  return path.detach();
 }
 
 FloatRoundedRect::Radii ComputeCornerRadii(
@@ -292,10 +289,11 @@ constexpr float kCornerConicWeight = 0.707106781187;  // 1/sqrt(2)
 // Create a rounded path from a right angle |path| by
 // - inserting arc segments for corners;
 // - adjusting length of the lines.
-SkPath AddCornerRadiiToPath(const SkPath& input,
-                            const FloatRoundedRect::Radii& convex_radii,
-                            const FloatRoundedRect::Radii& concave_radii) {
-  SkPathBuilder path;
+void AddCornerRadiiToPath(SkPath& path,
+                          const FloatRoundedRect::Radii& convex_radii,
+                          const FloatRoundedRect::Radii& concave_radii) {
+  SkPath input;
+  input.swap(path);
   IterateRightAnglePath(input, [&](const Vector<Line>& lines) {
     auto new_lines = lines;
     for (wtf_size_t i = 0; i < lines.size(); i++) {
@@ -317,8 +315,6 @@ SkPath AddCornerRadiiToPath(const SkPath& input,
     }
     path.close();
   });
-
-  return path.detach();
 }
 
 // Move |point| so that the length of the line to |other| will be extended by
@@ -356,13 +352,13 @@ class RoundedEdgePathIterator {
             is_new_contour_ = false;
             continue;
           }
-          edge_stroke_path = GenerateEdgeStrokePath(prev_arc_points_, points);
+          GenerateEdgeStrokePath(edge_stroke_path, prev_arc_points_, points);
           std::copy_n(points, kArcPointCount, prev_arc_points_);
           return edge_stroke_path;
         case SkPath::kClose_Verb:
           DCHECK(!is_new_contour_);
-          edge_stroke_path =
-              GenerateEdgeStrokePath(prev_arc_points_, first_arc_points_);
+          GenerateEdgeStrokePath(edge_stroke_path, prev_arc_points_,
+                                 first_arc_points_);
           is_new_contour_ = true;
           return edge_stroke_path;
         case SkPath::kDone_Verb:
@@ -382,11 +378,11 @@ class RoundedEdgePathIterator {
   //           |   Short extension after the ending arc (see code comment)
   // The edge will drawn with a clip to remove the first half of the starting
   // arc and the second half of the ending arc.
-  SkPath GenerateEdgeStrokePath(base::span<const SkPoint> starting_arc_points,
-                                base::span<const SkPoint> ending_arc_points) {
+  void GenerateEdgeStrokePath(SkPath& edge_stroke_path,
+                              base::span<const SkPoint> starting_arc_points,
+                              base::span<const SkPoint> ending_arc_points) {
     SkPoint line_start = starting_arc_points[2];
     SkPoint line_end = ending_arc_points[0];
-    SkPathBuilder edge_stroke_path;
     if (starting_arc_points[0] == line_start) {
       // No starting arc. Extend the line to fill the miter.
       ExtendLineAtEndpoint(line_start, ending_arc_points[1], center_inset_);
@@ -414,8 +410,6 @@ class RoundedEdgePathIterator {
       ExtendLineAtEndpoint(end, ending_arc_points[1], center_inset_);
       edge_stroke_path.lineTo(end);
     }
-
-    return edge_stroke_path.detach();
   }
 
   SkPath::Iter iter_;
@@ -452,8 +446,10 @@ class ComplexOutlinePainter {
     } else if (width_ == 1 && (outline_style_ == EBorderStyle::kRidge ||
                                outline_style_ == EBorderStyle::kGroove)) {
       outline_style_ = EBorderStyle::kSolid;
-      color_ = Color::FromColorMix(Color::ColorSpace::kSRGB, std::nullopt,
-                                   color_, color_.Dark(), 0.5f, 1.0f);
+      Color dark = color_.Dark();
+      color_ = Color(
+          (color_.Red() + dark.Red()) / 2, (color_.Green() + dark.Green()) / 2,
+          (color_.Blue() + dark.Blue()) / 2, color_.AlphaAsInteger());
     }
   }
 
@@ -468,21 +464,23 @@ class ComplexOutlinePainter {
                            outline_style_ != EBorderStyle::kDouble;
     if (use_alpha_layer) {
       context_.BeginLayer(color_.Alpha());
-      color_ = color_.MakeOpaque();
+      color_ = Color::FromRGB(color_.Red(), color_.Green(), color_.Blue());
     }
 
     SkPath outer_path = right_angle_outer_path_;
-    SkPath inner_path = ShrinkRightAnglePath(right_angle_outer_path_, width_);
+    SkPath inner_path = right_angle_outer_path_;
+    ShrinkRightAnglePath(inner_path, width_);
     if (is_rounded_) {
       auto inner_radii = ComputeRadii(0);
       auto outer_radii = ComputeRadii(width_);
-      outer_path = AddCornerRadiiToPath(outer_path, outer_radii, inner_radii);
-      inner_path = AddCornerRadiiToPath(inner_path, inner_radii, outer_radii);
+      AddCornerRadiiToPath(outer_path, outer_radii, inner_radii);
+      AddCornerRadiiToPath(inner_path, inner_radii, outer_radii);
     }
 
     GraphicsContextStateSaver saver(context_);
     context_.ClipPath(outer_path, kAntiAliased);
-    context_.ClipPath(MakeClipOutPath(inner_path), kAntiAliased);
+    MakeClipOutPath(inner_path);
+    context_.ClipPath(inner_path, kAntiAliased);
     context_.SetFillColor(color_);
 
     switch (outline_style_) {
@@ -518,23 +516,24 @@ class ComplexOutlinePainter {
 
  private:
   void PaintDoubleOutline() {
-    const int stroke_width = std::round(width_ / 3.0);
-    SkPath inner_third_path =
-        ShrinkRightAnglePath(right_angle_outer_path_, width_ - stroke_width);
-    SkPath outer_third_path =
-        ShrinkRightAnglePath(right_angle_outer_path_, stroke_width);
+    SkPath inner_third_path = right_angle_outer_path_;
+    SkPath outer_third_path = right_angle_outer_path_;
+    int stroke_width = std::round(width_ / 3.0);
+    ShrinkRightAnglePath(inner_third_path, width_ - stroke_width);
+    ShrinkRightAnglePath(outer_third_path, stroke_width);
     if (is_rounded_) {
       auto inner_third_radii = ComputeRadii(stroke_width);
       auto outer_third_radii = ComputeRadii(width_ - stroke_width);
-      inner_third_path = AddCornerRadiiToPath(
-          inner_third_path, inner_third_radii, outer_third_radii);
-      outer_third_path = AddCornerRadiiToPath(
-          outer_third_path, outer_third_radii, inner_third_radii);
+      AddCornerRadiiToPath(inner_third_path, inner_third_radii,
+                           outer_third_radii);
+      AddCornerRadiiToPath(outer_third_path, outer_third_radii,
+                           inner_third_radii);
     }
     AutoDarkMode auto_dark_mode(
         PaintAutoDarkMode(style_, DarkModeFilter::ElementRole::kBackground));
     context_.FillPath(inner_third_path, auto_dark_mode);
-    context_.ClipPath(MakeClipOutPath(outer_third_path), kAntiAliased);
+    MakeClipOutPath(outer_third_path);
+    context_.ClipPath(outer_third_path, kAntiAliased);
     context_.FillRect(gfx::SkRectToRectF(right_angle_outer_path_.getBounds()),
                       auto_dark_mode);
   }
@@ -642,7 +641,7 @@ class ComplexOutlinePainter {
         });
   }
 
-  SkPath MakeClipOutPath(const SkPath& input) const {
+  void MakeClipOutPath(SkPath& path) const {
     // Add a counter-clockwise rect around the path, so that with kWinding fill
     // type:
     // 1. the areas enclosed in clockwise boundaries become "out",
@@ -651,10 +650,8 @@ class ComplexOutlinePainter {
     // This is different from kInverseWinding or GraphicsContext::ClipOut()
     // in #3, which is important not to clip out the areas enclosed by crossing
     // edges produced when shrinking from the outer path.
-    DCHECK_EQ(input.getFillType(), SkPathFillType::kWinding);
-    return SkPathBuilder(input)
-        .addRect(right_angle_outer_path_.getBounds(), SkPathDirection::kCCW)
-        .detach();
+    DCHECK_EQ(path.getFillType(), SkPathFillType::kWinding);
+    path.addRect(right_angle_outer_path_.getBounds(), SkPathDirection::kCCW);
   }
 
   FloatRoundedRect::Radii ComputeRadii(int outset) const {
@@ -663,15 +660,14 @@ class ComplexOutlinePainter {
   }
 
   SkPath CenterPath(bool prefer_outer_half = false) const {
+    SkPath center_path = right_angle_outer_path_;
     // If |prefer_outer_half| and width_ is odd_, give the outer half 1 more
     // pixel than the inner half.
     int outset_from_inner = prefer_outer_half ? width_ / 2 : (width_ + 1) / 2;
-    SkPath center_path = ShrinkRightAnglePath(right_angle_outer_path_,
-                                              width_ - outset_from_inner);
+    ShrinkRightAnglePath(center_path, width_ - outset_from_inner);
     if (is_rounded_) {
       auto center_radii = ComputeRadii(outset_from_inner);
-      center_path =
-          AddCornerRadiiToPath(center_path, center_radii, center_radii);
+      AddCornerRadiiToPath(center_path, center_radii, center_radii);
     }
     return center_path;
   }
@@ -728,8 +724,7 @@ class ComplexOutlinePainter {
     int joint_offset = (width_ + 1) / 2;
     ExtendLineAtEndpoint(adjusted_line.start, adjusted_line.end, joint_offset);
     ExtendLineAtEndpoint(adjusted_line.end, adjusted_line.start, joint_offset);
-    BoxBorderPainter::DrawLineWithStyle(
-        context_,
+    context_.DrawLine(
         gfx::ToRoundedPoint(gfx::SkPointToPointF(adjusted_line.start)),
         gfx::ToRoundedPoint(gfx::SkPointToPointF(adjusted_line.end)),
         styled_stroke, auto_dark_mode);
@@ -757,7 +752,8 @@ FloatRoundedRect::Radii GetFocusRingCornerRadii(
     const PhysicalRect& reference_border_rect,
     const LayoutObject::OutlineInfo& info) {
   if (style.HasBorderRadius() &&
-      ((style.HasEffectiveAppearance() && style.HasBaseEffectiveAppearance()) ||
+      ((style.HasEffectiveAppearance() &&
+        style.EffectiveAppearance() == AppearanceValue::kBaseSelect) ||
        style.HasAuthorBorderRadius())) {
     auto radii = ComputeCornerRadii(style, reference_border_rect, info.offset);
     radii.SetMinimumRadius(DefaultFocusRingCornerRadius(style));
@@ -790,27 +786,27 @@ FloatRoundedRect::Radii GetFocusRingCornerRadii(
         break;
     }
     if (part) {
-      const float corner_radius =
+      float corner_radius =
           ui::NativeTheme::GetInstanceForWeb()->GetBorderRadiusForPart(
               part.value(), reference_border_rect.size.width,
               reference_border_rect.size.height);
-      return FloatRoundedRect::Radii(ui::NativeTheme::AdjustBorderRadiusByZoom(
-          part.value(), corner_radius, style.EffectiveZoom()));
+      corner_radius =
+          ui::NativeTheme::GetInstanceForWeb()->AdjustBorderRadiusByZoom(
+              part.value(), corner_radius, style.EffectiveZoom());
+      return FloatRoundedRect::Radii(corner_radius);
     }
   }
 
   return FloatRoundedRect::Radii(DefaultFocusRingCornerRadius(style));
 }
 
-void PaintSingleFocusRing(
-    GraphicsContext& context,
-    const Vector<gfx::Rect>& rects,
-    float width,
-    int offset,
-    const FloatRoundedRect::Radii& corner_radii,
-    const ContouredRect::CornerCurvature& corner_curvature,
-    const Color& color,
-    const AutoDarkMode& auto_dark_mode) {
+void PaintSingleFocusRing(GraphicsContext& context,
+                          const Vector<gfx::Rect>& rects,
+                          float width,
+                          int offset,
+                          const FloatRoundedRect::Radii& corner_radii,
+                          const Color& color,
+                          const AutoDarkMode& auto_dark_mode) {
   DCHECK(!rects.empty());
   SkPath path;
   if (!ComputeRightAnglePath(path, rects, offset, 0))
@@ -818,22 +814,9 @@ void PaintSingleFocusRing(
 
   SkRect rect;
   if (path.isRect(&rect)) {
-    if (corner_curvature.IsRound()) {
-      context.DrawFocusRingRect(
-          SkRRect(FloatRoundedRect(gfx::SkRectToRectF(rect), corner_radii)),
-          color, width, auto_dark_mode);
-    } else {
-      ContouredRect border_rect(
-          FloatRoundedRect(gfx::SkRectToRectF(rect), corner_radii),
-          corner_curvature);
-      ContouredRect contour(border_rect);
-      const auto outset = AdjustedOutlineOffset(rects[0], offset);
-      contour.OutsetWithCornerCorrection(gfx::OutsetsF::TLBR(
-          outset.top(), outset.left(), outset.bottom(), outset.right()));
-      contour.SetOriginRect(border_rect.AsRoundedRect());
-      context.DrawFocusRingPath(contour.GetPath().GetSkPath(), color, width, 0,
-                                auto_dark_mode);
-    }
+    context.DrawFocusRingRect(
+        SkRRect(FloatRoundedRect(gfx::SkRectToRectF(rect), corner_radii)),
+        color, width, auto_dark_mode);
     return;
   }
 
@@ -846,7 +829,7 @@ void PaintSingleFocusRing(
 
   // Bake non-uniform radii into the path, and draw the path with 0 corner
   // radius as the path already has rounded corners.
-  path = AddCornerRadiiToPath(path, corner_radii, corner_radii);
+  AddCornerRadiiToPath(path, corner_radii, corner_radii);
   context.DrawFocusRingPath(path, color, width, 0, auto_dark_mode);
 }
 
@@ -866,30 +849,17 @@ void PaintFocusRing(GraphicsContext& context,
   const float inner_ring_width = FocusRingInnerStrokeWidth(style);
   const int offset = FocusRingOffset(style, info);
 
-  const ContouredRect::CornerCurvature corner_curvature(
-      corner_radii.TopLeft().IsEmpty() ? ContouredRect::CornerCurvature::kRound
-                                       : style.CornerTopLeftShape().Exponent(),
-      corner_radii.TopRight().IsEmpty()
-          ? ContouredRect::CornerCurvature::kRound
-          : style.CornerTopRightShape().Exponent(),
-      corner_radii.BottomRight().IsEmpty()
-          ? ContouredRect::CornerCurvature::kRound
-          : style.CornerBottomRightShape().Exponent(),
-      corner_radii.BottomLeft().IsEmpty()
-          ? ContouredRect::CornerCurvature::kRound
-          : style.CornerBottomLeftShape().Exponent());
-
   Color outer_color =
       style.DarkColorScheme() ? Color(0x10, 0x10, 0x10) : Color::kWhite;
   PaintSingleFocusRing(context, rects, outer_ring_width,
                        offset + std::ceil(inner_ring_width), corner_radii,
-                       corner_curvature, outer_color, AutoDarkMode::Disabled());
+                       outer_color, AutoDarkMode::Disabled());
   // Draw the inner ring using |outer_ring_width| (which should be wider than
   // the additional offset of the outer ring) over the outer ring to ensure no
   // gaps or AA artifacts.
   DCHECK_GE(outer_ring_width, std::ceil(inner_ring_width));
   PaintSingleFocusRing(context, rects, outer_ring_width, offset, corner_radii,
-                       corner_curvature, inner_color, AutoDarkMode::Disabled());
+                       inner_color, AutoDarkMode::Disabled());
 }
 
 }  // anonymous namespace
@@ -900,16 +870,6 @@ void OutlinePainter::PaintOutlineRects(
     const Vector<PhysicalRect>& outline_rects,
     const LayoutObject::OutlineInfo& info,
     const ComputedStyle& style) {
-  PaintOutlineRects(paint_info, client, outline_rects, info, style, nullptr);
-}
-
-void OutlinePainter::PaintOutlineRects(
-    const PaintInfo& paint_info,
-    const DisplayItemClient& client,
-    const Vector<PhysicalRect>& outline_rects,
-    const LayoutObject::OutlineInfo& info,
-    const ComputedStyle& style,
-    const LayoutObject* layout_object) {
   DCHECK(style.HasOutline());
   DCHECK(!outline_rects.empty());
 
@@ -938,25 +898,6 @@ void OutlinePainter::PaintOutlineRects(
   DrawingRecorder recorder(paint_info.context, client, paint_info.phase,
                            visual_rect);
 
-  // Handle border-shape outline: if the element has a border-shape, the outline
-  // should follow the border-shape path instead of the rectangular outline.
-  if (style.HasBorderShape() && layout_object && !style.OutlineStyleIsAuto()) {
-    PhysicalRect border_rect = outline_rects[0];
-    std::optional<BorderShapeReferenceRects> shape_ref_rects =
-        ComputeBorderShapeReferenceRects(border_rect, style, *layout_object);
-    PhysicalRect outer_reference_rect =
-        shape_ref_rects ? shape_ref_rects->outer : border_rect;
-    // TODO(crbug.com/7531762): Border-shape outline painting here uses
-    // BorderShapePainter::PaintOutline which currently doesn't handle
-    // fragmented boxes. See bug for follow-up to support fragmentation and
-    // ensure the outline follows the border-shape across fragments.
-    if (BorderShapePainter::PaintOutline(paint_info.context, style,
-                                         outer_reference_rect, info.width,
-                                         info.offset)) {
-      return;
-    }
-  }
-
   if (style.OutlineStyleIsAuto()) {
     auto corner_radii = GetFocusRingCornerRadii(style, outline_rects[0], info);
     PaintFocusRing(paint_info.context, pixel_snapped_outline_rects, style,
@@ -969,8 +910,8 @@ void OutlinePainter::PaintOutlineRects(
         AdjustedOutlineOffset(*united_outline_rect, info.offset);
     BoxBorderPainter::PaintSingleRectOutline(
         paint_info.context, style, outline_rects[0], info.width,
-        PhysicalBoxStrut::FromInts(offset.top(), offset.right(),
-                                   offset.bottom(), offset.left()));
+        PhysicalBoxStrut(offset.top(), offset.right(), offset.bottom(),
+                         offset.left()));
     return;
   }
 

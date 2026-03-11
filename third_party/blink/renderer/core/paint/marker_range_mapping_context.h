@@ -8,7 +8,6 @@
 #include "third_party/blink/renderer/core/layout/inline/fragment_item.h"
 #include "third_party/blink/renderer/core/layout/inline/offset_mapping.h"
 #include "third_party/blink/renderer/core/layout/inline/text_offset_range.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -28,7 +27,7 @@ class CORE_EXPORT MarkerRangeMappingContext {
     STACK_ALLOCATED();
 
    public:
-    explicit DOMToTextContentOffsetMapper(const LayoutObject&);
+    explicit DOMToTextContentOffsetMapper(const Text& text_node);
 
     unsigned GetTextContentOffset(unsigned dom_offset) const;
 
@@ -38,7 +37,7 @@ class CORE_EXPORT MarkerRangeMappingContext {
 
    private:
     base::span<const OffsetMappingUnit> GetMappingUnits(
-        const LayoutObject& layout_object);
+        const LayoutObject* layout_object);
 
     // Find the mapping unit for `dom_offset`, starting from `begin`.
     base::span<const OffsetMappingUnit>::iterator FindUnit(
@@ -52,13 +51,9 @@ class CORE_EXPORT MarkerRangeMappingContext {
  public:
   MarkerRangeMappingContext() = delete;
 
-  MarkerRangeMappingContext(const Text& text_node,
-                            const LayoutObject& layout_object,
-                            const TextOffsetRange& fragment_dom_range)
-      : mapper_(DOMToTextContentOffsetMapper(
-            RuntimeEnabledFeatures::HighlightByLayoutObjectEnabled()
-                ? layout_object
-                : *text_node.GetLayoutObject())),
+  explicit MarkerRangeMappingContext(const Text& text_node,
+                                     const TextOffsetRange& fragment_dom_range)
+      : mapper_(DOMToTextContentOffsetMapper(text_node)),
         fragment_dom_range_(fragment_dom_range),
         text_length_(text_node.length()) {}
 

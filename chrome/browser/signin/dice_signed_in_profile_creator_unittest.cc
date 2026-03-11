@@ -8,6 +8,7 @@
 
 #include "base/barrier_closure.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
@@ -26,6 +27,7 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/identity_test_environment_profile_adaptor.h"
 #include "chrome/test/base/fake_profile_manager.h"
+#include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/signin/public/base/signin_pref_names.h"
@@ -56,9 +58,9 @@ void CreateCookies(
     GURL url(url_name.first);
     std::unique_ptr<net::CanonicalCookie> cookie =
         net::CanonicalCookie::CreateSanitizedCookie(
-            url, url_name.second, "A=" + url_name.second, url.GetHost(),
-            url.GetPath(), base::Time::Now(), base::Time::Max(),
-            base::Time::Now(), url.SchemeIsCryptographic(), false,
+            url, url_name.second, "A=" + url_name.second, url.host(),
+            url.path(), base::Time::Now(), base::Time::Max(), base::Time::Now(),
+            url.SchemeIsCryptographic(), false,
             net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT,
             std::nullopt, /*status=*/nullptr);
     cookie_manager->SetCanonicalCookie(
@@ -120,7 +122,8 @@ class DiceSignedInProfileCreatorTest
       public testing::WithParamInterface<std::tuple<bool, bool>>,
       public ProfileManagerObserver {
  public:
-  DiceSignedInProfileCreatorTest() {
+  DiceSignedInProfileCreatorTest()
+      : local_state_(TestingBrowserProcess::GetGlobal()) {
     scoped_feature_list_.InitWithFeatureState(
         profile_management::features::kThirdPartyProfileManagement,
         enable_third_party_management_feature());
@@ -137,6 +140,7 @@ class DiceSignedInProfileCreatorTest
         std::make_unique<IdentityTestEnvironmentProfileAdaptor>(profile());
     profile_manager()->AddObserver(this);
   }
+
 
   ~DiceSignedInProfileCreatorTest() override { DeleteProfiles(); }
 
@@ -260,7 +264,7 @@ class DiceSignedInProfileCreatorTest
     EXPECT_EQ(3u, cookies_new_profile.size());
 
     for (const auto& cookie : cookies_new_profile) {
-      EXPECT_TRUE(cookie.IsDomainMatch(url.GetHost()));
+      EXPECT_TRUE(cookie.IsDomainMatch(url.host()));
       EXPECT_TRUE(cookie.Name() == "oldgoogle0" ||
                   cookie.Name() == "validgoogle1" ||
                   cookie.Name() == "newgoogle1");
@@ -269,6 +273,7 @@ class DiceSignedInProfileCreatorTest
 
  private:
   content::BrowserTaskEnvironment task_environment_;
+  ScopedTestingLocalState local_state_;
   raw_ptr<UnittestProfileManager, DanglingUntriaged> profile_manager_ = nullptr;
   std::unique_ptr<IdentityTestEnvironmentProfileAdaptor>
       identity_test_env_profile_adaptor_;

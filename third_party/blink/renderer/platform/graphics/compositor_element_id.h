@@ -38,9 +38,10 @@ enum class CompositorElementIdNamespace {
   kVerticalScrollbar,
   kHorizontalScrollbar,
   kScrollCorner,
-  kViewTransitionScopeRoot,
+  kViewTransitionSubframeRoot,
   kViewTransitionElement,
   kElementCapture,
+  kPlaceElement,
   kDOMNodeId,
   // The following values are for internal usage only.
   kMax = kDOMNodeId,
@@ -85,24 +86,28 @@ CompositorElementIdNamespace PLATFORM_EXPORT
 // Maps a CompositorElementId in the kDOMNodeId namespace back to a DOMNodeId.
 DOMNodeId PLATFORM_EXPORT DOMNodeIdFromCompositorElementId(CompositorElementId);
 
+}  // namespace blink
+
+namespace WTF {
+
 template <>
-struct PLATFORM_EXPORT HashTraits<CompositorElementId>
-    : GenericHashTraits<CompositorElementId> {
-  static unsigned GetHash(const CompositorElementId& key) {
+struct PLATFORM_EXPORT HashTraits<blink::CompositorElementId>
+    : GenericHashTraits<blink::CompositorElementId> {
+  static unsigned GetHash(const blink::CompositorElementId& key) {
     // We define a new hash here rather than using `cc::ElementIdHash` since the
     // latter produces a `size_t` rather than the `unsigned` needed for
-    // `GenericHashTraits<T>::GetHash(const T&)`.
+    // `WTF::GenericHashTraits<T>::GetHash(const T&)`.
     return HashInt(key.GetInternalValue());
   }
   static constexpr bool kEmptyValueIsZero = true;
-  static constexpr CompositorElementId EmptyValue() {
-    return CompositorElementId();
+  static constexpr blink::CompositorElementId EmptyValue() {
+    return blink::CompositorElementId();
   }
-  static constexpr CompositorElementId DeletedValue() {
+  static constexpr blink::CompositorElementId DeletedValue() {
     return cc::ElementId::DeletedValue();
   }
 };
 
-}  // namespace blink
+}  // namespace WTF
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_COMPOSITOR_ELEMENT_ID_H_

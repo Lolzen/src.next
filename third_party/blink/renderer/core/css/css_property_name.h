@@ -49,6 +49,9 @@ class CORE_EXPORT CSSPropertyName {
   }
 
   bool operator==(const CSSPropertyName&) const;
+  bool operator!=(const CSSPropertyName& other) const {
+    return !(*this == other);
+  }
 
   CSSPropertyID Id() const {
     DCHECK(!IsEmptyValue() && !IsDeletedValue());
@@ -79,18 +82,24 @@ class CORE_EXPORT CSSPropertyName {
   AtomicString custom_property_name_;
 
   friend class CSSPropertyNameTest;
-  friend struct HashTraits<blink::CSSPropertyName>;
+  friend struct ::WTF::HashTraits<blink::CSSPropertyName>;
 };
 
+}  // namespace blink
+
+namespace WTF {
+
 template <>
-struct HashTraits<CSSPropertyName> : SimpleClassHashTraits<CSSPropertyName> {
-  static unsigned GetHash(const CSSPropertyName& name) {
+struct HashTraits<blink::CSSPropertyName>
+    : SimpleClassHashTraits<blink::CSSPropertyName> {
+  static unsigned GetHash(const blink::CSSPropertyName& name) {
     return name.GetHash();
   }
 
+  using CSSPropertyName = blink::CSSPropertyName;
   static const bool kEmptyValueIsZero = false;
   static void ConstructDeletedValue(CSSPropertyName& slot) {
-    new (base::NotNullTag::kNotNull, &slot)
+    new (NotNullTag::kNotNull, &slot)
         CSSPropertyName(CSSPropertyName::kDeletedValue);
   }
   static bool IsDeletedValue(const CSSPropertyName& value) {
@@ -99,12 +108,12 @@ struct HashTraits<CSSPropertyName> : SimpleClassHashTraits<CSSPropertyName> {
   static bool IsEmptyValue(const CSSPropertyName& value) {
     return value.IsEmptyValue();
   }
-  static CSSPropertyName EmptyValue() {
-    return CSSPropertyName(CSSPropertyName::kEmptyValue);
+  static blink::CSSPropertyName EmptyValue() {
+    return blink::CSSPropertyName(CSSPropertyName::kEmptyValue);
   }
 };
 
-}  // namespace blink
+}  // namespace WTF
 
 WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(blink::CSSPropertyName)
 

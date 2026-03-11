@@ -49,12 +49,19 @@ class HttpStreamPoolGroupTest : public TestWithTaskEnvironment {
                           /*disable_cert_network_fetches=*/false) {
     feature_list_.InitAndEnableFeature(features::kHappyEyeballsV3);
     session_deps_.ignore_ip_address_changes = false;
+    session_deps_.disable_idle_sockets_close_on_memory_pressure = false;
     InitializePool();
   }
 
  protected:
   void set_ignore_ip_address_changes(bool ignore_ip_address_changes) {
     session_deps_.ignore_ip_address_changes = ignore_ip_address_changes;
+  }
+
+  void set_disable_idle_sockets_close_on_memory_pressure(
+      bool disable_idle_sockets_close_on_memory_pressure) {
+    session_deps_.disable_idle_sockets_close_on_memory_pressure =
+        disable_idle_sockets_close_on_memory_pressure;
   }
 
   void set_enable_quic(bool enable_quic) {
@@ -397,6 +404,62 @@ TEST_F(HttpStreamPoolGroupTest, IPAddressChangeIgnored) {
   ASSERT_EQ(pool().TotalActiveStreamCount(), 1u);
 }
 
+TEST_F(HttpStreamPoolGroupTest, FlushIdleStreamsOnMemoryPressure) {
+  set_disable_idle_sockets_close_on_memory_pressure(false);
+  InitializePool();
+
+  {
+    Group& group = GetOrCreateTestGroup();
+    ASSERT_FALSE(group.GetIdleStreamSocket());
+
+    group.AddIdleStreamSocket(std::make_unique<FakeStreamSocket>());
+    ASSERT_EQ(group.IdleStreamSocketCount(), 1u);
+
+    // Idle sockets should be flushed on moderate memory pressure and `group`
+    // should be destroyed.
+    base::MemoryPressureListener::NotifyMemoryPressure(
+        base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE);
+    FastForwardUntilNoTasksRemain();
+    ASSERT_FALSE(GetTestGroup());
+  }
+
+  {
+    Group& group = GetOrCreateTestGroup();
+    group.AddIdleStreamSocket(std::make_unique<FakeStreamSocket>());
+    ASSERT_EQ(group.IdleStreamSocketCount(), 1u);
+
+    // Idle sockets should be flushed on critical memory pressure and `group`
+    // should be destroyed.
+    base::MemoryPressureListener::NotifyMemoryPressure(
+        base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL);
+    FastForwardUntilNoTasksRemain();
+    ASSERT_FALSE(GetTestGroup());
+  }
+}
+
+TEST_F(HttpStreamPoolGroupTest, MemoryPressureDisabled) {
+  set_disable_idle_sockets_close_on_memory_pressure(true);
+  InitializePool();
+
+  Group& group = GetOrCreateTestGroup();
+  ASSERT_FALSE(group.GetIdleStreamSocket());
+
+  group.AddIdleStreamSocket(std::make_unique<FakeStreamSocket>());
+  ASSERT_EQ(group.IdleStreamSocketCount(), 1u);
+
+  // Idle sockets should be not flushed on moderate memory pressure.
+  base::MemoryPressureListener::NotifyMemoryPressure(
+      base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE);
+  base::RunLoop().RunUntilIdle();
+  ASSERT_EQ(group.IdleStreamSocketCount(), 1u);
+
+  // Idle sockets should be not flushed on critical memory pressure.
+  base::MemoryPressureListener::NotifyMemoryPressure(
+      base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL);
+  base::RunLoop().RunUntilIdle();
+  ASSERT_EQ(group.IdleStreamSocketCount(), 1u);
+}
+
 TEST_F(HttpStreamPoolGroupTest, DestroySessionWhileStreamAlive) {
   std::unique_ptr<HttpStream> stream =
       GetOrCreateTestGroup().CreateTextBasedStream(
@@ -415,12 +478,44 @@ TEST_F(HttpStreamPoolGroupTest, EnableDisableQuic) {
   set_enable_quic(true);
   InitializePool();
   ASSERT_TRUE(pool().CanUseQuic(kHost, NetworkAnonymizationKey(),
+                                /*enable_ip_based_pooling=*/true,
                                 /*enable_alternative_services=*/true));
 
   set_enable_quic(false);
   InitializePool();
   ASSERT_FALSE(pool().CanUseQuic(kHost, NetworkAnonymizationKey(),
+                                 /*enable_ip_based_pooling=*/true,
                                  /*enable_alternative_services=*/true));
+}
+
+TEST_F(HttpStreamPoolGroupTest, ComparePausedJobSet) {
+  Group& group = GetOrCreateTestGroup();
+  group.EnsureAttemptManager();
+  group.attempt_manager_->SetIsFailingForTest(true);
+
+  std::unique_ptr<TestJobDelegate> delegate1 =
+      std::make_unique<TestJobDelegate>(group.stream_key());
+  delegate1->CreateAndStartJob(pool());
+
+  FastForwardBy(base::Milliseconds(10));
+
+  // Create two jobs at the same time.
+  std::unique_ptr<TestJobDelegate> delegate2 =
+      std::make_unique<TestJobDelegate>(group.stream_key());
+  delegate2->CreateAndStartJob(pool());
+
+  std::unique_ptr<TestJobDelegate> delegate3 =
+      std::make_unique<TestJobDelegate>(group.stream_key());
+  delegate3->CreateAndStartJob(pool());
+
+  ASSERT_EQ(group.PausedJobCount(), 3u);
+
+  // Ensure that the group is deleted after all delegates are destroyed.
+  delegate1.reset();
+  delegate2.reset();
+  delegate3.reset();
+  WaitForAttemptManagerComplete(*GetTestGroup());
+  ASSERT_FALSE(GetTestGroup());
 }
 
 }  // namespace net

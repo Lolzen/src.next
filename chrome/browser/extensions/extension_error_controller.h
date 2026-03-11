@@ -10,10 +10,7 @@
 #include "base/memory/raw_ptr.h"
 #include "chrome/browser/extensions/extension_error_ui.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_set.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace content {
 class BrowserContext;
@@ -41,7 +38,7 @@ class ExtensionErrorController : public KeyedService,
 
   void ShowErrorIfNeeded();
 
-  // Returns the instance for the given `browser_context`.
+  // Returns the instance for the given |browser_context|.
   static ExtensionErrorController* Get(
       content::BrowserContext* browser_context);
 

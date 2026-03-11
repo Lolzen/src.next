@@ -38,6 +38,7 @@
 #include "extensions/common/mojom/event_dispatcher.mojom.h"
 #include "extensions/common/mojom/event_router.mojom.h"
 #include "extensions/common/mojom/host_id.mojom.h"
+#include "ipc/ipc_sender.h"
 #include "mojo/public/cpp/bindings/associated_receiver_set.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
@@ -94,19 +95,10 @@ class EventRouter : public KeyedService,
 
   // The pref key for the list of event names for which an extension has
   // registered from its lazy background page.
-  static inline constexpr const char kRegisteredLazyEvents[] = "events";
+  static const char kRegisteredLazyEvents[];
   // The pref key for the list of event names for which an extension has
   // registered from its service worker.
-  static inline constexpr const char kRegisteredServiceWorkerEvents[] =
-      "serviceworkerevents";
-
-  // A dictionary of event names to lists of filters that this extension has
-  // registered from its lazy background page.
-  static inline constexpr const char kFilteredEvents[] = "filtered_events";
-  // Similar to `kFilteredEvents`, but applies to extension service worker
-  // events.
-  static inline constexpr const char kFilteredServiceWorkerEvents[] =
-      "filtered_service_worker_events";
+  static const char kRegisteredServiceWorkerEvents[];
 
   // Observers register interest in events with a particular name and are
   // notified when a listener is added or removed. Observers are matched by
@@ -133,7 +125,7 @@ class EventRouter : public KeyedService,
     virtual void OnNonExtensionEventDispatched(const std::string& event_name) {}
   };
 
-  // Gets the EventRouter for `browser_context`.
+  // Gets the EventRouter for |browser_context|.
   static EventRouter* Get(content::BrowserContext* browser_context);
 
   // Converts event names like "foo.onBar/123" into "foo.onBar". Event names
@@ -156,8 +148,14 @@ class EventRouter : public KeyedService,
                              const std::string& event_name,
                              int worker_thread_id,
                              int64_t service_worker_version_id,
-                             base::ListValue event_args,
+                             base::Value::List event_args,
                              mojom::EventFilteringInfoPtr info);
+
+  // Returns false when the event is scoped to a context and the listening
+  // extension does not have access to events from that context.
+  static bool CanDispatchEventToBrowserContext(content::BrowserContext* context,
+                                               const Extension* extension,
+                                               const Event& event);
 
   static void BindForRenderer(
       int process_id,
@@ -166,8 +164,8 @@ class EventRouter : public KeyedService,
   void SwapReceiverForTesting(int render_process_id,
                               mojom::EventRouter* new_impl);
 
-  // An EventRouter is shared between `browser_context` and its associated
-  // incognito context. `extension_prefs` may be NULL in tests.
+  // An EventRouter is shared between |browser_context| and its associated
+  // incognito context. |extension_prefs| may be NULL in tests.
   EventRouter(content::BrowserContext* browser_context,
               ExtensionPrefs* extension_prefs);
 
@@ -193,14 +191,14 @@ class EventRouter : public KeyedService,
   void AddFilteredListenerForMainThread(
       mojom::EventListenerOwnerPtr listener_owner,
       const std::string& name,
-      base::DictValue filter,
+      base::Value::Dict filter,
       bool add_lazy_listener) override;
 
   void AddFilteredListenerForServiceWorker(
       const ExtensionId& extension_id,
       const std::string& name,
       mojom::ServiceWorkerContextPtr service_worker_context,
-      base::DictValue filter,
+      base::Value::Dict filter,
       bool add_lazy_listener) override;
 
   void RemoveListenerForMainThread(
@@ -219,17 +217,17 @@ class EventRouter : public KeyedService,
   void RemoveFilteredListenerForMainThread(
       mojom::EventListenerOwnerPtr listener_owner,
       const std::string& name,
-      base::DictValue filter,
+      base::Value::Dict filter,
       bool remove_lazy_listener) override;
 
   void RemoveFilteredListenerForServiceWorker(
       const ExtensionId& extension_id,
       const std::string& name,
       mojom::ServiceWorkerContextPtr service_worker_context,
-      base::DictValue filter,
+      base::Value::Dict filter,
       bool remove_lazy_listener) override;
 
-  // Removes an extension as an event listener for `event_name`.
+  // Removes an extension as an event listener for |event_name|.
   //
   // Note that multiple extensions can share a process due to process
   // collapsing. Also, a single extension can have 2 processes if it is a split
@@ -240,7 +238,7 @@ class EventRouter : public KeyedService,
   void RemoveServiceWorkerEventListener(mojom::EventListenerPtr event_listener,
                                         content::RenderProcessHost* process);
 
-  // Add or remove a URL as an event listener for `event_name`.
+  // Add or remove a URL as an event listener for |event_name|.
   void AddEventListenerForURL(const std::string& event_name,
                               content::RenderProcessHost* process,
                               const GURL& listener_url);
@@ -251,8 +249,8 @@ class EventRouter : public KeyedService,
   EventListenerMap& listeners() { return listeners_; }
 
   // Registers an observer to be notified when an event listener for
-  // `event_name` is added or removed. There can currently be multiple
-  // observers for each distinct `event_name`.
+  // |event_name| is added or removed. There can currently be multiple
+  // observers for each distinct |event_name|.
   void RegisterObserver(Observer* observer, const std::string& event_name);
 
   // Unregisters an observer from all events.
@@ -262,23 +260,23 @@ class EventRouter : public KeyedService,
   void AddObserverForTesting(TestObserver* observer);
   void RemoveObserverForTesting(TestObserver* observer);
 
-  // If `add_lazy_listener` is true also add the lazy version of this listener.
+  // If |add_lazy_listener| is true also add the lazy version of this listener.
   void AddFilteredEventListener(
       const std::string& event_name,
       content::RenderProcessHost* process,
       mojom::EventListenerOwnerPtr listener_owner,
       mojom::ServiceWorkerContext* service_worker_context,
-      const base::DictValue& filter,
+      const base::Value::Dict& filter,
       bool add_lazy_listener);
 
-  // If `remove_lazy_listener` is true also remove the lazy version of this
+  // If |remove_lazy_listener| is true also remove the lazy version of this
   // listener.
   void RemoveFilteredEventListener(
       const std::string& event_name,
       content::RenderProcessHost* process,
       mojom::EventListenerOwnerPtr listener_owner,
       mojom::ServiceWorkerContext* service_worker_context,
-      const base::DictValue& filter,
+      const base::Value::Dict& filter,
       bool remove_lazy_listener);
 
   // Returns true if there is at least one listener for the given event.
@@ -305,7 +303,7 @@ class EventRouter : public KeyedService,
   virtual void DispatchEventToURL(const GURL& owner_url,
                                   std::unique_ptr<Event> event);
 
-  // Dispatches `event` to the given extension as if the extension has a lazy
+  // Dispatches |event| to the given extension as if the extension has a lazy
   // listener for it. NOTE: This should be used rarely, for dispatching events
   // to extensions that haven't had a chance to add their own listeners yet, eg:
   // newly installed extensions.
@@ -323,10 +321,10 @@ class EventRouter : public KeyedService,
   // Clears registered events for testing purposes.
   void ClearRegisteredEventsForTest(const ExtensionId& extension_id);
 
-  // Reports UMA for an event dispatched to `extension` with histogram value
-  // `histogram_value`. Must be called on the UI thread.
+  // Reports UMA for an event dispatched to |extension| with histogram value
+  // |histogram_value|. Must be called on the UI thread.
   //
-  // `did_enqueue` should be true if the event was queued waiting for a process
+  // |did_enqueue| should be true if the event was queued waiting for a process
   // to start, like an event page.
   void ReportEvent(events::HistogramValue histogram_value,
                    const Extension* extension,
@@ -339,7 +337,7 @@ class EventRouter : public KeyedService,
   EventAckData* event_ack_data() { return &event_ack_data_; }
 
   // Returns true if there is a registered lazy/non-lazy listener for the given
-  // `event_name`.
+  // |event_name|.
   bool HasLazyEventListenerForTesting(const std::string& event_name);
   bool HasNonLazyEventListenerForTesting(const std::string& event_name);
 
@@ -361,13 +359,9 @@ class EventRouter : public KeyedService,
   friend class UpdateInstallGateTest;
   friend class DownloadExtensionTest;
   friend class SystemInfoAPITest;
-  FRIEND_TEST_ALL_PREFIXES(EventRouterTest,
-                           AddLazyListenerForUnloadedExtension);
   FRIEND_TEST_ALL_PREFIXES(EventRouterTest, MultipleEventRouterObserver);
   FRIEND_TEST_ALL_PREFIXES(EventRouterDispatchTest, TestDispatch);
   FRIEND_TEST_ALL_PREFIXES(EventRouterDispatchTest, TestDispatchCallback);
-  FRIEND_TEST_ALL_PREFIXES(EventRouterFilterTest,
-                           AddFilteredLazyListenerForUnloadedExtension);
   FRIEND_TEST_ALL_PREFIXES(
       DeveloperPrivateApiUnitTest,
       UpdateHostAccess_UnrequestedHostsDispatchUpdateEvents);
@@ -377,7 +371,7 @@ class EventRouter : public KeyedService,
                            OnUserSiteSettingsChanged);
   FRIEND_TEST_ALL_PREFIXES(DeveloperPrivateApiUnitTest,
                            ExtensionUpdatedEventOnPinnedActionsChange);
-  FRIEND_TEST_ALL_PREFIXES(DeveloperPrivateApiUnitTest,
+  FRIEND_TEST_ALL_PREFIXES(DeveloperPrivateApiAllowlistUnitTest,
                            ExtensionUpdatedEventOnAllowlistWarningChange);
   FRIEND_TEST_ALL_PREFIXES(DeveloperPrivateApiWithPermittedSitesUnitTest,
                            OnUserSiteSettingsChanged);
@@ -408,18 +402,26 @@ class EventRouter : public KeyedService,
       const mojom::HostID& host_id,
       int event_id,
       const std::string& event_name,
-      base::ListValue event_args,
+      base::Value::List event_args,
       UserGestureState user_gesture,
       extensions::mojom::EventFilteringInfoPtr info,
       mojom::EventDispatcher::DispatchEventCallback callback);
 
   void ObserveProcess(content::RenderProcessHost* process);
-  content::RenderProcessHost* GetRenderProcessHostForCurrentReceiver() const;
+  content::RenderProcessHost* GetRenderProcessHostForCurrentReceiver();
 
-  // Returns true if the extension with the given ID is enabled.
-  bool IsExtensionEnabled(const ExtensionId& extension_id) const;
+  // Gets off-the-record browser context if
+  //     - The extension has incognito mode set to "split"
+  //     - The on-the-record browser context has an off-the-record context
+  //       attached
+  content::BrowserContext* GetIncognitoContextIfAccessible(
+      const ExtensionId& extension_id);
 
-  // Adds an extension as an event listener for `event_name`.
+  // Returns the off-the-record context for the BrowserContext associated
+  // with this EventRouter, if any.
+  content::BrowserContext* GetIncognitoContext();
+
+  // Adds an extension as an event listener for |event_name|.
   //
   // Note that multiple extensions can share a process due to process
   // collapsing. Also, a single extension can have 2 processes if it is a split
@@ -454,39 +456,40 @@ class EventRouter : public KeyedService,
   void RemoveLazyEventListenerImpl(std::unique_ptr<EventListener> listener,
                                    RegisteredEventType type);
 
-  // Shared by all event dispatch methods. If `restrict_to_extension_id`  and
-  // `restrict_to_url` is empty, the event is broadcast.  An event that just
+  // Shared by all event dispatch methods. If |restrict_to_extension_id|  and
+  // |restrict_to_url| is empty, the event is broadcast.  An event that just
   // came off the pending list may not be delayed again.
   void DispatchEventImpl(const std::string& restrict_to_extension_id,
                          const GURL& restrict_to_url,
                          std::unique_ptr<Event> event);
 
   // Dispatches the event to the specified extension or URL running in
-  // `process`.
+  // |process|.
   void DispatchEventToProcess(const ExtensionId& extension_id,
                               const GURL& listener_url,
                               content::RenderProcessHost* process,
                               int64_t service_worker_version_id,
                               int worker_thread_id,
-                              std::unique_ptr<Event> event,
+                              const Event& event,
+                              const base::Value::Dict* listener_filter,
                               bool did_enqueue);
 
   // Adds a filter to an event.
   void AddFilterToEvent(const std::string& event_name,
                         const ExtensionId& extension_id,
                         bool is_for_service_worker,
-                        const base::DictValue& filter);
+                        const base::Value::Dict& filter);
 
   // Removes a filter from an event.
   void RemoveFilterFromEvent(const std::string& event_name,
                              const ExtensionId& extension_id,
                              bool is_for_service_worker,
-                             const base::DictValue& filter);
+                             const base::Value::Dict& filter);
 
   // Returns the dictionary of event filters that the given extension has
   // registered.
-  const base::DictValue* GetFilteredEvents(const ExtensionId& extension_id,
-                                           RegisteredEventType type);
+  const base::Value::Dict* GetFilteredEvents(const ExtensionId& extension_id,
+                                             RegisteredEventType type);
 
   // Track the dispatched events that have not yet sent an ACK from the
   // renderer.
@@ -497,7 +500,6 @@ class EventRouter : public KeyedService,
                                const std::string& event_name,
                                base::TimeTicks dispatch_start_time,
                                int64_t service_worker_version_id,
-                               int worker_thread_id,
                                EventDispatchSource dispatch_source,
                                bool lazy_background_active_on_dispatch,
                                events::HistogramValue histogram_value);
@@ -515,7 +517,7 @@ class EventRouter : public KeyedService,
   void RouteDispatchEvent(
       content::RenderProcessHost* rph,
       mojom::DispatchEventParamsPtr params,
-      base::ListValue event_args,
+      base::Value::List event_args,
       mojom::EventDispatcher::DispatchEventCallback callback);
 
   void DispatchPendingEvent(
@@ -537,7 +539,7 @@ class EventRouter : public KeyedService,
 
   const raw_ptr<content::BrowserContext> browser_context_;
 
-  // The ExtensionPrefs associated with `browser_context_`. May be NULL in
+  // The ExtensionPrefs associated with |browser_context_|. May be NULL in
   // tests.
   const raw_ptr<ExtensionPrefs> extension_prefs_;
 
@@ -575,14 +577,12 @@ class EventRouter : public KeyedService,
   base::WeakPtrFactory<EventRouter> weak_factory_{this};
 };
 
-// Describes the process an `Event` was dispatched to.
+// Describes the process an |Event| was dispatched to.
 struct EventTarget {
   ExtensionId extension_id;
   int render_process_id;
   int64_t service_worker_version_id;
   int worker_thread_id;
-
-  auto operator<=>(const EventTarget& rhs) const = default;
 };
 
 struct Event {
@@ -592,17 +592,16 @@ struct Event {
       content::BrowserContext*,
       mojom::ContextType,
       const Extension*,
-      const base::DictValue*,
-      std::optional<base::ListValue>& event_args_out,
-      mojom::EventFilteringInfoPtr& event_filtering_info_out,
-      bool* dispatch_separate_event_out)>;
+      const base::Value::Dict*,
+      std::optional<base::Value::List>& event_args_out,
+      mojom::EventFilteringInfoPtr& event_filtering_info_out)>;
 
   using DidDispatchCallback = base::RepeatingCallback<void(const EventTarget&)>;
 
   using CannotDispatchCallback = base::RepeatingCallback<void()>;
 
   // The identifier for the event, for histograms. In most cases this
-  // correlates 1:1 with `event_name`, in some cases events will generate
+  // correlates 1:1 with |event_name|, in some cases events will generate
   // their own names, but they cannot generate their own identifier.
   const events::HistogramValue histogram_value;
 
@@ -610,16 +609,12 @@ struct Event {
   const std::string event_name;
 
   // Arguments to send to the event listener.
-  base::ListValue event_args;
+  base::Value::List event_args;
 
   // If non-null, then the event will not be sent to other BrowserContexts
   // unless the extension has permission (e.g. incognito tab update -> normal
   // tab only works if extension is allowed incognito access).
-  // NOTE: The Event may outlive the BrowserContext during shutdown.
-  // That's not an issue because this pointer is only used for comparison and is
-  // not dereferenced.
-  const raw_ptr<content::BrowserContext, DisableDanglingPtrDetection>
-      restrict_to_browser_context;
+  const raw_ptr<content::BrowserContext> restrict_to_browser_context;
 
   // If present, then the event will only be sent to this context type.
   const std::optional<mojom::ContextType> restrict_to_context_type;
@@ -647,17 +642,9 @@ struct Event {
   // If specified, this is called before dispatching an event to each
   // extension. This is guaranteed to be called synchronously with
   // DispatchEvent, so callers don't need to worry about lifetime.
-  // The args `event_args_out`, `event_filtering_info_out` allows caller to
+  // The args |event_args_out|, |event_filtering_info_out| allows caller to
   // provide modified `Event::event_args`, `Event::filter_info` depending on the
   // extension and profile.
-  //
-  // If supplied, the `dispatch_separate_event_out` arg controls de-duplication
-  // for this event. If set to true (the default unless explicitly changed), the
-  // event is dispatched at most once per unique active listener context. If
-  // false, the event is dispatched to all matching listeners, even within the
-  // same context. NOTE: If `will_dispatch_callback` modifies event args or
-  // filter info based on the specific listener filter, this should be set to
-  // false.
   //
   // NOTE: the Extension argument to this may be NULL because it's possible for
   // this event to be dispatched to non-extension processes, like WebUI.
@@ -672,25 +659,25 @@ struct Event {
   // at the time the lazy context is spun back up.
   CannotDispatchCallback cannot_dispatch_callback;
 
-  // TODO(lazyboy): This sets `restrict_to_browser_context` to nullptr, this
+  // TODO(lazyboy): This sets |restrict_to_browser_context| to nullptr, this
   // will dispatch the event to unrelated profiles, not just incognito. Audit
   // and limit usages of this constructor and introduce "include incognito"
   // option to a constructor version for clients that need to dispatch events to
   // related browser_contexts. See https://crbug.com/726022.
   Event(events::HistogramValue histogram_value,
         std::string_view event_name,
-        base::ListValue event_args);
+        base::Value::List event_args);
 
   Event(events::HistogramValue histogram_value,
         std::string_view event_name,
-        base::ListValue event_args,
+        base::Value::List event_args,
         content::BrowserContext* restrict_to_browser_context,
         std::optional<mojom::ContextType> restrict_to_context_type =
             std::nullopt);
 
   Event(events::HistogramValue histogram_value,
         std::string_view event_name,
-        base::ListValue event_args,
+        base::Value::List event_args,
         content::BrowserContext* restrict_to_browser_context,
         std::optional<mojom::ContextType> restrict_to_context_type,
         const GURL& event_url,
@@ -700,13 +687,6 @@ struct Event {
         base::TimeTicks dispatch_start_time = base::TimeTicks{});
 
   ~Event();
-
-  // Creates a copy of this event, selectively choosing whether to also copy the
-  // event arguments and filtering info.
-  // If `copy_event_args` or `copy_filter_info` are false, the respective
-  // members will be initialized to empty values.
-  std::unique_ptr<Event> CopySelectively(bool copy_event_args,
-                                         bool copy_filter_info) const;
 
   // Makes a deep copy of this instance.
   std::unique_ptr<Event> DeepCopy() const;
@@ -718,29 +698,22 @@ struct EventListenerInfo {
   EventListenerInfo(const std::string& event_name,
                     const ExtensionId& extension_id,
                     const GURL& listener_url,
-                    const base::DictValue* filter,
                     content::BrowserContext* browser_context);
 
   EventListenerInfo(const std::string& event_name,
                     const ExtensionId& extension_id,
                     const GURL& listener_url,
-                    const base::DictValue* filter,
                     content::BrowserContext* browser_context,
-                    int render_process_id,
                     int worker_thread_id,
                     int64_t service_worker_version_id,
                     bool is_lazy);
-
-  ~EventListenerInfo();
 
   // The event name including any sub-event, e.g. "runtime.onStartup" or
   // "webRequest.onCompleted/123".
   const std::string event_name;
   const ExtensionId extension_id;
   const GURL listener_url;
-  const std::optional<base::DictValue> filter;
   const raw_ptr<content::BrowserContext> browser_context;
-  const int render_process_id;
   const int worker_thread_id;
   const int64_t service_worker_version_id;
   const bool is_lazy;

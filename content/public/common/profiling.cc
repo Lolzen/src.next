@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "content/public/common/profiling.h"
 
 #include "base/at_exit.h"
@@ -9,6 +14,7 @@
 #include "base/command_line.h"
 #include "base/debug/profiler.h"
 #include "base/functional/bind.h"
+#include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
@@ -101,10 +107,8 @@ class ProfilingThreadControl {
   base::Lock lock_;
 };
 
-ProfilingThreadControl& GetProfilingThreadControl() {
-  static base::NoDestructor<ProfilingThreadControl> flush_thread_control;
-  return *flush_thread_control;
-}
+base::LazyInstance<ProfilingThreadControl>::Leaky g_flush_thread_control =
+    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -133,12 +137,12 @@ void Profiling::Start() {
   // Schedule profile data flushing for single process because it doesn't
   // get written out correctly on exit.
   if (flush)
-    GetProfilingThreadControl().Start();
+    g_flush_thread_control.Get().Start();
 }
 
 // static
 void Profiling::Stop() {
-  GetProfilingThreadControl().Stop();
+  g_flush_thread_control.Get().Stop();
   base::debug::StopProfiling();
 }
 

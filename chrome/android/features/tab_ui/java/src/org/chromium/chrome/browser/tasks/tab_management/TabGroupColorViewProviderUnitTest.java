@@ -44,7 +44,6 @@ import org.chromium.components.collaboration.ServiceStatus;
 import org.chromium.components.data_sharing.DataSharingService;
 import org.chromium.components.data_sharing.DataSharingUIDelegate;
 import org.chromium.components.data_sharing.SharedGroupTestHelper;
-import org.chromium.components.tab_group_sync.EitherId.EitherGroupId;
 import org.chromium.components.tab_group_sync.LocalTabGroupId;
 import org.chromium.components.tab_group_sync.SavedTabGroup;
 import org.chromium.components.tab_group_sync.TabGroupSyncService;
@@ -92,7 +91,7 @@ public class TabGroupColorViewProviderUnitTest {
         mRegularColorViewProvider =
                 new TabGroupColorViewProvider(
                         activity,
-                        EitherGroupId.createLocalId(new LocalTabGroupId(REGULAR_TAB_GROUP_ID)),
+                        REGULAR_TAB_GROUP_ID,
                         /* isIncognito= */ false,
                         TabGroupColorId.RED,
                         mTabGroupSyncService,
@@ -104,7 +103,7 @@ public class TabGroupColorViewProviderUnitTest {
         mIncognitoColorViewProvider =
                 new TabGroupColorViewProvider(
                         activity,
-                        EitherGroupId.createLocalId(new LocalTabGroupId(INCOGNITO_TAB_GROUP_ID)),
+                        INCOGNITO_TAB_GROUP_ID,
                         /* isIncognito= */ true,
                         TabGroupColorId.BLUE,
                         /* tabGroupSyncService= */ null,
@@ -123,18 +122,11 @@ public class TabGroupColorViewProviderUnitTest {
 
     @Test
     public void testSetAndGetTabGroupId() {
-        assertEquals(
-                REGULAR_TAB_GROUP_ID,
-                mRegularColorViewProvider.getTabGroupIdForTesting().getLocalId().tabGroupId);
-        assertEquals(
-                INCOGNITO_TAB_GROUP_ID,
-                mIncognitoColorViewProvider.getTabGroupIdForTesting().getLocalId().tabGroupId);
+        assertEquals(REGULAR_TAB_GROUP_ID, mRegularColorViewProvider.getTabGroupIdForTesting());
+        assertEquals(INCOGNITO_TAB_GROUP_ID, mIncognitoColorViewProvider.getTabGroupIdForTesting());
 
-        mRegularColorViewProvider.setTabGroupId(
-                EitherGroupId.createLocalId(new LocalTabGroupId(OTHER_TAB_GROUP_ID)));
-        assertEquals(
-                OTHER_TAB_GROUP_ID,
-                mRegularColorViewProvider.getTabGroupIdForTesting().getLocalId().tabGroupId);
+        mRegularColorViewProvider.setTabGroupId(OTHER_TAB_GROUP_ID);
+        assertEquals(OTHER_TAB_GROUP_ID, mRegularColorViewProvider.getTabGroupIdForTesting());
     }
 
     @Test
@@ -197,8 +189,7 @@ public class TabGroupColorViewProviderUnitTest {
 
         verifyColorViewCollaboration(TabGroupColorId.CYAN);
 
-        mRegularColorViewProvider.setTabGroupId(
-                EitherGroupId.createLocalId(new LocalTabGroupId(OTHER_TAB_GROUP_ID)));
+        mRegularColorViewProvider.setTabGroupId(OTHER_TAB_GROUP_ID);
         assertFalse(mRegularColorViewProvider.hasCollaborationId());
 
         // Verify the view is back to the unshared state.
@@ -211,8 +202,7 @@ public class TabGroupColorViewProviderUnitTest {
 
     @Test
     public void testColorView_NotSharedToSharedIdChange() {
-        mRegularColorViewProvider.setTabGroupId(
-                EitherGroupId.createLocalId(new LocalTabGroupId(OTHER_TAB_GROUP_ID)));
+        mRegularColorViewProvider.setTabGroupId(OTHER_TAB_GROUP_ID);
 
         verifyColorView(
                 mRegularColorViewProvider,
@@ -223,8 +213,7 @@ public class TabGroupColorViewProviderUnitTest {
         createCollaboration();
         assertFalse(mRegularColorViewProvider.hasCollaborationId());
 
-        mRegularColorViewProvider.setTabGroupId(
-                EitherGroupId.createLocalId(new LocalTabGroupId(REGULAR_TAB_GROUP_ID)));
+        mRegularColorViewProvider.setTabGroupId(REGULAR_TAB_GROUP_ID);
         assertTrue(mRegularColorViewProvider.hasCollaborationId());
 
         verifyColorViewCollaboration(TabGroupColorId.CYAN);

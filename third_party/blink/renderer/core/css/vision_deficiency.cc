@@ -6,7 +6,6 @@
 
 #include "base/notreached.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
-#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_view.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
@@ -15,10 +14,11 @@ namespace blink {
 namespace {
 
 AtomicString CreateFilterDataUrl(const char* piece) {
-  return AtomicString(StrCat(
-      {"data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\"><filter "
-       "id=\"f\">",
-       piece, "</filter></svg>#f"}));
+  // TODO(mathias): Remove `color-interpolation-filters` attribute once
+  // crbug.com/335066 is fixed. See crbug.com/1270748.
+  return "data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\">"
+         "<filter id=\"f\" color-interpolation-filters=\"linearRGB\">" +
+         StringView(piece) + "</filter></svg>#f";
 }
 
 }  // namespace

@@ -36,9 +36,7 @@ import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
 import org.chromium.base.ContextUtils;
-import org.chromium.base.supplier.ObservableSuppliers;
 import org.chromium.base.test.BaseRobolectricTestRunner;
-import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider.ControlsPosition;
 import org.chromium.chrome.browser.omnibox.suggestions.groupseparator.GroupSeparatorProcessor;
 import org.chromium.chrome.browser.omnibox.suggestions.header.HeaderProcessor;
 import org.chromium.components.omnibox.AutocompleteInput;
@@ -57,15 +55,16 @@ import java.util.List;
 /** Tests for {@link DropdownItemViewInfoListBuilder}. */
 @RunWith(BaseRobolectricTestRunner.class)
 public class DropdownItemViewInfoListBuilderUnitTest {
-    private final Context mContext = ContextUtils.getApplicationContext();
+    private Context mContext = ContextUtils.getApplicationContext();
 
     public @Rule MockitoRule mockitoRule = MockitoJUnit.rule();
     private @Spy HeaderProcessor mMockHeaderProcessor = new HeaderProcessor(mContext);
 
+    private @Mock AutocompleteController mAutocompleteController;
     private @Mock SuggestionProcessor mMockSuggestionProcessor;
     private @Mock AutocompleteInput mInput;
 
-    private final GroupSeparatorProcessor mGroupSeparatorProcessor =
+    private GroupSeparatorProcessor mGroupSeparatorProcessor =
             new GroupSeparatorProcessor(mContext);
     DropdownItemViewInfoListBuilder mBuilder;
 
@@ -75,11 +74,7 @@ public class DropdownItemViewInfoListBuilderUnitTest {
                 .thenAnswer((mock) -> new PropertyModel(SuggestionCommonProperties.ALL_KEYS));
         when(mMockSuggestionProcessor.getViewTypeId()).thenReturn(OmniboxSuggestionUiType.DEFAULT);
 
-        mBuilder =
-                new DropdownItemViewInfoListBuilder(
-                        () -> null,
-                        (url) -> false,
-                        ObservableSuppliers.createNonNull(ControlsPosition.TOP));
+        mBuilder = new DropdownItemViewInfoListBuilder(() -> null, (url) -> false);
         mBuilder.registerSuggestionProcessor(mMockSuggestionProcessor);
         mBuilder.setGroupSeparatorProcessorForTest(mGroupSeparatorProcessor);
         mBuilder.setHeaderProcessorForTest(mMockHeaderProcessor);

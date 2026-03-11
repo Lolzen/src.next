@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
 
 #include "chrome/browser/ui/browser_window_state.h"
 
@@ -46,6 +50,9 @@ bool ParseCommaSeparatedIntegers(const std::string& str,
 std::string GetWindowName(const Browser* browser) {
   switch (browser->type()) {
     case Browser::TYPE_NORMAL:
+#if BUILDFLAG(IS_CHROMEOS)
+    case Browser::TYPE_CUSTOM_TAB:
+#endif
       return prefs::kBrowserWindowPlacement;
     case Browser::TYPE_POPUP:
     case Browser::TYPE_PICTURE_IN_PICTURE:
@@ -58,7 +65,7 @@ std::string GetWindowName(const Browser* browser) {
   }
 }
 
-base::DictValue& GetWindowPlacementDictionaryReadWrite(
+base::Value::Dict& GetWindowPlacementDictionaryReadWrite(
     const std::string& window_name,
     PrefService* prefs,
     std::unique_ptr<ScopedDictPrefUpdate>& scoped_update) {
@@ -77,17 +84,17 @@ base::DictValue& GetWindowPlacementDictionaryReadWrite(
   // on window name.
   scoped_update =
       std::make_unique<ScopedDictPrefUpdate>(prefs, prefs::kAppWindowPlacement);
-  base::DictValue* this_app_dict =
+  base::Value::Dict* this_app_dict =
       (*scoped_update)->FindDictByDottedPath(window_name);
   if (this_app_dict) {
     return *this_app_dict;
   }
   return (*scoped_update)
-      ->SetByDottedPath(window_name, base::DictValue())
+      ->SetByDottedPath(window_name, base::Value::Dict())
       ->GetDict();
 }
 
-const base::DictValue* GetWindowPlacementDictionaryReadOnly(
+const base::Value::Dict* GetWindowPlacementDictionaryReadOnly(
     const std::string& window_name,
     PrefService* prefs) {
   DCHECK(!window_name.empty());
@@ -95,7 +102,7 @@ const base::DictValue* GetWindowPlacementDictionaryReadOnly(
     return &prefs->GetDict(window_name);
   }
 
-  const base::DictValue& app_windows =
+  const base::Value::Dict& app_windows =
       prefs->GetDict(prefs::kAppWindowPlacement);
   return app_windows.FindDict(window_name);
 }

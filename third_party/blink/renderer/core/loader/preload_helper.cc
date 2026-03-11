@@ -4,13 +4,9 @@
 
 #include "third_party/blink/renderer/core/loader/preload_helper.h"
 
-#include <utility>
-
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/rand_util.h"
 #include "base/timer/elapsed_timer.h"
-#include "services/metrics/public/cpp/ukm_builders.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -48,7 +44,6 @@
 #include "third_party/blink/renderer/core/loader/resource/link_dictionary_resource.h"
 #include "third_party/blink/renderer/core/loader/resource/link_prefetch_resource.h"
 #include "third_party/blink/renderer/core/loader/resource/script_resource.h"
-#include "third_party/blink/renderer/core/loader/shared_dictionary_hint_type.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/viewport_description.h"
 #include "third_party/blink/renderer/core/scheduler/scripted_idle_task_controller.h"
@@ -64,8 +59,6 @@
 #include "third_party/blink/renderer/platform/loader/link_header.h"
 #include "third_party/blink/renderer/platform/loader/subresource_integrity.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
 namespace blink {
 
@@ -192,12 +185,7 @@ bool IsValidButUnsupportedAsAttribute(const String& as) {
          as == "video" || as == "worker" || as == "xslt";
 }
 
-bool IsNetworkHintAllowed(PreloadHelper::LoadLinksFromHeaderMode mode,
-                          bool is_header_on_subresource) {
-  if (is_header_on_subresource &&
-      blink::features::kRestrictLinkHeaderOnSubresourceNetworkHint.Get()) {
-    return false;
-  }
+bool IsNetworkHintAllowed(PreloadHelper::LoadLinksFromHeaderMode mode) {
   switch (mode) {
     case PreloadHelper::LoadLinksFromHeaderMode::kDocumentBeforeCommit:
       return true;
@@ -217,12 +205,7 @@ bool IsNetworkHintAllowed(PreloadHelper::LoadLinksFromHeaderMode mode,
 }
 
 bool IsResourceLoadAllowed(PreloadHelper::LoadLinksFromHeaderMode mode,
-                           bool is_viewport_dependent,
-                           bool is_header_on_subresource) {
-  if (is_header_on_subresource &&
-      blink::features::kRestrictLinkHeaderOnSubresourceResourceLoad.Get()) {
-    return false;
-  }
+                           bool is_viewport_dependent) {
   switch (mode) {
     case PreloadHelper::LoadLinksFromHeaderMode::kDocumentBeforeCommit:
       return false;
@@ -242,13 +225,7 @@ bool IsResourceLoadAllowed(PreloadHelper::LoadLinksFromHeaderMode mode,
 }
 
 bool IsCompressionDictionaryLoadAllowed(
-    PreloadHelper::LoadLinksFromHeaderMode mode,
-    bool is_header_on_subresource) {
-  if (is_header_on_subresource &&
-      blink::features::kRestrictLinkHeaderOnSubresourceCompressionDictionary
-          .Get()) {
-    return false;
-  }
+    PreloadHelper::LoadLinksFromHeaderMode mode) {
   // Document header can trigger dictionary load after the page load completes.
   // Subresources header can trigger dictionary load if it is not from the
   // memory cache.
@@ -287,26 +264,6 @@ bool IsSubresourceLoad(PreloadHelper::LoadLinksFromHeaderMode mode) {
   }
 }
 
-PreloadHelper::OriginStatusOnSubresource GetOriginStatus(bool from_same_origin,
-                                                         bool to_same_origin) {
-  using OriginStatusOnSubresource = PreloadHelper::OriginStatusOnSubresource;
-  if (from_same_origin) {
-    if (to_same_origin) {
-      return OriginStatusOnSubresource::kFromSameOriginToSameOrigin;
-    } else {
-      return OriginStatusOnSubresource::kFromSameOriginToCrossOrigin;
-    }
-  } else {
-    if (to_same_origin) {
-      return OriginStatusOnSubresource::kFromCrossOriginToSameOrigin;
-    } else {
-      return OriginStatusOnSubresource::kFromCrossOriginToCrossOrigin;
-    }
-  }
-}
-
-constexpr double kUkmSamplingRate = 0.0025;
-
 }  // namespace
 
 void PreloadHelper::DnsPrefetchIfNeeded(
@@ -332,7 +289,7 @@ void PreloadHelper::DnsPrefetchIfNeeded(
             MakeGarbageCollected<ConsoleMessage>(
                 mojom::blink::ConsoleMessageSource::kOther,
                 mojom::blink::ConsoleMessageLevel::kVerbose,
-                StrCat({"DNS prefetch triggered for ", params.href.Host()})),
+                String("DNS prefetch triggered for " + params.href.Host())),
             document, frame);
       }
       WebPrescientNetworking* web_prescient_networking =
@@ -363,17 +320,18 @@ void PreloadHelper::PreconnectIfNeeded(
           MakeGarbageCollected<ConsoleMessage>(
               mojom::blink::ConsoleMessageSource::kOther,
               mojom::blink::ConsoleMessageLevel::kVerbose,
-              StrCat({"Preconnect triggered for ", params.href.GetString()})),
+              String("Preconnect triggered for ") + params.href.GetString()),
           document, frame);
       if (params.cross_origin != kCrossOriginAttributeNotSet) {
         SendMessageToConsoleForPossiblyNullDocument(
             MakeGarbageCollected<ConsoleMessage>(
                 mojom::blink::ConsoleMessageSource::kOther,
                 mojom::blink::ConsoleMessageLevel::kVerbose,
-                StrCat({"Preconnect CORS setting is ",
+                String("Preconnect CORS setting is ") +
+                    String(
                         (params.cross_origin == kCrossOriginAttributeAnonymous)
                             ? "anonymous"
-                            : "use-credentials"})),
+                            : "use-credentials")),
             document, frame);
       }
     }
@@ -551,8 +509,7 @@ void PreloadHelper::PreloadIfNeeded(
   link_fetch_params.SetContentSecurityPolicyNonce(params.nonce);
   Settings* settings = document.GetSettings();
   if (settings && settings->GetLogPreload()) {
-    String message =
-        StrCat({"Preload triggered for ", url.Host(), url.GetPath()});
+    String message = "Preload triggered for " + url.Host() + url.GetPath();
     String fetch_priority_message;
     if (!params.fetch_priority_hint.empty()) {
       mojom::blink::FetchPriorityHint hint =
@@ -574,7 +531,7 @@ void PreloadHelper::PreloadIfNeeded(
     document.AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kOther,
         mojom::blink::ConsoleMessageLevel::kVerbose,
-        StrCat({message, fetch_priority_message})));
+        message + fetch_priority_message));
   }
   link_fetch_params.SetLinkPreload(true);
   link_fetch_params.SetRenderBlockingBehavior(
@@ -628,65 +585,30 @@ void PreloadHelper::ModulePreloadIfNeeded(
 
   // Step 2. "Let destination be the current state of the as attribute (a
   // destination), or "script" if it is in no state." [spec text]
-  // Step 3. "If destination is not "style", "json", or script-like, then queue
-  // a task on the networking task source to fire an event named error at the
-  // link element, and return." [spec text] Currently we only support
-  // as="script". The `ModulePreloadStyleJson` feature flag enables as="style"
-  // and as="json". More module types such as "text" and "image" may be
-  // supported in the future.
-  const bool allow_style_and_json =
-      RuntimeEnabledFeatures::ModulePreloadStyleJsonEnabled();
-  ModuleType module_type = ModuleType::kInvalid;
-  if (params.as.empty() || params.as == "script") {
-    module_type = ModuleType::kJavaScriptOrWasm;
-  } else if (allow_style_and_json && params.as == "style") {
-    UseCounter::Count(document, WebFeature::kLinkRelModulePreloadStyle);
-    module_type = ModuleType::kCSS;
-  } else if (allow_style_and_json && params.as == "json") {
-    module_type = ModuleType::kJSON;
-  } else {
+  // Step 3. "If destination is not script-like, then queue a task on the
+  // networking task source to fire an event named error at the link element,
+  // and return." [spec text]
+  // Currently we only support as="script".
+  if (!params.as.empty() && params.as != "script") {
     document.AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kOther,
         mojom::blink::ConsoleMessageLevel::kWarning,
-        StrCat({"<link rel=modulepreload> has an invalid `as` value ",
-                params.as})));
+        String("<link rel=modulepreload> has an invalid `as` value " +
+               params.as)));
     // This triggers the same logic as Step 11 asynchronously, which will fire
     // the error event.
     if (client) {
       modulator->TaskRunner()->PostTask(
-          FROM_HERE, BindOnce(&SingleModuleClient::NotifyModuleLoadFinished,
-                              WrapPersistent(client), nullptr,
-                              ModuleImportPhase::kEvaluation));
+          FROM_HERE,
+          WTF::BindOnce(&SingleModuleClient::NotifyModuleLoadFinished,
+                        WrapPersistent(client), nullptr));
     }
     return;
   }
-  CHECK_NE(module_type, ModuleType::kInvalid);
   mojom::blink::RequestContextType context_type =
-      mojom::blink::RequestContextType::UNSPECIFIED;
+      mojom::blink::RequestContextType::SCRIPT;
   network::mojom::RequestDestination destination =
-      network::mojom::RequestDestination::kEmpty;
-
-  switch (module_type) {
-    case ModuleType::kJavaScriptOrWasm:
-      context_type = mojom::blink::RequestContextType::SCRIPT;
-      destination = network::mojom::RequestDestination::kScript;
-      break;
-    case ModuleType::kCSS:
-      CHECK(allow_style_and_json);
-      context_type = mojom::blink::RequestContextType::STYLE;
-      destination = network::mojom::RequestDestination::kStyle;
-      break;
-    case ModuleType::kJSON:
-      CHECK(allow_style_and_json);
-      context_type = mojom::blink::RequestContextType::JSON;
-      destination = network::mojom::RequestDestination::kJson;
-      break;
-    default:
-      NOTREACHED();
-  }
-
-  CHECK_NE(context_type, mojom::blink::RequestContextType::UNSPECIFIED);
-  CHECK_NE(destination, network::mojom::RequestDestination::kEmpty);
+      network::mojom::RequestDestination::kScript;
 
   // Step 4. "Parse the URL given by the href attribute, relative to the
   // element's node document. If that fails, then return. Otherwise, let url be
@@ -696,8 +618,8 @@ void PreloadHelper::ModulePreloadIfNeeded(
     document.AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kOther,
         mojom::blink::ConsoleMessageLevel::kWarning,
-        StrCat({"<link rel=modulepreload> has an invalid `href` value ",
-                params.href.GetString()})));
+        "<link rel=modulepreload> has an invalid `href` value " +
+            params.href.GetString()));
     return;
   }
 
@@ -747,16 +669,13 @@ void PreloadHelper::ModulePreloadIfNeeded(
   // metadata is "not-parser-inserted", credentials mode is credentials mode,
   // and referrer policy is referrer policy." [spec text]
   ModuleScriptFetchRequest request(
-      params.href, module_type, context_type, destination,
+      params.href, ModuleType::kJavaScriptOrWasm, context_type, destination,
       ScriptFetchOptions(params.nonce, integrity_metadata, integrity_value,
                          kNotParserInserted, credentials_mode,
                          params.referrer_policy,
                          mojom::blink::FetchPriorityHint::kAuto,
                          RenderBlockingBehavior::kNonBlocking),
-      RuntimeEnabledFeatures::ModulePreloadReferrerEnabled()
-          ? Referrer::ClientReferrerString()
-          : Referrer::NoReferrer(),
-      TextPosition::MinimumPosition(), ModuleImportPhase::kEvaluation);
+      Referrer::NoReferrer(), TextPosition::MinimumPosition());
 
   // Step 13. "Fetch a modulepreload module script graph given url, destination,
   // settings object, and options. Wait until the algorithm asynchronously
@@ -774,8 +693,8 @@ void PreloadHelper::ModulePreloadIfNeeded(
     document.AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kOther,
         mojom::blink::ConsoleMessageLevel::kVerbose,
-        StrCat({"Module preload triggered for ", params.href.Host(),
-                params.href.GetPath()})));
+        "Module preload triggered for " + params.href.Host() +
+            params.href.GetPath()));
   }
 
   // Asynchronously continue processing after
@@ -836,6 +755,13 @@ void PreloadHelper::PrefetchIfNeeded(const LinkLoadParameters& params,
   resource_request.SetFetchPriorityHint(
       GetFetchPriorityAttributeValue(params.fetch_priority_hint));
 
+  if (base::FeatureList::IsEnabled(features::kPrefetchPrivacyChanges)) {
+    resource_request.SetRedirectMode(network::mojom::RedirectMode::kError);
+    resource_request.SetReferrerPolicy(network::mojom::ReferrerPolicy::kNever);
+    // TODO(domfarolino): Implement more privacy-preserving prefetch changes.
+    // See crbug.com/988956.
+  }
+
   ResourceLoaderOptions options(
       document.GetExecutionContext()->GetCurrentWorld());
   options.initiator_info.name = fetch_initiator_type_names::kLink;
@@ -864,61 +790,29 @@ void PreloadHelper::LoadLinksFromHeader(
     const base::UnguessableToken* recursive_prefetch_token) {
   if (header_value.empty())
     return;
-
-  base::UmaHistogramEnumeration("Blink.LinkHeader.LoadLinksFromHeaderMode",
-                                mode);
-
-  const bool is_subresource_load = IsSubresourceLoad(mode);
-  const bool from_same_origin =
-      document ? document->GetExecutionContext()
-                     ->GetSecurityOrigin()
-                     ->IsSameOriginWith(SecurityOrigin::Create(base_url).get())
-               : false;
-
   LinkHeaderSet header_set(header_value);
   for (auto& header : header_set) {
     if (!header.Valid() || header.Url().empty() || header.Rel().empty()) {
       continue;
     }
-    bool is_network_hint_allowed =
-        IsNetworkHintAllowed(mode, is_subresource_load);
-    bool is_resource_load_allowed = IsResourceLoadAllowed(
-        mode, header.IsViewportDependent(), is_subresource_load);
+    bool is_network_hint_allowed = IsNetworkHintAllowed(mode);
+    bool is_resource_load_allowed =
+        IsResourceLoadAllowed(mode, header.IsViewportDependent());
     bool is_compression_dictionary_load_allowed =
-        IsCompressionDictionaryLoadAllowed(mode, is_subresource_load);
+        IsCompressionDictionaryLoadAllowed(mode);
     if (!is_network_hint_allowed && !is_resource_load_allowed &&
         !is_compression_dictionary_load_allowed) {
-      // Skip this `header`; it won't initiate any types of preloading.
       continue;
     }
 
     LinkLoadParameters params(header, base_url);
     bool change_rel_to_prefetch = false;
 
-    // Record UKM by the rate of `kUkmSamplingRate` to avoid UKM infra's
-    // automatic downsampling.
-    if (is_subresource_load && base::RandDouble() < kUkmSamplingRate) {
-      CHECK(document);
-      bool to_same_origin =
-          document->GetExecutionContext()
-              ->GetSecurityOrigin()
-              ->IsSameOriginWith(SecurityOrigin::Create(params.href).get());
-      const OriginStatusOnSubresource origin_status =
-          GetOriginStatus(from_same_origin, to_same_origin);
-      ukm::builders::Blink_Preloading_ByLinkHeader(document->UkmSourceID())
-          .SetOriginStatusOnSubresource(std::to_underlying(origin_status))
-          .Record(document->UkmRecorder());
-    }
-    if (is_subresource_load && !from_same_origin &&
-        blink::features::kRestrictLinkHeaderOnSubresourceCrossOrigin.Get()) {
-      continue;
-    }
-
     // For security purposes, set `referrerpolicy: "no-referrer"` in link loads
     // from subresources. See https://crbug.com/415810136 for details.
     if (base::FeatureList::IsEnabled(
             blink::features::kNoReferrerForPreloadFromSubresource)) {
-      if (is_subresource_load) {
+      if (IsSubresourceLoad(mode)) {
         params.referrer_policy = network::mojom::ReferrerPolicy::kNever;
       }
     }
@@ -1007,10 +901,6 @@ void PreloadHelper::LoadLinksFromHeader(
                               pending_preload);
       }
       if (is_compression_dictionary_load_allowed) {
-        if (params.rel.IsCompressionDictionary()) {
-          base::UmaHistogramEnumeration("Blink.SharedDictionary.Hint.Discovery",
-                                        SharedDictionaryHintType::kHttpHeader);
-        }
         FetchCompressionDictionaryIfNeeded(params, *document, pending_preload);
       }
     }
@@ -1027,6 +917,11 @@ void PreloadHelper::FetchCompressionDictionaryIfNeeded(
     const LinkLoadParameters& params,
     Document& document,
     PendingLinkPreload* pending_preload) {
+  if (!CompressionDictionaryTransportFullyEnabled(
+          document.GetExecutionContext())) {
+    return;
+  }
+
   if (!document.Loader() || document.Loader()->Archive()) {
     return;
   }

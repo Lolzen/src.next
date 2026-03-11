@@ -5,11 +5,11 @@
 #ifndef BASE_STATE_TRANSITIONS_H_
 #define BASE_STATE_TRANSITIONS_H_
 
-#include <algorithm>
 #include <vector>
 
 #include "base/check_op.h"
-#include "base/containers/span.h"
+#include "base/containers/contains.h"
+#include "base/no_destructor.h"
 
 namespace base {
 
@@ -72,19 +72,19 @@ struct StateTransitions {
       : state_transitions(std::move(state_transitions)) {}
 
   // Returns a list of states that are valid to transition to from |source|.
-  span<const State> GetValidTransitions(const State& source) const
-      LIFETIME_BOUND {
+  const std::vector<State>& GetValidTransitions(const State& source) const {
     for (const StateTransition& state_transition : state_transitions) {
       if (state_transition.source == source) {
         return state_transition.destinations;
       }
     }
-    return span<const State>();
+    static const base::NoDestructor<std::vector<State>> no_transitions;
+    return *no_transitions;
   }
 
   // Tests whether transitioning from |source| to |destination| is valid.
   bool IsTransitionValid(const State& source, const State& destination) const {
-    return std::ranges::contains(GetValidTransitions(source), destination);
+    return base::Contains(GetValidTransitions(source), destination);
   }
 
   const std::vector<StateTransition> state_transitions;

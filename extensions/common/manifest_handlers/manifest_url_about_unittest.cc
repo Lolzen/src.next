@@ -27,7 +27,7 @@ TEST_F(AboutPageManifestTest, AboutPageInSharedModules) {
       // Forbid absolute URLs.
       Testcase("shared_module_about_absolute.json",
                errors::kInvalidAboutPageExpectRelativePath)};
-  RunTestcases(testcases, ExpectType::kError);
+  RunTestcases(testcases, EXPECT_TYPE_ERROR);
 }
 
 }  // namespace extensions

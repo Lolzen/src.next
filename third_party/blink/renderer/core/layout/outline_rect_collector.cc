@@ -12,38 +12,25 @@
 
 namespace blink {
 
-void UnionOutlineRectCollector::AddRect(const PhysicalRect& r) {
-  if (rect_) {
-    rect_->UniteEvenIfEmpty(r);
-  } else {
-    rect_ = r;
-  }
-}
-
 void UnionOutlineRectCollector::Combine(OutlineRectCollector* collector,
                                         const LayoutObject& descendant,
                                         const LayoutBoxModelObject* ancestor,
                                         const PhysicalOffset& post_offset) {
   CHECK_EQ(collector->GetType(), Type::kUnion);
-  if (collector->IsEmpty()) {
-    return;
-  }
-  PhysicalRect rect = descendant.LocalToAncestorRect(
-      static_cast<UnionOutlineRectCollector*>(collector)->Rect(), ancestor);
-  rect.offset += post_offset;
-  AddRect(rect);
+  VectorOf<PhysicalRect> rects{
+      static_cast<UnionOutlineRectCollector*>(collector)->Rect()};
+  descendant.LocalToAncestorRects(rects, ancestor, PhysicalOffset(),
+                                  post_offset);
+  rect_.Unite(UnionRect(rects));
 }
 
 void UnionOutlineRectCollector::Combine(
     OutlineRectCollector* collector,
     const PhysicalOffset& additional_offset) {
   CHECK_EQ(collector->GetType(), Type::kUnion);
-  if (collector->IsEmpty()) {
-    return;
-  }
   auto rect = static_cast<UnionOutlineRectCollector*>(collector)->Rect();
   rect.offset += additional_offset;
-  AddRect(rect);
+  rect_.Unite(rect);
 }
 
 void VectorOutlineRectCollector::Combine(OutlineRectCollector* collector,
@@ -53,11 +40,9 @@ void VectorOutlineRectCollector::Combine(OutlineRectCollector* collector,
   CHECK_EQ(collector->GetType(), Type::kVector);
   VectorOf<PhysicalRect> rects =
       static_cast<VectorOutlineRectCollector*>(collector)->TakeRects();
-  for (const auto& r : rects) {
-    PhysicalRect rect = descendant.LocalToAncestorRect(r, ancestor);
-    rect.offset += post_offset;
-    rects_.push_back(rect);
-  }
+  descendant.LocalToAncestorRects(rects, ancestor, PhysicalOffset(),
+                                  post_offset);
+  rects_.AppendVector(rects);
 }
 
 void VectorOutlineRectCollector::Combine(

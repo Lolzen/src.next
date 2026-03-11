@@ -28,7 +28,6 @@ const char kHistogramBakedInName[] = "popular_baked_in";
 const char kHistogramAllowlistName[] = "allowlist";
 const char kHistogramHomepageName[] = "homepage";
 const char kHistogramCustomLinksName[] = "custom_links";
-const char kHistogramEnterpriseShortcutsName[] = "enterprise_shortcuts";
 
 // Suffixes for the various icon types.
 const char kTileTypeSuffixIconColor[] = "IconsColor";
@@ -49,8 +48,6 @@ std::string GetSourceHistogramName(TileSource source) {
       return kHistogramHomepageName;
     case TileSource::CUSTOM_LINKS:
       return kHistogramCustomLinksName;
-    case TileSource::ENTERPRISE_SHORTCUTS:
-      return kHistogramEnterpriseShortcutsName;
   }
   NOTREACHED();
 }
@@ -74,12 +71,6 @@ const char* GetTileTypeSuffix(TileVisualType type) {
 
 void RecordPageImpression(int number_of_tiles) {
   base::UmaHistogramSparse("NewTabPage.NumberOfTiles", number_of_tiles);
-}
-
-void RecordNumberOfCustomTilesOnFirstNtp(int number_of_custom_tiles) {
-  base::UmaHistogramSparse(
-      "NewTabPage.MostVisited.NumberOfCustomTilesOnFirstNtp",
-      number_of_custom_tiles);
 }
 
 void RecordTileImpression(const NTPTileImpression& impression) {
@@ -158,7 +149,8 @@ void RecordTileClick(const NTPTileImpression& impression) {
   }
 }
 
-void RecordsMigratedDefaultAppDeleted(const TileType& most_visited_app_type) {
+void RecordsMigratedDefaultAppDeleted(
+    const DeletedTileType& most_visited_app_type) {
   base::UmaHistogramEnumeration("NewTabPage.MostVisitedMigratedDefaultAppType",
                                 most_visited_app_type);
 }

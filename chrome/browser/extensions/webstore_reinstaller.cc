@@ -12,9 +12,6 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/buildflags/buildflags.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 

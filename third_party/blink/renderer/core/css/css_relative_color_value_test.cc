@@ -13,6 +13,9 @@
 namespace blink {
 
 TEST(CSSRelativeColorValueTest, Equals) {
+  ScopedCSSRelativeColorSupportsCurrentcolorForTest scoped_feature_for_test(
+      true);
+
   const CSSParserContext* context = MakeGarbageCollected<CSSParserContext>(
       kHTMLStandardMode, SecureContextMode::kInsecureContext);
 
@@ -31,6 +34,9 @@ TEST(CSSRelativeColorValueTest, Equals) {
 }
 
 TEST(CSSRelativeColorValueTest, CustomCSSText) {
+  ScopedCSSRelativeColorSupportsCurrentcolorForTest scoped_feature_for_test(
+      true);
+
   const CSSParserContext* context = MakeGarbageCollected<CSSParserContext>(
       kHTMLStandardMode, SecureContextMode::kInsecureContext);
 

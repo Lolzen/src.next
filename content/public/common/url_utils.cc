@@ -22,22 +22,14 @@
 
 namespace content {
 
-namespace {
-
-bool IsWebUIScheme(std::string_view scheme) {
-  return scheme == content::kChromeUIScheme ||
-         scheme == content::kChromeUIUntrustedScheme ||
-         scheme == content::kChromeDevToolsScheme;
-}
-
-}  // namespace
-
 bool HasWebUIScheme(const GURL& url) {
-  return IsWebUIScheme(url.scheme());
+  return HasWebUIOrigin(url::Origin::Create(url));
 }
 
 bool HasWebUIOrigin(const url::Origin& origin) {
-  return IsWebUIScheme(origin.scheme());
+  return origin.scheme() == content::kChromeUIScheme ||
+         origin.scheme() == content::kChromeUIUntrustedScheme ||
+         origin.scheme() == content::kChromeDevToolsScheme;
 }
 
 bool IsSavableURL(const GURL& url) {
@@ -94,9 +86,8 @@ bool IsSafeRedirectTarget(const GURL& from_url, const GURL& to_url) {
       });
   if (HasWebUIScheme(to_url))
     return false;
-  if (!kUnsafeSchemes.contains(to_url.scheme())) {
+  if (!kUnsafeSchemes.contains(to_url.scheme_piece()))
     return true;
-  }
   if (from_url.is_empty())
     return false;
   if (from_url.SchemeIsFile() && to_url.SchemeIsFile())

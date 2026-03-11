@@ -13,7 +13,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -44,18 +43,15 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
-import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowLooper;
 
 import org.chromium.base.Callback;
 import org.chromium.base.CallbackUtils;
 import org.chromium.base.Token;
-import org.chromium.base.supplier.MonotonicObservableSupplier;
-import org.chromium.base.supplier.NonNullObservableSupplier;
-import org.chromium.base.supplier.ObservableSuppliers;
+import org.chromium.base.supplier.ObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplierImpl;
 import org.chromium.base.supplier.OneshotSupplierImpl;
-import org.chromium.base.supplier.SettableMonotonicObservableSupplier;
-import org.chromium.base.supplier.SettableNonNullObservableSupplier;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.base.test.util.Features.DisableFeatures;
 import org.chromium.base.test.util.Features.EnableFeatures;
@@ -69,18 +65,14 @@ import org.chromium.chrome.browser.hub.FullButtonData;
 import org.chromium.chrome.browser.hub.HubContainerView;
 import org.chromium.chrome.browser.hub.HubLayoutAnimationListener;
 import org.chromium.chrome.browser.hub.HubLayoutAnimationType;
-import org.chromium.chrome.browser.hub.HubUtils;
 import org.chromium.chrome.browser.hub.LoadHint;
 import org.chromium.chrome.browser.hub.PaneHubController;
 import org.chromium.chrome.browser.hub.PaneId;
-import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
-import org.chromium.chrome.browser.preferences.Pref;
 import org.chromium.chrome.browser.price_tracking.PriceTrackingFeatures;
 import org.chromium.chrome.browser.price_tracking.PriceTrackingUtilities;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.profiles.ProfileProvider;
 import org.chromium.chrome.browser.tab.Tab;
-import org.chromium.chrome.browser.tab.TabArchiveSettings;
 import org.chromium.chrome.browser.tab.TabSelectionType;
 import org.chromium.chrome.browser.tab_group_sync.TabGroupSyncServiceFactory;
 import org.chromium.chrome.browser.tab_ui.RecyclerViewPosition;
@@ -89,30 +81,23 @@ import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilterObserver;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilterObserver.DidRemoveTabGroupReason;
 import org.chromium.chrome.browser.tasks.tab_management.TabListCoordinator.TabListMode;
-import org.chromium.chrome.browser.tasks.tab_management.archived_tabs_auto_delete_promo.ArchivedTabsAutoDeletePromoManager;
-import org.chromium.chrome.browser.tasks.tab_management.archived_tabs_auto_delete_promo.ArchivedTabsAutoDeletePromoSheetContent;
 import org.chromium.chrome.browser.toolbar.TabSwitcherDrawable;
 import org.chromium.chrome.browser.ui.edge_to_edge.EdgeToEdgeController;
 import org.chromium.chrome.browser.user_education.IphCommand;
 import org.chromium.chrome.browser.user_education.UserEducationHelper;
 import org.chromium.chrome.test.util.browser.tabmodel.MockTabModel;
-import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.browser_ui.widget.MenuOrKeyboardActionController.MenuOrKeyboardActionHandler;
 import org.chromium.components.browser_ui.widget.gesture.BackPressHandler.BackPressResult;
 import org.chromium.components.feature_engagement.FeatureConstants;
 import org.chromium.components.feature_engagement.Tracker;
-import org.chromium.components.prefs.PrefService;
 import org.chromium.components.tab_group_sync.LocalTabGroupId;
 import org.chromium.components.tab_group_sync.SavedTabGroup;
 import org.chromium.components.tab_group_sync.TabGroupSyncService;
-import org.chromium.components.user_prefs.UserPrefs;
-import org.chromium.components.user_prefs.UserPrefsJni;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.DoubleConsumer;
-import java.util.function.Supplier;
 
 /** Unit tests for {@link TabSwitcherPane} and {@link TabSwitcherPaneBase}. */
 @RunWith(BaseRobolectricTestRunner.class)
@@ -151,8 +136,6 @@ public class TabSwitcherPaneUnitTest {
     @Rule public MockitoRule mMockitoRule = MockitoJUnit.rule();
 
     @Mock private SharedPreferences mSharedPreferences;
-    @Mock private PrefService mPrefService;
-    @Mock private UserPrefs.Natives mUserPrefsJniMock;
     @Mock private Profile mProfile;
     @Mock private ProfileProvider mProfileProvider;
     @Mock private TabSwitcherPaneCoordinatorFactory mTabSwitcherPaneCoordinatorFactory;
@@ -169,19 +152,19 @@ public class TabSwitcherPaneUnitTest {
     @Mock private UserEducationHelper mUserEducationHelper;
     @Mock private View mAnchorView;
     @Mock private TabGroupSyncService mTabGroupSyncService;
+    @Mock private Runnable mRunnable;
     @Mock private Tab mTab;
     @Mock private SavedTabGroup mSavedTabGroup;
     @Mock private TabGroupCreationUiDelegate mUiFlow;
     @Mock private Tracker mTracker;
-    @Mock private BottomSheetController mMockBottomSheetController;
-    @Mock private TabArchiveSettings mMockTabArchiveSettings;
 
-    @Captor private ArgumentCaptor<NonNullObservableSupplier<Boolean>> mIsAnimatingSupplierCaptor;
+    @Captor private ArgumentCaptor<ObservableSupplier<Boolean>> mIsAnimatingSupplierCaptor;
 
     @Captor
     private ArgumentCaptor<OnSharedPreferenceChangeListener> mPriceAnnotationsPrefListenerCaptor;
 
     @Captor private ArgumentCaptor<Callback<Integer>> mOnTabClickedCallbackCaptor;
+    @Captor private ArgumentCaptor<Callback<Boolean>> mHairlineVisibilityCallbackCaptor;
     @Captor private ArgumentCaptor<TabGroupModelFilterObserver> mTabGroupModelFilterObserverCaptor;
 
     private final OneshotSupplierImpl<ProfileProvider> mProfileProviderSupplier =
@@ -189,19 +172,15 @@ public class TabSwitcherPaneUnitTest {
     private final Token mToken = new Token(1L, 2L);
 
     private Context mContext;
-    private final SettableNonNullObservableSupplier<Boolean> mHandleBackPressChangeSupplier =
-            ObservableSuppliers.createNonNull(false);
-    private final SettableNonNullObservableSupplier<Boolean> mIsScrollingSupplier =
-            ObservableSuppliers.createNonNull(false);
-    private final OneshotSupplierImpl<MonotonicObservableSupplier<Boolean>>
-            mIsScrollingSupplierSupplier = new OneshotSupplierImpl<>();
-    private final SettableMonotonicObservableSupplier<EdgeToEdgeController> mEdgeToEdgeSupplier =
-            ObservableSuppliers.createMonotonic();
-    private final SettableMonotonicObservableSupplier<CompositorViewHolder>
-            mCompositorViewHolderSupplier = ObservableSuppliers.createMonotonic();
-    private final SettableNonNullObservableSupplier<Integer> mMockArchivedTabCountSupplier =
-            ObservableSuppliers.createNonNull(0);
-    private ArchivedTabsAutoDeletePromoManager mMockArchivedTabsAutoDeletePromoManager;
+    private ObservableSupplierImpl<Boolean> mHandleBackPressChangeSupplier =
+            new ObservableSupplierImpl<>();
+    private ObservableSupplierImpl<Boolean> mIsScrollingSupplier = new ObservableSupplierImpl<>();
+    private OneshotSupplierImpl<ObservableSupplier<Boolean>> mIsScrollingSupplierSupplier =
+            new OneshotSupplierImpl<>();
+    private ObservableSupplierImpl<EdgeToEdgeController> mEdgeToEdgeSupplier =
+            new ObservableSupplierImpl<>();
+    private ObservableSupplierImpl<CompositorViewHolder> mCompositorViewHolderSupplier =
+            new ObservableSupplierImpl<>();
     private TabSwitcherPane mTabSwitcherPane;
     private MockTabModel mTabModel;
     private List<Tab> mTabList;
@@ -256,9 +235,8 @@ public class TabSwitcherPaneUnitTest {
                         any(),
                         mIsAnimatingSupplierCaptor.capture(),
                         mOnTabClickedCallbackCaptor.capture(),
+                        mHairlineVisibilityCallbackCaptor.capture(),
                         anyBoolean(),
-                        any(),
-                        any(),
                         any(),
                         any());
         when(mTabSwitcherPaneCoordinatorFactory.getTabListMode()).thenReturn(TabListMode.GRID);
@@ -279,14 +257,6 @@ public class TabSwitcherPaneUnitTest {
         when(mTabSwitcherPaneCoordinator.getIsScrollingSupplier())
                 .thenReturn(mIsScrollingSupplierSupplier);
 
-        mMockArchivedTabsAutoDeletePromoManager =
-                new ArchivedTabsAutoDeletePromoManager(
-                        mContext,
-                        mMockBottomSheetController,
-                        mMockTabArchiveSettings,
-                        mMockArchivedTabCountSupplier,
-                        mTabModel);
-
         mTabSwitcherPane =
                 new TabSwitcherPane(
                         mContext,
@@ -300,18 +270,11 @@ public class TabSwitcherPaneUnitTest {
                         mUserEducationHelper,
                         mEdgeToEdgeSupplier,
                         mCompositorViewHolderSupplier,
-                        mUiFlow,
-                        mMockArchivedTabsAutoDeletePromoManager,
-                        /* xrSpaceModeObservableSupplier= */ ObservableSuppliers.alwaysFalse());
+                        mUiFlow);
         ShadowLooper.runUiThreadTasks();
         verify(mSharedPreferences)
                 .registerOnSharedPreferenceChangeListener(
                         mPriceAnnotationsPrefListenerCaptor.capture());
-
-        when(mUserPrefsJniMock.get(mProfile)).thenReturn(mPrefService);
-        when(mPrefService.getBoolean(Pref.AUTO_OPEN_SYNCED_TAB_GROUPS)).thenReturn(true);
-        when(mTabGroupSyncService.getVersioningMessageController()).thenReturn(mock());
-        UserPrefsJni.setInstanceForTesting(mUserPrefsJniMock);
     }
 
     @After
@@ -371,8 +334,6 @@ public class TabSwitcherPaneUnitTest {
         verify(coordinator).hardCleanup();
     }
 
-    // TODO(crbug.com/450954710): This test fails on SDK 36.
-    @Config(sdk = 29)
     @Test
     public void testLoadHintColdHotWarm() {
         mTabModel.setActive(true);
@@ -399,8 +360,6 @@ public class TabSwitcherPaneUnitTest {
         verify(coordinator, never()).hardCleanup();
     }
 
-    // TODO(crbug.com/450954710): This test fails on SDK 36.
-    @Config(sdk = 29)
     @Test
     public void testLoadHintColdHot_TabStateNotInitialized() {
         mTabModel.setActive(true);
@@ -427,8 +386,6 @@ public class TabSwitcherPaneUnitTest {
         watcher.assertExpected();
     }
 
-    // TODO(crbug.com/450954710): This test fails on SDK 36.
-    @Config(sdk = 29)
     @Test
     public void testLoadHintColdWarmHotCold() {
         mTabModel.setActive(true);
@@ -466,8 +423,6 @@ public class TabSwitcherPaneUnitTest {
         assertNotNull(mTabSwitcherPane.getRootView());
     }
 
-    // TODO(crbug.com/450954710): This test fails on SDK 36.
-    @Config(sdk = 29)
     @Test
     public void testNewTabButton() {
         FullButtonData buttonData = mTabSwitcherPane.getActionButtonDataSupplier().get();
@@ -523,9 +478,9 @@ public class TabSwitcherPaneUnitTest {
 
     @Test
     public void testBackPress() {
-        NonNullObservableSupplier<Boolean> handlesBackPressSupplier =
+        ObservableSupplier<Boolean> handlesBackPressSupplier =
                 mTabSwitcherPane.getHandleBackPressChangedSupplier();
-        assertFalse(handlesBackPressSupplier.get());
+        assertNull(handlesBackPressSupplier.get());
         assertEquals(BackPressResult.FAILURE, mTabSwitcherPane.handleBackPress());
 
         mTabSwitcherPane.initWithNative();
@@ -549,6 +504,28 @@ public class TabSwitcherPaneUnitTest {
 
     @Test
     public void testCreateFadeInAnimatorNoTab() {
+        assertEquals(
+                HubLayoutAnimationType.FADE_IN,
+                mTabSwitcherPane
+                        .createShowHubLayoutAnimatorProvider(mHubContainerView)
+                        .getPlannedAnimationType());
+    }
+
+    @Test
+    public void testCreateFadeOutAnimatorListMode() {
+        createSelectedTab();
+        when(mTabSwitcherPaneCoordinatorFactory.getTabListMode()).thenReturn(TabListMode.LIST);
+        assertEquals(
+                HubLayoutAnimationType.FADE_OUT,
+                mTabSwitcherPane
+                        .createHideHubLayoutAnimatorProvider(mHubContainerView)
+                        .getPlannedAnimationType());
+    }
+
+    @Test
+    public void testCreateFadeInAnimatorListMode() {
+        createSelectedTab();
+        when(mTabSwitcherPaneCoordinatorFactory.getTabListMode()).thenReturn(TabListMode.LIST);
         assertEquals(
                 HubLayoutAnimationType.FADE_IN,
                 mTabSwitcherPane
@@ -694,8 +671,6 @@ public class TabSwitcherPaneUnitTest {
         verify(mTabSwitcherPaneCoordinator).setTabSwitcherRecyclerViewPosition(position);
     }
 
-    // TODO(crbug.com/450954710): This test fails on SDK 36.
-    @Config(sdk = 29)
     @Test
     public void testResetWithTabList() {
         mTabSwitcherPane.resetWithListOfTabs(null);
@@ -732,6 +707,21 @@ public class TabSwitcherPaneUnitTest {
 
         mOnTabClickedCallbackCaptor.getValue().onResult(tabId);
         verify(mPaneHubController).selectTabAndHideHub(tabId);
+    }
+
+    @Test
+    public void testHairlineVisibilitySupplier() {
+        mTabSwitcherPane.initWithNative();
+        mTabSwitcherPane.createTabSwitcherPaneCoordinator();
+
+        var hairlineVisibilitySupplier = mTabSwitcherPane.getHairlineVisibilitySupplier();
+        assertNull(hairlineVisibilitySupplier.get());
+
+        mHairlineVisibilityCallbackCaptor.getValue().onResult(true);
+        assertTrue(hairlineVisibilitySupplier.get());
+
+        mHairlineVisibilityCallbackCaptor.getValue().onResult(false);
+        assertFalse(hairlineVisibilitySupplier.get());
     }
 
     @Test
@@ -1269,127 +1259,8 @@ public class TabSwitcherPaneUnitTest {
         verify(mUserEducationHelper, never()).requestShowIph(any());
     }
 
-    /**
-     * Helper function to set up ChromePreferenceKeys for promo eligibility conditions.
-     *
-     * @param promoChoiceMade Value for {@link
-     *     ChromePreferenceKeys#TAB_DECLUTTER_AUTO_DELETE_DECISION_MADE}.
-     * @param autoDeleteEnabled Value for {@link
-     *     ChromePreferenceKeys#TAB_DECLUTTER_AUTO_DELETE_ENABLED}.
-     * @param archivingFeatureEnabled Value for {@link
-     *     ChromePreferenceKeys#TAB_DECLUTTER_ARCHIVE_ENABLED}.
-     * @param archivedTabCount The number of archived tabs.
-     */
-    private void setupPromoEligibilityConditions(
-            boolean promoChoiceMade,
-            boolean autoDeleteEnabled,
-            boolean archivingFeatureEnabled,
-            int archivedTabCount) {
-        when(mMockTabArchiveSettings.getAutoDeleteDecisionMade()).thenReturn(promoChoiceMade);
-        when(mMockTabArchiveSettings.isAutoDeleteEnabled()).thenReturn(autoDeleteEnabled);
-        when(mMockTabArchiveSettings.getArchiveEnabled()).thenReturn(archivingFeatureEnabled);
-        mMockArchivedTabCountSupplier.set(archivedTabCount);
-    }
-
-    /** Tests that the AutoDeleteDecisionPromo is shown when all conditions are met */
-    @Test
-    public void testTryToShowPromo_ConditionsMet_ShowsPromo() {
-        setupPromoEligibilityConditions(
-                /* promoChoiceMade= */ false,
-                /* autoDeleteEnabled= */ false,
-                /* archivingFeatureEnabled= */ true,
-                /* archivedTabCount= */ 1);
-
-        mTabSwitcherPane.notifyLoadHint(LoadHint.HOT);
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
-
-        verify(mMockBottomSheetController)
-                .requestShowContent(any(ArchivedTabsAutoDeletePromoSheetContent.class), eq(true));
-    }
-
-    /** Tests that the promo is NOT shown if the user has already made a choice. */
-    @Test
-    public void testTryToShowPromo_DecisionAlreadyMade_DoesNotShow() {
-        setupPromoEligibilityConditions(
-                /* promoChoiceMade= */ true,
-                /* autoDeleteEnabled= */ false,
-                /* archivingFeatureEnabled= */ true,
-                /* archivedTabCount= */ 1);
-
-        mTabSwitcherPane.notifyLoadHint(LoadHint.HOT);
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
-
-        verify(mMockBottomSheetController, never())
-                .requestShowContent(
-                        any(ArchivedTabsAutoDeletePromoSheetContent.class), anyBoolean());
-    }
-
-    /** Tests that the promo is NOT shown if auto-delete is already effectively enabled. */
-    @Test
-    public void testTryToShowPromo_AutoDeleteAlreadyEnabled_DoesNotShow() {
-        setupPromoEligibilityConditions(
-                /* promoChoiceMade= */ false,
-                /* autoDeleteEnabled= */ true,
-                /* archivingFeatureEnabled= */ true,
-                /* archivedTabCount= */ 1);
-
-        mTabSwitcherPane.notifyLoadHint(LoadHint.HOT);
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
-
-        verify(mMockBottomSheetController, never())
-                .requestShowContent(
-                        any(ArchivedTabsAutoDeletePromoSheetContent.class), anyBoolean());
-    }
-
-    /** Tests that the promo is NOT shown if the main archiving feature is disabled. */
-    @Test
-    public void testTryToShowPromo_ArchivingFeatureDisabled_DoesNotShow() {
-        setupPromoEligibilityConditions(
-                /* promoChoiceMade= */ false,
-                /* autoDeleteEnabled= */ false,
-                /* archivingFeatureEnabled= */ false,
-                /* archivedTabCount= */ 1);
-
-        mTabSwitcherPane.notifyLoadHint(LoadHint.HOT);
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
-
-        verify(mMockBottomSheetController, never())
-                .requestShowContent(
-                        any(ArchivedTabsAutoDeletePromoSheetContent.class), anyBoolean());
-    }
-
-    /** Tests that the promo is NOT shown if there are no archived tabs. */
-    @Test
-    public void testTryToShowPromo_NoArchivedTabs_DoesNotShow() {
-        setupPromoEligibilityConditions(
-                /* promoChoiceMade= */ false,
-                /* autoDeleteEnabled= */ false,
-                /* archivingFeatureEnabled= */ true,
-                /* archivedTabCount= */ 0);
-
-        mTabSwitcherPane.notifyLoadHint(LoadHint.HOT);
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
-
-        verify(mMockBottomSheetController, never())
-                .requestShowContent(
-                        any(ArchivedTabsAutoDeletePromoSheetContent.class), anyBoolean());
-    }
-
     private void createSelectedTab() {
         mTabModel.addTab(TAB_ID);
         mTabModel.setIndex(0, TabSelectionType.FROM_USER);
-    }
-
-    @Test
-    public void testSetPaneHubController_SearchBoxVisibility() {
-        HubUtils.setIsTabletForTesting(false);
-
-        mTabSwitcherPane.setPaneHubController(mPaneHubController);
-        assertTrue(mTabSwitcherPane.getHubSearchBoxVisibilitySupplier().get());
-        mTabSwitcherPane.setPaneHubController(null);
-
-        HubUtils.setIsTabletForTesting(true);
-        mTabSwitcherPane.setPaneHubController(mPaneHubController);
-        assertFalse(mTabSwitcherPane.getHubSearchBoxVisibilitySupplier().get());
     }
 }

@@ -11,9 +11,6 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_navigator_params.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
@@ -75,9 +72,8 @@ void ShowSingletonTabOverwritingNTP(
 
 void ShowSingletonTabOverwritingNTP(NavigateParams* params) {
   DCHECK_EQ(params->disposition, WindowOpenDisposition::SINGLETON_TAB);
-  content::WebContents* contents = params->browser->GetBrowserForMigrationOnly()
-                                       ->tab_strip_model()
-                                       ->GetActiveWebContents();
+  content::WebContents* contents =
+      params->browser->tab_strip_model()->GetActiveWebContents();
   if (contents) {
     const GURL& contents_url = contents->GetVisibleURL();
     if (contents_url == chrome::kChromeUINewTabURL ||
@@ -87,9 +83,7 @@ void ShowSingletonTabOverwritingNTP(NavigateParams* params) {
         params->disposition = WindowOpenDisposition::CURRENT_TAB;
       } else {
         params->switch_to_singleton_tab =
-            params->browser->GetBrowserForMigrationOnly()
-                ->tab_strip_model()
-                ->GetWebContentsAt(tab_index);
+            params->browser->tab_strip_model()->GetWebContentsAt(tab_index);
       }
     }
   }
@@ -100,7 +94,7 @@ NavigateParams GetSingletonTabNavigateParams(Browser* browser,
                                              const GURL& url) {
   NavigateParams params(browser, url, ui::PAGE_TRANSITION_AUTO_BOOKMARK);
   params.disposition = WindowOpenDisposition::SINGLETON_TAB;
-  params.window_action = NavigateParams::WindowAction::kShowWindow;
+  params.window_action = NavigateParams::SHOW_WINDOW;
   params.user_gesture = true;
   params.tabstrip_add_types |= AddTabTypes::ADD_INHERIT_OPENER;
   return params;
@@ -108,8 +102,7 @@ NavigateParams GetSingletonTabNavigateParams(Browser* browser,
 
 // Returns the index of an existing singleton tab in |browser| matching
 // the URL specified in |params|.
-int GetIndexOfExistingTab(BrowserWindowInterface* browser,
-                          const NavigateParams& params) {
+int GetIndexOfExistingTab(Browser* browser, const NavigateParams& params) {
   if (params.disposition != WindowOpenDisposition::SINGLETON_TAB &&
       params.disposition != WindowOpenDisposition::SWITCH_TO_TAB) {
     return -1;
@@ -122,18 +115,17 @@ int GetIndexOfExistingTab(BrowserWindowInterface* browser,
       params.url.SchemeIs(content::kViewSourceScheme);
   GURL rewritten_url(params.url);
   content::BrowserURLHandler::GetInstance()->RewriteURLIfNecessary(
-      &rewritten_url, browser->GetProfile());
+      &rewritten_url, browser->profile());
 
   TemplateURLService* turl_service =
-      TemplateURLServiceFactory::GetForProfile(browser->GetProfile());
+      TemplateURLServiceFactory::GetForProfile(browser->profile());
   // If there are several matches: prefer the active tab by starting there.
-  int start_index =
-      std::max(0, browser->GetFeatures().tab_strip_model()->active_index());
-  int tab_count = browser->GetFeatures().tab_strip_model()->count();
+  int start_index = std::max(0, browser->tab_strip_model()->active_index());
+  int tab_count = browser->tab_strip_model()->count();
   for (int i = 0; i < tab_count; ++i) {
     int tab_index = (start_index + i) % tab_count;
     content::WebContents* tab =
-        browser->GetFeatures().tab_strip_model()->GetWebContentsAt(tab_index);
+        browser->tab_strip_model()->GetWebContentsAt(tab_index);
 
     GURL tab_url = tab->GetVisibleURL();
 
@@ -146,7 +138,7 @@ int GetIndexOfExistingTab(BrowserWindowInterface* browser,
 
     GURL rewritten_tab_url = tab_url;
     content::BrowserURLHandler::GetInstance()->RewriteURLIfNecessary(
-        &rewritten_tab_url, browser->GetProfile());
+        &rewritten_tab_url, browser->profile());
 
     GURL::Replacements replacements;
     replacements.ClearRef();
@@ -166,24 +158,17 @@ int GetIndexOfExistingTab(BrowserWindowInterface* browser,
   return -1;
 }
 
-std::pair<BrowserWindowInterface*, int> GetIndexAndBrowserOfExistingTab(
+std::pair<Browser*, int> GetIndexAndBrowserOfExistingTab(
     Profile* profile,
     const NavigateParams& params) {
-  BrowserWindowInterface* browser_of_existing_tab = nullptr;
-  int idx = -1;
-  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
-      [&](BrowserWindowInterface* browser) {
-        // When tab switching, only look at same profile and anonymity level.
-        if (profile == browser->GetProfile() &&
-            !browser->GetBrowserForMigrationOnly()->is_delete_scheduled()) {
-          int index = GetIndexOfExistingTab(browser, params);
-          if (index >= 0) {
-            browser_of_existing_tab = browser;
-            idx = index;
-            return false;  // stop iterating
-          }
-        }
-        return true;  // continue iterating
-      });
-  return {browser_of_existing_tab, idx};
+  for (Browser* browser : BrowserList::GetInstance()->OrderedByActivation()) {
+    // When tab switching, only look at same profile and anonymity level.
+    if (profile == browser->profile() && !browser->is_delete_scheduled()) {
+      int index = GetIndexOfExistingTab(browser, params);
+      if (index >= 0) {
+        return {browser, index};
+      }
+    }
+  }
+  return {nullptr, -1};
 }

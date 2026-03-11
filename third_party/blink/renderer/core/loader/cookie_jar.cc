@@ -7,13 +7,9 @@
 #include <cstdint>
 
 #include "base/debug/dump_without_crashing.h"
-#include "base/feature_list.h"
-#include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/rand_util.h"
 #include "base/strings/strcat.h"
-#include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "mojo/public/cpp/base/shared_memory_version.h"
 #include "services/network/public/mojom/restricted_cookie_manager.mojom-forward.h"
@@ -47,23 +43,14 @@ enum class CookieCacheLookupResult {
 constexpr char kFirstCookieRequestHistogram[] =
     "Blink.Experimental.Cookies.FirstCookieRequest";
 
-}  // namespace
+// TODO(crbug.com/1276520): Remove after truncating characters are fully
+// deprecated.
+bool ContainsTruncatingChar(UChar c) {
+  // equivalent to '\x00', '\x0D', or '\x0A'
+  return c == '\0' || c == '\r' || c == '\n';
+}
 
-// Controls whether we apply an artificial delay to priming the CookieJar access
-// for all APIs. There are 2 parameters for each API that influence how long the
-// delay is, `factor` and `offset`. If the actual time taken is `elapsed` then
-// the delay will be `elapsed * factor + offset`.
-BASE_FEATURE(kCookieJarAblation, base::FEATURE_DISABLED_BY_DEFAULT);
-BASE_FEATURE_PARAM(double,
-                   kCookieJarAblationDelayFactor,
-                   &kCookieJarAblation,
-                   "factor",
-                   0.0);
-BASE_FEATURE_PARAM(base::TimeDelta,
-                   kCookieJarAblationDelayOffset,
-                   &kCookieJarAblation,
-                   "offset",
-                   base::Milliseconds(0));
+}  // namespace
 
 CookieJar::CookieJar(blink::Document* document)
     : backend_(document->GetExecutionContext()), document_(document) {}
@@ -97,8 +84,8 @@ void CookieJar::SetCookie(const String& value) {
         document_->GetExecutionContext()->GetStorageAccessApiStatus(),
         get_version_shared_memory, is_ad_tagged, apply_devtools_overrides,
         value,
-        BindOnce(&CookieJar::OnSetCookieResponse, WrapWeakPersistent(this),
-                 cookie_url, apply_devtools_overrides));
+        WTF::BindOnce(&CookieJar::OnSetCookieResponse, WrapWeakPersistent(this),
+                      cookie_url, apply_devtools_overrides));
   } else {
     if (!backend_->SetCookieFromString(
             cookie_url, document_->SiteForCookies(),
@@ -116,21 +103,15 @@ void CookieJar::SetCookie(const String& value) {
                         std::move(response));
   }
   last_operation_was_set_ = true;
-
-  base::TimeDelta elapsed = timer.Elapsed();
-  base::UmaHistogramTimes("Blink.SetCookieTime", elapsed);
-
-  if (base::FeatureList::IsEnabled(kCookieJarAblation)) {
-    base::TimeDelta delay = elapsed * kCookieJarAblationDelayFactor.Get() +
-                            kCookieJarAblationDelayOffset.Get();
-    base::UmaHistogramMediumTimes("Blink.SetCookieTime.AblationDelay", delay);
-    if (delay.is_positive()) {
-      base::PlatformThread::Sleep(delay);
-    }
-  }
-
+  base::UmaHistogramTimes("Blink.SetCookieTime", timer.Elapsed());
   if (is_first_operation_) {
     LogFirstCookieRequest(FirstCookieRequest::kFirstOperationWasSet);
+  }
+
+  // TODO(crbug.com/40808935): Remove after truncating characters are fully
+  // deprecated
+  if (value.Find(ContainsTruncatingChar) != kNotFound) {
+    document_->CountDeprecation(WebFeature::kCookieWithTruncatingChar);
   }
 }
 
@@ -167,13 +148,12 @@ String CookieJar::Cookies() {
     return String();
 
   base::ElapsedTimer timer;
-
-  // This can affect the result of the IPCNeeded() call below, so needs to be
-  // done first.
-  const RequestCookieManagerPipeState pipe_state =
-      RequestRestrictedCookieManagerIfNeeded();
+  RequestRestrictedCookieManagerIfNeeded();
 
   String value = g_empty_string;
+  base::ReadOnlySharedMemoryRegion new_mapped_region;
+  const bool get_version_shared_memory =
+      !shared_memory_version_client_.has_value();
 
   // Store the latest cookie version to update |last_version_| after attempting
   // to get the string. Will get updated once more by GetCookiesString() if an
@@ -183,10 +163,6 @@ String CookieJar::Cookies() {
   const bool ipc_needed = IPCNeeded(should_apply_devtools_overrides);
   base::UmaHistogramBoolean("Blink.Experimental.Cookies.IpcNeeded", ipc_needed);
   if (ipc_needed) {
-    base::ReadOnlySharedMemoryRegion new_mapped_region;
-    const bool get_version_shared_memory =
-        !shared_memory_version_client_.has_value();
-
     bool is_ad_tagged =
         document_->GetFrame() && document_->GetFrame()->IsAdFrame();
 
@@ -205,52 +181,11 @@ String CookieJar::Cookies() {
       return g_empty_string;
     }
     last_cookies_ = value;
-    if (new_mapped_region.IsValid()) {
-      shared_memory_version_client_.emplace(std::move(new_mapped_region));
-    }
   }
-
-  base::TimeDelta elapsed = timer.Elapsed();
-  constexpr int kMinTimeMicros = 10;
-  constexpr int kMaxTimeMicros = 1 * 1000 * 1000;  // 1 second
-  if (ipc_needed) {
-    base::UmaHistogramCustomCounts("Blink.CookiesTime.IpcNeeded2",
-                                   elapsed.InMicroseconds(), kMinTimeMicros,
-                                   kMaxTimeMicros, 50);
-
-    // Temporary histograms to investigate https://crbug.com/414748254.
-    switch (pipe_state) {
-      case RequestCookieManagerPipeState::kNoOldPipe:
-        base::UmaHistogramTimes("Blink.CookiesTime.NoOldPipe", elapsed);
-        break;
-      case RequestCookieManagerPipeState::kDisconnectedOldPipe:
-        base::UmaHistogramTimes("Blink.CookiesTime.DisconnectedOldPipe",
-                                elapsed);
-        break;
-      case RequestCookieManagerPipeState::kConnectedOldPipe:
-        base::UmaHistogramTimes("Blink.CookiesTime.ConnectedOldPipe", elapsed);
-        break;
-    }
-  } else {
-    base::UmaHistogramCustomCounts("Blink.CookiesTime.IpcNotNeeded2",
-                                   elapsed.InMicroseconds(), kMinTimeMicros,
-                                   kMaxTimeMicros, 50);
+  if (new_mapped_region.IsValid()) {
+    shared_memory_version_client_.emplace(std::move(new_mapped_region));
   }
-
-  // We should run the ablation study only for scenarios with ipc.
-  if (base::FeatureList::IsEnabled(kCookieJarAblation) && ipc_needed) {
-    base::TimeDelta delay = elapsed * kCookieJarAblationDelayFactor.Get() +
-                            kCookieJarAblationDelayOffset.Get();
-    base::UmaHistogramMediumTimes("Blink.CookiesTime.AblationDelay2", delay);
-
-    if (delay.is_positive()) {
-      // Report the actual delay caused by PlatformThread::Sleep(). See
-      // https://crbug.com/412532502 for more details.
-      SCOPED_UMA_HISTOGRAM_TIMER_MICROS("Blink.CookiesTime.AblationSleepTime");
-      base::PlatformThread::Sleep(delay);
-    }
-  }
-
+  base::UmaHistogramTimes("Blink.CookiesTime", timer.Elapsed());
   UpdateCacheAfterGetRequest(cookie_url, value, new_version);
 
   last_operation_was_set_ = false;
@@ -330,16 +265,8 @@ bool CookieJar::IPCNeeded(bool should_apply_devtools_overrides) {
   return false;
 }
 
-CookieJar::RequestCookieManagerPipeState
-CookieJar::RequestRestrictedCookieManagerIfNeeded() {
-  RequestCookieManagerPipeState pipe_state =
-      RequestCookieManagerPipeState::kConnectedOldPipe;
+void CookieJar::RequestRestrictedCookieManagerIfNeeded() {
   if (!backend_.is_bound() || !backend_.is_connected()) {
-    if (!backend_.is_bound()) {
-      pipe_state = RequestCookieManagerPipeState::kNoOldPipe;
-    } else {
-      pipe_state = RequestCookieManagerPipeState::kDisconnectedOldPipe;
-    }
     backend_.reset();
 
     // Either the backend was never bound or it became unbound. In case we're in
@@ -350,15 +277,14 @@ CookieJar::RequestRestrictedCookieManagerIfNeeded() {
         backend_.BindNewPipeAndPassReceiver(
             document_->GetTaskRunner(TaskType::kInternalDefault)));
   }
-  return pipe_state;
 }
 
 void CookieJar::UpdateCacheAfterGetRequest(const KURL& cookie_url,
                                            const String& cookie_string,
                                            uint64_t new_version) {
   std::optional<unsigned> new_hash =
-      HashInts(blink::GetHash(cookie_url),
-               cookie_string.IsNull() ? 0 : blink::GetHash(cookie_string));
+      WTF::HashInts(WTF::GetHash(cookie_url),
+                    cookie_string.IsNull() ? 0 : WTF::GetHash(cookie_string));
 
   CookieCacheLookupResult result =
       CookieCacheLookupResult::kCacheMissFirstAccess;

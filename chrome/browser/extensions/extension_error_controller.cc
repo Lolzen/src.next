@@ -10,7 +10,6 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/pending_extension_manager.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_set.h"
 
 #if BUILDFLAG(IS_ANDROID)
@@ -18,8 +17,6 @@
 #else
 #include "chrome/browser/extensions/extension_error_ui_desktop.h"
 #endif
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 

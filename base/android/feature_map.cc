@@ -11,8 +11,8 @@
 #include <string_view>
 
 #include "base/android/jni_string.h"
-#include "base/logging.h"
 #include "base/metrics/field_trial_params.h"
+#include "base/notreached.h"
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "base/features_jni/FeatureMap_jni.h"
@@ -40,12 +40,13 @@ const Feature* FeatureMap::FindFeatureExposedToJava(
     return it->second;
   }
 
-  LOG(FATAL) << "Queried feature cannot be found in FeatureMap: "
-             << feature_name;
+  NOTREACHED() << "Queried feature cannot be found in FeatureMap: "
+               << feature_name;
 }
 
-static bool JNI_FeatureMap_IsEnabled(int64_t jfeature_map,
-                                     std::string& feature_name) {
+static jboolean JNI_FeatureMap_IsEnabled(JNIEnv* env,
+                                         jlong jfeature_map,
+                                         std::string& feature_name) {
   FeatureMap* feature_map = reinterpret_cast<FeatureMap*>(jfeature_map);
   const base::Feature* feature =
       feature_map->FindFeatureExposedToJava(feature_name);
@@ -53,7 +54,8 @@ static bool JNI_FeatureMap_IsEnabled(int64_t jfeature_map,
 }
 
 static std::string JNI_FeatureMap_GetFieldTrialParamByFeature(
-    int64_t jfeature_map,
+    JNIEnv* env,
+    jlong jfeature_map,
     std::string& feature_name,
     std::string& param_name) {
   FeatureMap* feature_map = reinterpret_cast<FeatureMap*>(jfeature_map);
@@ -62,11 +64,12 @@ static std::string JNI_FeatureMap_GetFieldTrialParamByFeature(
   return base::GetFieldTrialParamValueByFeature(*feature, param_name);
 }
 
-static int32_t JNI_FeatureMap_GetFieldTrialParamByFeatureAsInt(
-    int64_t jfeature_map,
+static jint JNI_FeatureMap_GetFieldTrialParamByFeatureAsInt(
+    JNIEnv* env,
+    jlong jfeature_map,
     std::string& feature_name,
     std::string& param_name,
-    const int32_t jdefault_value) {
+    const jint jdefault_value) {
   FeatureMap* feature_map = reinterpret_cast<FeatureMap*>(jfeature_map);
   const base::Feature* feature =
       feature_map->FindFeatureExposedToJava(feature_name);
@@ -74,11 +77,12 @@ static int32_t JNI_FeatureMap_GetFieldTrialParamByFeatureAsInt(
                                                 jdefault_value);
 }
 
-static double JNI_FeatureMap_GetFieldTrialParamByFeatureAsDouble(
-    int64_t jfeature_map,
+static jdouble JNI_FeatureMap_GetFieldTrialParamByFeatureAsDouble(
+    JNIEnv* env,
+    jlong jfeature_map,
     std::string& feature_name,
     std::string& param_name,
-    const double jdefault_value) {
+    const jdouble jdefault_value) {
   FeatureMap* feature_map = reinterpret_cast<FeatureMap*>(jfeature_map);
   const base::Feature* feature =
       feature_map->FindFeatureExposedToJava(feature_name);
@@ -86,11 +90,12 @@ static double JNI_FeatureMap_GetFieldTrialParamByFeatureAsDouble(
                                                    jdefault_value);
 }
 
-static bool JNI_FeatureMap_GetFieldTrialParamByFeatureAsBoolean(
-    int64_t jfeature_map,
+static jboolean JNI_FeatureMap_GetFieldTrialParamByFeatureAsBoolean(
+    JNIEnv* env,
+    jlong jfeature_map,
     std::string& feature_name,
     std::string& param_name,
-    const bool jdefault_value) {
+    const jboolean jdefault_value) {
   FeatureMap* feature_map = reinterpret_cast<FeatureMap*>(jfeature_map);
   const base::Feature* feature =
       feature_map->FindFeatureExposedToJava(feature_name);
@@ -98,9 +103,10 @@ static bool JNI_FeatureMap_GetFieldTrialParamByFeatureAsBoolean(
                                                  jdefault_value);
 }
 
-static std::vector<std::string>
-JNI_FeatureMap_GetFlattedFieldTrialParamsForFeature(int64_t jfeature_map,
-                                                    std::string& feature_name) {
+std::vector<std::string> JNI_FeatureMap_GetFlattedFieldTrialParamsForFeature(
+    JNIEnv* env,
+    jlong jfeature_map,
+    std::string& feature_name) {
   FeatureMap* feature_map = reinterpret_cast<FeatureMap*>(jfeature_map);
   base::FieldTrialParams params;
   std::vector<std::string> keys_and_values;
@@ -116,5 +122,3 @@ JNI_FeatureMap_GetFlattedFieldTrialParamsForFeature(int64_t jfeature_map,
 }
 
 }  // namespace base::android
-
-DEFINE_JNI(FeatureMap)

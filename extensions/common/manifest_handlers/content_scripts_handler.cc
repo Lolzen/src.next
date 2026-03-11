@@ -208,10 +208,9 @@ bool ContentScriptsHandler::Parse(Extension* extension, std::u16string* error) {
                                                   extension->location());
   const bool all_urls_includes_chrome_urls =
       PermissionsData::AllUrlsIncludesChromeUrls(extension->id());
-  CHECK(manifest_keys.content_scripts.has_value());
-  for (size_t i = 0; i < manifest_keys.content_scripts->size(); ++i) {
+  for (size_t i = 0; i < manifest_keys.content_scripts.size(); ++i) {
     std::unique_ptr<UserScript> user_script =
-        CreateUserScript(std::move((*manifest_keys.content_scripts)[i]), i,
+        CreateUserScript(std::move(manifest_keys.content_scripts[i]), i,
                          can_execute_script_everywhere,
                          all_urls_includes_chrome_urls, extension, error);
     if (!user_script) {
@@ -249,14 +248,14 @@ bool ContentScriptsHandler::Parse(Extension* extension, std::u16string* error) {
 }
 
 bool ContentScriptsHandler::Validate(
-    const Extension& extension,
+    const Extension* extension,
     std::string* error,
     std::vector<InstallWarning>* warnings) const {
   // Validate that claimed script resources actually exist,
   // and are UTF-8 encoded.
   return script_parsing::ValidateFileSources(
-      ContentScriptsInfo::GetContentScripts(&extension),
-      script_parsing::GetSymlinkPolicy(&extension), error, warnings);
+      ContentScriptsInfo::GetContentScripts(extension),
+      script_parsing::GetSymlinkPolicy(extension), error, warnings);
 }
 
 }  // namespace extensions

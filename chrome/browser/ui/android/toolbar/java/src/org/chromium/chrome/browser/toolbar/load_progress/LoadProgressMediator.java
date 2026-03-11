@@ -4,12 +4,9 @@
 
 package org.chromium.chrome.browser.toolbar.load_progress;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import org.chromium.base.MathUtils;
-import org.chromium.base.supplier.NullableObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.tab.CurrentTabObserver;
 import org.chromium.chrome.browser.tab.EmptyTabObserver;
 import org.chromium.chrome.browser.tab.Tab;
@@ -36,7 +33,7 @@ public class LoadProgressMediator {
      * @param tabSupplier An observable supplier of the current {@link Tab}.
      * @param model MVC property model instance used for load progress bar.
      */
-    public LoadProgressMediator(NullableObservableSupplier<Tab> tabSupplier, PropertyModel model) {
+    public LoadProgressMediator(ObservableSupplier<Tab> tabSupplier, PropertyModel model) {
         mModel = model;
         mLoadProgressSimulator = new LoadProgressSimulator(model);
         mTabObserver =
@@ -84,12 +81,23 @@ public class LoadProgressMediator {
                                                 tab.getUrl(),
                                                 tab.isIncognito(),
                                                 tab.isNativePage()
-                                                        && assumeNonNull(tab.getNativePage())
-                                                                .isPdf())) {
+                                                        && tab.getNativePage().isPdf())) {
                                     return;
                                 }
 
                                 updateLoadProgress(progress);
+                            }
+
+                            @Override
+                            public void onWebContentsSwapped(
+                                    Tab tab, boolean didStartLoad, boolean didFinishLoad) {
+                                // If loading both started and finished before we swapped in the
+                                // WebContents, we won't get any load progress signals. Otherwise,
+                                // we should receive at least one real signal so we don't need to
+                                // simulate them.
+                                if (didStartLoad && didFinishLoad && !mPreventUpdates) {
+                                    mLoadProgressSimulator.start();
+                                }
                             }
 
                             @Override
@@ -116,7 +124,7 @@ public class LoadProgressMediator {
         mPreventUpdates = preventUpdates;
     }
 
-    private void onNewTabObserved(@Nullable Tab tab) {
+    private void onNewTabObserved(Tab tab) {
         if (tab == null) {
             return;
         }
@@ -125,7 +133,7 @@ public class LoadProgressMediator {
             if (NativePage.isNativePageUrl(
                     tab.getUrl(),
                     tab.isIncognito(),
-                    tab.isNativePage() && assumeNonNull(tab.getNativePage()).isPdf())) {
+                    tab.isNativePage() && tab.getNativePage().isPdf())) {
                 finishLoadProgress(false);
             } else {
                 startLoadProgress();

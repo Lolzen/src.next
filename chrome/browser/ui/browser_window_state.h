@@ -17,6 +17,7 @@ class Browser;
 
 namespace base {
 class CommandLine;
+class Value;
 }  // namespace base
 
 namespace gfx {
@@ -37,13 +38,13 @@ std::string GetWindowName(const Browser* browser);
 // dict. The returned dictionary may only be accessed while it's alive.
 // ScopedDictPrefUpdate::Get() may not match the returned reference, but rather
 // be an ancestor of it, so it should not be used directly.
-base::DictValue& GetWindowPlacementDictionaryReadWrite(
+base::Value::Dict& GetWindowPlacementDictionaryReadWrite(
     const std::string& window_name,
     PrefService* prefs,
     std::unique_ptr<ScopedDictPrefUpdate>& scoped_pref_update);
 // Returns NULL if the window corresponds to an app that doesn't have placement
 // information stored in the preferences system.
-const base::DictValue* GetWindowPlacementDictionaryReadOnly(
+const base::Value::Dict* GetWindowPlacementDictionaryReadOnly(
     const std::string& window_name,
     PrefService* prefs);
 

@@ -4,12 +4,10 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
+import androidx.annotation.Nullable;
 
 import org.chromium.base.Token;
-import org.chromium.base.supplier.NullableObservableSupplier;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
+import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
@@ -19,25 +17,24 @@ import org.chromium.components.collaboration.messaging.PersistentMessage;
 import org.chromium.components.collaboration.messaging.PersistentNotificationType;
 
 import java.util.List;
+import java.util.Optional;
 
 /** Pushes label updates to UI for tab groups. */
-@NullMarked
 public class TabGroupLabeller extends TabObjectLabeller {
-    private final NullableObservableSupplier<TabGroupModelFilter> mTabGroupModelFilterSupplier;
+    private final ObservableSupplier<TabGroupModelFilter> mTabGroupModelFilterSupplier;
 
     public TabGroupLabeller(
             Profile profile,
             TabListNotificationHandler tabListNotificationHandler,
-            NullableObservableSupplier<TabGroupModelFilter> tabGroupModelFilterSupplier) {
+            ObservableSupplier<TabGroupModelFilter> tabGroupModelFilterSupplier) {
         super(profile, tabListNotificationHandler);
         mTabGroupModelFilterSupplier = tabGroupModelFilterSupplier;
     }
 
     @Override
     protected boolean shouldApply(PersistentMessage message) {
-        TabGroupModelFilter filter = mTabGroupModelFilterSupplier.get();
-        return filter != null
-                && !filter.getTabModel().isOffTheRecord()
+        return mTabGroupModelFilterSupplier.get() != null
+                && !mTabGroupModelFilterSupplier.get().getTabModel().isOffTheRecord()
                 && message.type == PersistentNotificationType.DIRTY_TAB_GROUP
                 && getTabId(message) != Tab.INVALID_TAB_ID;
     }
@@ -49,7 +46,8 @@ public class TabGroupLabeller extends TabObjectLabeller {
 
     @Override
     protected List<PersistentMessage> getAllMessages() {
-        return mMessagingBackendService.getMessages(PersistentNotificationType.DIRTY_TAB_GROUP);
+        return mMessagingBackendService.getMessages(
+                Optional.of(PersistentNotificationType.DIRTY_TAB_GROUP));
     }
 
     @Override
@@ -63,7 +61,6 @@ public class TabGroupLabeller extends TabObjectLabeller {
             // be refactored to accept either rootId or even better tabGroupId as the identifier for
             // tab groups. See https://crbug.com/387509285.
             TabGroupModelFilter filter = mTabGroupModelFilterSupplier.get();
-            assumeNonNull(filter);
             return filter.getGroupLastShownTabId(tabGroupId);
         }
     }

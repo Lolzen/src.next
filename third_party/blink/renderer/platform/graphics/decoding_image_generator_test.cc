@@ -4,9 +4,6 @@
 
 #include "third_party/blink/renderer/platform/graphics/decoding_image_generator.h"
 
-#include <array>
-#include <cstdint>
-
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder_test_helpers.h"
 #include "third_party/blink/renderer/platform/image-decoders/segment_reader.h"
@@ -18,7 +15,7 @@ namespace {
 constexpr unsigned kTooShortForSignature = 5;
 
 scoped_refptr<SegmentReader> CreateSegmentReader(
-    base::span<uint8_t> reference_data) {
+    base::span<char> reference_data) {
   PrepareReferenceData(reference_data);
   scoped_refptr<SharedBuffer> data = SharedBuffer::Create(reference_data);
   return SegmentReader::CreateFromSharedBuffer(std::move(data));
@@ -43,7 +40,7 @@ TEST_F(DecodingImageGeneratorTest, Create) {
 TEST_F(DecodingImageGeneratorTest, CreateWithNoSize) {
   // Construct dummy image data that produces no valid size from the
   // ImageDecoder.
-  std::array<uint8_t, kDefaultTestSize> reference_data;
+  char reference_data[kDefaultTestSize];
   EXPECT_EQ(nullptr, DecodingImageGenerator::CreateAsSkImageGenerator(
                          CreateSegmentReader(reference_data)->GetAsSkData()));
 }
@@ -51,7 +48,7 @@ TEST_F(DecodingImageGeneratorTest, CreateWithNoSize) {
 TEST_F(DecodingImageGeneratorTest, CreateWithNullImageDecoder) {
   // Construct dummy image data that will produce a null image decoder
   // due to data being too short for a signature.
-  std::array<uint8_t, kTooShortForSignature> reference_data;
+  char reference_data[kTooShortForSignature];
   EXPECT_EQ(nullptr, DecodingImageGenerator::CreateAsSkImageGenerator(
                          CreateSegmentReader(reference_data)->GetAsSkData()));
 }

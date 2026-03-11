@@ -4,8 +4,6 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.res.ColorStateList;
 import android.graphics.drawable.Drawable;
 import android.view.View;
@@ -14,8 +12,6 @@ import android.widget.TextView;
 
 import androidx.core.widget.ImageViewCompat;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.tab_ui.R;
 import org.chromium.ui.modelutil.ListModelChangeProcessor;
 import org.chromium.ui.modelutil.PropertyKey;
@@ -26,7 +22,6 @@ import org.chromium.ui.modelutil.PropertyModel;
  * Binds {@link TabListEditorAction}'s {@link PropertyModel} to an {@link TabListEditorMenu} and
  * {@link TabListEditorMenuItem}'s {@link ListItem} to a menu view.
  */
-@NullMarked
 public class TabListEditorMenuAdapter
         implements ListModelChangeProcessor.ViewBinder<
                 PropertyListModel<PropertyModel, PropertyKey>, TabListEditorMenu, PropertyKey> {
@@ -69,18 +64,18 @@ public class TabListEditorMenuAdapter
             TabListEditorMenu menu,
             int index,
             int count,
-            @Nullable PropertyKey key) {
+            PropertyKey key) {
         for (int i = index; i < index + count; i++) {
-            TabListEditorMenuItem menuItem =
+            onItemChanged(
+                    actionModels.get(i),
                     menu.getMenuItem(
-                            actionModels.get(i).get(TabListEditorActionProperties.MENU_ITEM_ID));
-            assumeNonNull(menuItem);
-            onItemChanged(actionModels.get(i), menuItem, key);
+                            actionModels.get(i).get(TabListEditorActionProperties.MENU_ITEM_ID)),
+                    key);
         }
     }
 
     private void onItemChanged(
-            PropertyModel actionModel, TabListEditorMenuItem menuItem, @Nullable PropertyKey key) {
+            PropertyModel actionModel, TabListEditorMenuItem menuItem, PropertyKey key) {
         if (key == null) {
             bindAllProperties(actionModel, menuItem);
             return;
@@ -186,8 +181,6 @@ public class TabListEditorMenuAdapter
             if (colorStateList != null) {
                 ImageViewCompat.setImageTintList(startIcon, colorStateList);
             }
-        } else if (propertyKey == TabListEditorActionProperties.CLICK_LISTENER) {
-            view.setOnClickListener(model.get(TabListEditorActionProperties.CLICK_LISTENER));
         }
     }
 }

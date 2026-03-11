@@ -2,12 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "chrome/renderer/trusted_vault_encryption_keys_extension.h"
 
 #include <utility>
 #include <vector>
 
-#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
@@ -46,7 +50,7 @@ std::vector<uint8_t> ArrayBufferAsBytes(
   const uint8_t* start =
       reinterpret_cast<const uint8_t*>(backing_store->Data());
   const size_t length = backing_store->ByteLength();
-  return std::vector<uint8_t>(start, UNSAFE_TODO(start + length));
+  return std::vector<uint8_t>(start, start + length);
 }
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -80,7 +84,6 @@ bool ParseTrustedVaultKeyArrayMayDeleteFrame(
     v8::Local<v8::Array> array,
     std::vector<chrome::mojom::TrustedVaultKeyPtr>* trusted_vault_keys) {
   DCHECK(trusted_vault_keys);
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   for (uint32_t i = 0; i < array->Length(); ++i) {
     v8::Local<v8::Value> value;
     if (!array->Get(context, i).ToLocal(&value) || !value->IsObject()) {
@@ -89,7 +92,7 @@ bool ParseTrustedVaultKeyArrayMayDeleteFrame(
     }
     v8::Local<v8::Object> obj = value.As<v8::Object>();
     v8::Local<v8::Value> epoch_value;
-    if (!obj->Get(context, gin::StringToV8(isolate, "epoch"))
+    if (!obj->Get(context, gin::StringToV8(context->GetIsolate(), "epoch"))
              .ToLocal(&epoch_value) ||
         !epoch_value->IsInt32()) {
       DVLOG(1) << "invalid key epoch";
@@ -98,7 +101,7 @@ bool ParseTrustedVaultKeyArrayMayDeleteFrame(
     const int32_t version = epoch_value.As<v8::Int32>()->Value();
 
     v8::Local<v8::Value> key_value;
-    if (!obj->Get(context, gin::StringToV8(isolate, "key"))
+    if (!obj->Get(context, gin::StringToV8(context->GetIsolate(), "key"))
              .ToLocal(&key_value) ||
         !key_value->IsArrayBuffer()) {
       DVLOG(1) << "invalid key bytes";
@@ -135,7 +138,6 @@ void ParseTrustedVaultKeysFromMapMayDeleteFrame(
       result;
   v8::Local<v8::Array> array = map->AsArray();
   CHECK_EQ(array->Length(), 2 * map->Size());
-  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   for (uint32_t i = 0; i < array->Length(); i += 2) {
     v8::Local<v8::Value> key;
     if (!array->Get(context, i).ToLocal(&key) || !key->IsString()) {
@@ -144,7 +146,7 @@ void ParseTrustedVaultKeysFromMapMayDeleteFrame(
       return;
     }
     const std::string security_domain_name(
-        *v8::String::Utf8Value(isolate, key));
+        *v8::String::Utf8Value(context->GetIsolate(), key));
 
     v8::Local<v8::Value> value;
     if (!array->Get(context, i + 1).ToLocal(&value) || !value->IsArray()) {
@@ -169,7 +171,7 @@ void ParseTrustedVaultKeysFromMapMayDeleteFrame(
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
-enum class ValidArgs {
+enum ValidArgs {
   kInvalidArgs,
   kValidArgs,
 };
@@ -178,19 +180,19 @@ enum class ValidArgs {
 void RecordCallToSetSyncEncryptionKeysToUma(ValidArgs args) {
   base::UmaHistogramBoolean(
       "Sync.TrustedVaultJavascriptSetEncryptionKeysValidArgs",
-      args == ValidArgs::kValidArgs);
+      args == kValidArgs);
 }
 void RecordCallToSetClientEncryptionKeysToUma(ValidArgs args) {
   base::UmaHistogramBoolean(
       "TrustedVault.JavascriptSetClientEncryptionKeysValidArgs",
-      args == ValidArgs::kValidArgs);
+      args == kValidArgs);
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
 void RecordCallToAddTrustedSyncEncryptionRecoveryMethodToUma(ValidArgs args) {
   base::UmaHistogramBoolean(
       "Sync.TrustedVaultJavascriptAddRecoveryMethodValidArgs",
-      args == ValidArgs::kValidArgs);
+      args == kValidArgs);
 }
 
 }  // namespace
@@ -304,7 +306,7 @@ void TrustedVaultEncryptionKeysExtension::SetSyncEncryptionKeys(
 
   v8::Local<v8::Function> callback;
   if (!args->GetNext(&callback)) {
-    RecordCallToSetSyncEncryptionKeysToUma(ValidArgs::kInvalidArgs);
+    RecordCallToSetSyncEncryptionKeysToUma(kInvalidArgs);
     DLOG(ERROR) << "No callback";
     args->ThrowError();
     return;
@@ -312,7 +314,7 @@ void TrustedVaultEncryptionKeysExtension::SetSyncEncryptionKeys(
 
   std::string gaia_id;
   if (!args->GetNext(&gaia_id)) {
-    RecordCallToSetSyncEncryptionKeysToUma(ValidArgs::kInvalidArgs);
+    RecordCallToSetSyncEncryptionKeysToUma(kInvalidArgs);
     DLOG(ERROR) << "No account ID";
     args->ThrowError();
     return;
@@ -320,14 +322,14 @@ void TrustedVaultEncryptionKeysExtension::SetSyncEncryptionKeys(
 
   v8::LocalVector<v8::ArrayBuffer> encryption_keys(args->isolate());
   if (!args->GetNext(&encryption_keys)) {
-    RecordCallToSetSyncEncryptionKeysToUma(ValidArgs::kInvalidArgs);
+    RecordCallToSetSyncEncryptionKeysToUma(kInvalidArgs);
     DLOG(ERROR) << "Not array of strings";
     args->ThrowError();
     return;
   }
 
   if (encryption_keys.empty()) {
-    RecordCallToSetSyncEncryptionKeysToUma(ValidArgs::kInvalidArgs);
+    RecordCallToSetSyncEncryptionKeysToUma(kInvalidArgs);
     DLOG(ERROR) << "Array of strings empty";
     args->ThrowError();
     return;
@@ -335,7 +337,7 @@ void TrustedVaultEncryptionKeysExtension::SetSyncEncryptionKeys(
 
   int last_key_version = 0;
   if (!args->GetNext(&last_key_version)) {
-    RecordCallToSetSyncEncryptionKeysToUma(ValidArgs::kInvalidArgs);
+    RecordCallToSetSyncEncryptionKeysToUma(kInvalidArgs);
     DLOG(ERROR) << "No version provided";
     args->ThrowError();
     return;
@@ -348,7 +350,7 @@ void TrustedVaultEncryptionKeysExtension::SetSyncEncryptionKeys(
     render_frame()->GetRemoteAssociatedInterfaces()->GetInterface(&remote_);
   }
 
-  RecordCallToSetSyncEncryptionKeysToUma(ValidArgs::kValidArgs);
+  RecordCallToSetSyncEncryptionKeysToUma(kValidArgs);
 
   std::vector<
       std::pair<std::string, std::vector<chrome::mojom::TrustedVaultKeyPtr>>>
@@ -388,7 +390,7 @@ void TrustedVaultEncryptionKeysExtension::SetClientEncryptionKeys(
   v8::Local<v8::Function> callback;
   if (!args->GetNext(&callback)) {
     DLOG(ERROR) << "No callback";
-    RecordCallToSetClientEncryptionKeysToUma(ValidArgs::kInvalidArgs);
+    RecordCallToSetClientEncryptionKeysToUma(kInvalidArgs);
     args->ThrowError();
     return;
   }
@@ -396,7 +398,7 @@ void TrustedVaultEncryptionKeysExtension::SetClientEncryptionKeys(
   std::string gaia_id;
   if (!args->GetNext(&gaia_id)) {
     DLOG(ERROR) << "No account ID";
-    RecordCallToSetClientEncryptionKeysToUma(ValidArgs::kInvalidArgs);
+    RecordCallToSetClientEncryptionKeysToUma(kInvalidArgs);
     args->ThrowError();
     return;
   }
@@ -404,7 +406,7 @@ void TrustedVaultEncryptionKeysExtension::SetClientEncryptionKeys(
   v8::Local<v8::Object> encryption_keys;
   if (!args->GetNext(&encryption_keys) || !encryption_keys->IsMap()) {
     DLOG(ERROR) << "No encryption keys map";
-    RecordCallToSetClientEncryptionKeysToUma(ValidArgs::kInvalidArgs);
+    RecordCallToSetClientEncryptionKeysToUma(kInvalidArgs);
     args->ThrowError();
     return;
   }
@@ -427,12 +429,12 @@ void TrustedVaultEncryptionKeysExtension::SetClientEncryptionKeysContinue(
         trusted_vault_keys) {
   if (!trusted_vault_keys) {
     DLOG(ERROR) << "Can't parse encryption keys object";
-    RecordCallToSetClientEncryptionKeysToUma(ValidArgs::kInvalidArgs);
+    RecordCallToSetClientEncryptionKeysToUma(kInvalidArgs);
     args->ThrowError();
     return;
   }
 
-  RecordCallToSetClientEncryptionKeysToUma(ValidArgs::kValidArgs);
+  RecordCallToSetClientEncryptionKeysToUma(kValidArgs);
 
   if (!remote_.is_bound()) {
     render_frame()->GetRemoteAssociatedInterfaces()->GetInterface(&remote_);
@@ -473,8 +475,7 @@ void TrustedVaultEncryptionKeysExtension::
 
   v8::Local<v8::Function> callback;
   if (!args->GetNext(&callback)) {
-    RecordCallToAddTrustedSyncEncryptionRecoveryMethodToUma(
-        ValidArgs::kInvalidArgs);
+    RecordCallToAddTrustedSyncEncryptionRecoveryMethodToUma(kInvalidArgs);
     DLOG(ERROR) << "No callback";
     args->ThrowError();
     return;
@@ -482,8 +483,7 @@ void TrustedVaultEncryptionKeysExtension::
 
   std::string gaia_id;
   if (!args->GetNext(&gaia_id)) {
-    RecordCallToAddTrustedSyncEncryptionRecoveryMethodToUma(
-        ValidArgs::kInvalidArgs);
+    RecordCallToAddTrustedSyncEncryptionRecoveryMethodToUma(kInvalidArgs);
     DLOG(ERROR) << "No account ID";
     args->ThrowError();
     return;
@@ -491,8 +491,7 @@ void TrustedVaultEncryptionKeysExtension::
 
   v8::Local<v8::ArrayBuffer> public_key;
   if (!args->GetNext(&public_key)) {
-    RecordCallToAddTrustedSyncEncryptionRecoveryMethodToUma(
-        ValidArgs::kInvalidArgs);
+    RecordCallToAddTrustedSyncEncryptionRecoveryMethodToUma(kInvalidArgs);
     DLOG(ERROR) << "No public key";
     args->ThrowError();
     return;
@@ -500,8 +499,7 @@ void TrustedVaultEncryptionKeysExtension::
 
   int method_type_hint = 0;
   if (!args->GetNext(&method_type_hint)) {
-    RecordCallToAddTrustedSyncEncryptionRecoveryMethodToUma(
-        ValidArgs::kInvalidArgs);
+    RecordCallToAddTrustedSyncEncryptionRecoveryMethodToUma(kInvalidArgs);
     DLOG(ERROR) << "No method type hint";
     args->ThrowError();
     return;
@@ -514,8 +512,7 @@ void TrustedVaultEncryptionKeysExtension::
     render_frame()->GetRemoteAssociatedInterfaces()->GetInterface(&remote_);
   }
 
-  RecordCallToAddTrustedSyncEncryptionRecoveryMethodToUma(
-      ValidArgs::kValidArgs);
+  RecordCallToAddTrustedSyncEncryptionRecoveryMethodToUma(kValidArgs);
   remote_->AddTrustedRecoveryMethod(
       gaia_id, ArrayBufferAsBytes(public_key), method_type_hint,
       base::BindOnce(

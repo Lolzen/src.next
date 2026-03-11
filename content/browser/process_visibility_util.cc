@@ -4,14 +4,12 @@
 
 #include "content/public/browser/process_visibility_util.h"
 
-#include "content/common/process_priority_tracker.h"
+#include "content/common/process_visibility_tracker.h"
 
 namespace content {
 
 void OnBrowserVisibilityChanged(bool visible) {
-  ProcessPriorityTracker::GetInstance()->OnProcessPriorityChanged(
-      visible ? base::Process::Priority::kUserBlocking
-              : base::Process::Priority::kBestEffort);
+  ProcessVisibilityTracker::GetInstance()->OnProcessVisibilityChanged(visible);
 }
 
 }  // namespace content

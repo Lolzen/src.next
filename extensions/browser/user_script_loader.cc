@@ -272,31 +272,9 @@ void UserScriptLoader::RemoveScripts(const std::set<std::string>& script_ids,
 
 void UserScriptLoader::OnRenderProcessHostCreated(
     content::RenderProcessHost* process_host) {
-  if (process_host->IsForGuestsOnly()) {
-    // GuestView script updates are done from `OnRenderProcessLaunched()`
-    // instead, because WebViewRendererState setup is not yet done at this
-    // point.
-    return;
-  }
-  SendUpdateIfNeeded(process_host);
-}
-
-void UserScriptLoader::OnRenderProcessLaunched(
-    content::RenderProcessHost* process_host) {
-  if (!process_host->IsForGuestsOnly()) {
-    // Non-GuestView script updates are done from
-    // `OnRenderProcessHostCreated()`.
-    return;
-  }
-  SendUpdateIfNeeded(process_host);
-}
-
-void UserScriptLoader::SendUpdateIfNeeded(
-    content::RenderProcessHost* process_host) {
   if (!ExtensionsBrowserClient::Get()->IsSameContext(
-          browser_context_, process_host->GetBrowserContext())) {
+          browser_context_, process_host->GetBrowserContext()))
     return;
-  }
   if (initial_load_complete()) {
     SendUpdateResult update_result = SendUpdate(process_host, shared_memory_);
     if (update_result == SendUpdateResult::kRendererHasBeenNotified) {
@@ -524,12 +502,10 @@ UserScriptLoader::SendUpdateResult UserScriptLoader::SendUpdate(
     return SendUpdateResult::kNoActionTaken;
   }
 
-  mojom::Renderer* renderer =
-      RendererStartupHelperFactory::GetForBrowserContext(browser_context())
-          ->GetRenderer(process);
-  if (!renderer) {
-    // If the renderer connection hasn't been set up yet, early return.  We'll
-    // end up here again when it's ready.
+  // If the process is being started asynchronously, early return.  We'll end up
+  // calling InitUserScripts when it's created which will call this again.
+  base::ProcessHandle handle = process->GetProcess().Handle();
+  if (!handle) {
     return SendUpdateResult::kNoActionTaken;
   }
 
@@ -589,6 +565,9 @@ UserScriptLoader::SendUpdateResult UserScriptLoader::SendUpdate(
   }
 #endif
 
+  mojom::Renderer* renderer =
+      RendererStartupHelperFactory::GetForBrowserContext(browser_context())
+          ->GetRenderer(process);
   renderer->UpdateUserScripts(std::move(region_for_process),
                               mojom::HostID::New(host_id().type, host_id().id));
   return SendUpdateResult::kRendererHasBeenNotified;

@@ -4,7 +4,6 @@
 
 #include "chrome/browser/signin/signin_promo.h"
 
-#include "base/feature_list.h"
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
@@ -18,10 +17,6 @@
 #include "components/google/core/common/google_util.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
-#include "components/signin/public/base/signin_metrics.h"
-#include "components/signin/public/base/signin_pref_names.h"
-#include "components/signin/public/base/signin_switches.h"
-#include "components/sync/base/features.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/storage_partition_config.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
@@ -77,7 +72,6 @@ GURL GetEmbeddedReauthURLWithEmail(signin_metrics::AccessPoint access_point,
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
 GURL GetChromeSyncURLForDice(ChromeSyncUrlArgs args) {
   GURL url = GaiaUrls::GetInstance()->signin_chrome_sync_dice();
   if (!args.email.empty()) {
@@ -92,12 +86,6 @@ GURL GetChromeSyncURLForDice(ChromeSyncUrlArgs args) {
   switch (args.flow) {
     // Default behavior.
     case Flow::NONE:
-      if (base::FeatureList::IsEnabled(
-              syncer::kReplaceSyncPromosWithSignInPromos)) {
-        // If History Sync Opt-in is enabled, use a customized sign-in screen
-        // that does NOT mention history sync benefits.
-        url = net::AppendQueryParameter(url, "flow", "history_opt_in");
-      }
       break;
     case Flow::PROMO:
       url = net::AppendQueryParameter(url, "flow", "promo");
@@ -106,12 +94,8 @@ GURL GetChromeSyncURLForDice(ChromeSyncUrlArgs args) {
       url = net::AppendQueryParameter(url, "flow", "embedded_promo");
       break;
   }
-  if (base::FeatureList::IsEnabled(switches::kSignInPromoMaterialNextUI)) {
-    url = net::AppendQueryParameter(url, "theme", "mn");
-  }
   return url;
 }
-#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
 GURL GetChromeReauthURL(ChromeSyncUrlArgs args) {
   GURL url = GaiaUrls::GetInstance()->reauth_chrome_dice();
@@ -143,18 +127,22 @@ content::StoragePartition* GetSigninPartition(
   return browser_context->GetStoragePartition(signin_partition_config);
 }
 
-std::optional<signin_metrics::AccessPoint> GetAccessPointForEmbeddedPromoURL(
-    const GURL& url) {
+signin_metrics::AccessPoint GetAccessPointForEmbeddedPromoURL(const GURL& url) {
   std::string value;
   if (!net::GetValueForKeyInQuery(url, kSignInPromoQueryKeyAccessPoint,
                                   &value)) {
     return signin_metrics::AccessPoint::kUnknown;
   }
 
-  int access_point_value = -1;
-  base::StringToInt(value, &access_point_value);
+  int access_point = -1;
+  base::StringToInt(value, &access_point);
+  if (access_point <
+          static_cast<int>(signin_metrics::AccessPoint::kStartPage) ||
+      access_point > static_cast<int>(signin_metrics::AccessPoint::kMaxValue)) {
+    return signin_metrics::AccessPoint::kUnknown;
+  }
 
-  return signin_metrics::AccessPointFromInt(access_point_value);
+  return static_cast<signin_metrics::AccessPoint>(access_point);
 }
 
 signin_metrics::Reason GetSigninReasonForEmbeddedPromoURL(const GURL& url) {
@@ -182,29 +170,6 @@ void RegisterProfilePrefs(
                                 0);
   registry->RegisterIntegerPref(prefs::kAddressSignInPromoShownCountPerProfile,
                                 0);
-  registry->RegisterIntegerPref(prefs::kBookmarkSignInPromoShownCountPerProfile,
-                                0);
-  registry->RegisterIntegerPref(
-      prefs::kHistoryPageHistorySyncPromoShownCountPerProfile, 0);
-  registry->RegisterTimePref(
-      prefs::kHistoryPageHistorySyncPromoLastDismissedTimestampPerProfile,
-      base::Time());
-  registry->RegisterBooleanPref(
-      prefs::kHistoryPageHistorySyncPromoShownAfterDismissalPerProfile, false);
-
-  // Signin promo limits experiment prefs.
-  registry->RegisterIntegerPref(
-      prefs::kAddressSignInPromoShownCountPerProfileForLimitsExperiment, 0);
-  registry->RegisterIntegerPref(
-      prefs::kBookmarkSignInPromoShownCountPerProfileForLimitsExperiment, 0);
-  registry->RegisterIntegerPref(
-      prefs::kPasswordSignInPromoShownCountPerProfileForLimitsExperiment, 0);
-  registry->RegisterIntegerPref(
-      prefs::kAddressSignInPromoDismissCountPerProfileForLimitsExperiment, 0);
-  registry->RegisterIntegerPref(
-      prefs::kPasswordSignInPromoDismissCountPerProfileForLimitsExperiment, 0);
-  registry->RegisterIntegerPref(
-      prefs::kBookmarkSignInPromoDismissCountPerProfileForLimitsExperiment, 0);
 }
 
 }  // namespace signin

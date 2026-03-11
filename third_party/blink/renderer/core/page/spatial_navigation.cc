@@ -177,9 +177,8 @@ static bool IsRectInDirection(SpatialNavigationDirection direction,
 }
 
 int LineBoxes(const LayoutObject& layout_object) {
-  if (!layout_object.IsNonAtomicInline()) {
+  if (!layout_object.IsInline() || layout_object.IsAtomicInlineLevel())
     return 1;
-  }
 
   // If it has empty quads, it's most likely not a line broken ("fragmented")
   // text. <a><div></div></a> has for example one empty rect.
@@ -228,6 +227,10 @@ gfx::RectF RectInViewport(const Node& node) {
 // offscreen activeElement. When activeElement is offscreen, spatnav doesn't use
 // it as the search origin; the search will start at an edge of the visual
 // viewport instead.
+// TODO(crbug.com/889840): Fix VisibleBoundsInVisualViewport().
+// If VisibleBoundsInVisualViewport() would have taken "element-clips" into
+// account, spatnav could have called it directly; no need to check the
+// LayoutObject's VisibleContentRect.
 bool IsOffscreen(const Node* node) {
   DCHECK(node);
   return RectInViewport(*node).IsEmpty();
@@ -796,9 +799,12 @@ LayoutUnit TallestInlineAtomicChild(const LayoutObject& layout_object) {
   if (!layout_object.IsLayoutInline())
     return max_child_size;
 
-  for (const LayoutObject* child = layout_object.SlowFirstChild(); child;
+  for (LayoutObject* child = layout_object.SlowFirstChild(); child;
        child = child->NextSibling()) {
-    if (child->IsAtomicInline()) {
+    if (child->IsOutOfFlowPositioned())
+      continue;
+
+    if (child->IsAtomicInlineLevel()) {
       max_child_size =
           std::max(To<LayoutBox>(child)->LogicalHeight(), max_child_size);
     }

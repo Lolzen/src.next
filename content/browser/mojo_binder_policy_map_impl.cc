@@ -8,6 +8,7 @@
 
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
+#include "base/not_fatal_until.h"
 #include "content/common/dom_automation_controller.mojom.h"
 #include "content/common/frame.mojom.h"
 #include "content/public/browser/content_browser_client.h"
@@ -40,6 +41,7 @@ namespace content {
 #if BUILDFLAG(IS_MAC)
 // Put crbug.com/115920 fix under flag, so we can measure its CWV impact.
 BASE_FEATURE(kTextInputHostMojoCapabilityControlWorkaround,
+             "TextInputHostMojoCapabilityControlWorkaround",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -225,6 +227,7 @@ class BrowserInterfaceBrokerMojoBinderPolicyMapHolder {
   }
 
  private:
+  // TODO(crbug.com/40156088): Set default policy map for content/.
   // Changes to `same_origin_map_` require security review.
   MojoBinderPolicyMapImpl same_origin_map_;
 
@@ -283,7 +286,7 @@ MojoBinderNonAssociatedPolicy
 MojoBinderPolicyMapImpl::GetNonAssociatedMojoBinderPolicyOrDieForTesting(
     const std::string& interface_name) const {
   const auto& found = non_associated_policy_map_.find(interface_name);
-  CHECK(found != non_associated_policy_map_.end());
+  CHECK(found != non_associated_policy_map_.end(), base::NotFatalUntil::M130);
   return found->second;
 }
 
@@ -291,7 +294,7 @@ MojoBinderAssociatedPolicy
 MojoBinderPolicyMapImpl::GetAssociatedMojoBinderPolicyOrDieForTesting(
     const std::string& interface_name) const {
   const auto& found = associated_policy_map_.find(interface_name);
-  CHECK(found != associated_policy_map_.end());
+  CHECK(found != associated_policy_map_.end(), base::NotFatalUntil::M130);
   return found->second;
 }
 

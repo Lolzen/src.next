@@ -5,7 +5,6 @@
 #include "net/http/http_stream_pool_group.h"
 
 #include "base/task/sequenced_task_runner.h"
-#include "base/trace_event/trace_id_helper.h"
 #include "base/types/expected.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/load_timing_info.h"
@@ -76,25 +75,33 @@ HttpStreamPool::Group::IdleStreamSocket::IdleStreamSocket(
 
 HttpStreamPool::Group::IdleStreamSocket::~IdleStreamSocket() = default;
 
-HttpStreamPool::Group::Group(HttpStreamPool* pool, HttpStreamKey stream_key)
+bool HttpStreamPool::Group::PausedJobComparator::operator()(Job* a,
+                                                            Job* b) const {
+  if (a->create_time() == b->create_time()) {
+    return a < b;
+  }
+  return a->create_time() < b->create_time();
+}
+
+HttpStreamPool::Group::Group(
+    HttpStreamPool* pool,
+    HttpStreamKey stream_key,
+    std::optional<QuicSessionAliasKey> quic_session_alias_key)
     : pool_(pool),
       stream_key_(std::move(stream_key)),
       spdy_session_key_(stream_key_.CalculateSpdySessionKey()),
-      quic_session_alias_key_(stream_key_.CalculateQuicSessionAliasKey()),
+      quic_session_alias_key_(quic_session_alias_key.has_value()
+                                  ? std::move(*quic_session_alias_key)
+                                  : stream_key_.CalculateQuicSessionAliasKey()),
       net_log_(
           NetLogWithSource::Make(http_network_session()->net_log(),
                                  NetLogSourceType::HTTP_STREAM_POOL_GROUP)),
       force_quic_(
           http_network_session()->ShouldForceQuic(stream_key_.destination(),
                                                   ProxyInfo::Direct(),
-                                                  /*is_websocket=*/false)),
-      track_("HttpStreamPool::Group"),
-      flow_(perfetto::Flow::ProcessScoped(
-          base::trace_event::GetNextGlobalTraceId())) {
-  TRACE_EVENT_INSTANT("net.stream", "Group::Group", track_, flow_,
-                      "destination", stream_key_.destination().Serialize());
+                                                  /*is_websocket=*/false)) {
   net_log_.BeginEvent(NetLogEventType::HTTP_STREAM_POOL_GROUP_ALIVE, [&] {
-    base::DictValue dict;
+    base::Value::Dict dict;
     dict.Set("stream_key", stream_key_.ToValue());
     dict.Set("force_quic", force_quic_);
     return dict;
@@ -105,7 +112,6 @@ HttpStreamPool::Group::~Group() {
   // TODO(crbug.com/346835898): Ensure `pool_`'s total active stream counts
   // are consistent.
   net_log_.EndEvent(NetLogEventType::HTTP_STREAM_POOL_GROUP_ALIVE);
-  TRACE_EVENT_INSTANT("net.stream", "Group::~Group", track_, flow_);
 }
 
 std::unique_ptr<HttpStreamPool::Job> HttpStreamPool::Group::CreateJob(
@@ -113,8 +119,33 @@ std::unique_ptr<HttpStreamPool::Job> HttpStreamPool::Group::CreateJob(
     quic::ParsedQuicVersion quic_version,
     NextProto expected_protocol,
     const NetLogWithSource& request_net_log) {
-  return std::make_unique<Job>(delegate, JobType::kRequest, this, quic_version,
-                               expected_protocol, request_net_log);
+  return std::make_unique<Job>(delegate, this, quic_version, expected_protocol,
+                               request_net_log);
+}
+
+bool HttpStreamPool::Group::CanStartJob(Job* job) {
+  if (IsFailing()) {
+    auto [_, inserted] = paused_jobs_.emplace(job);
+    CHECK(inserted);
+    // `job` will be resumed once the current AttemptManager completes with a
+    // new AttemptManager.
+    return false;
+  }
+
+  EnsureAttemptManager();
+  return true;
+}
+
+void HttpStreamPool::Group::OnJobComplete(Job* job) {
+  paused_jobs_.erase(job);
+  resumed_jobs_.erase(job);
+
+  if (attempt_manager_) {
+    attempt_manager_->OnJobComplete(job);
+    // `this` may be deleted.
+  } else {
+    MaybeComplete();
+  }
 }
 
 std::unique_ptr<HttpStreamPoolHandle> HttpStreamPool::Group::CreateHandle(
@@ -124,12 +155,9 @@ std::unique_ptr<HttpStreamPoolHandle> HttpStreamPool::Group::CreateHandle(
   ++handed_out_stream_count_;
   pool_->IncrementTotalHandedOutStreamCount();
 
-  TRACE_EVENT_INSTANT("net.stream", "Group::CreateHandle", track_, flow_,
-                      "negotiated_protocol", socket->GetNegotiatedProtocol(),
-                      "handed_out_stream_count", handed_out_stream_count_);
   net_log_.AddEvent(NetLogEventType::HTTP_STREAM_POOL_GROUP_HANDLE_CREATED,
                     [&] {
-                      base::DictValue dict;
+                      base::Value::Dict dict;
                       socket->NetLog().source().AddToEventParameters(dict);
                       dict.Set("reuse_type", static_cast<int>(reuse_type));
                       return dict;
@@ -174,12 +202,9 @@ void HttpStreamPool::Group::ReleaseStreamSocket(
     reusable = true;
   }
 
-  TRACE_EVENT_INSTANT("net.stream", "Group::ReleaseStreamSocket", track_, flow_,
-                      "reusable", reusable, "handed_out_stream_count",
-                      handed_out_stream_count_);
-
   if (reusable) {
     AddIdleStreamSocket(std::move(socket));
+    ProcessPendingRequest();
   } else {
     RecordNetLogClosingSocket(*socket, not_reusable_reason);
     socket.reset();
@@ -197,11 +222,6 @@ void HttpStreamPool::Group::AddIdleStreamSocket(
   idle_stream_sockets_.emplace_back(std::move(socket), base::TimeTicks::Now());
   pool_->IncrementTotalIdleStreamCount();
   CleanupIdleStreamSockets(CleanupMode::kTimeoutOnly, kIdleTimeLimitExpired);
-
-  TRACE_EVENT_INSTANT("net.stream", "Group::AddIdleStreamSocket", track_, flow_,
-                      "idle_stream_count", idle_stream_sockets_.size());
-
-  ProcessPendingRequest();
 }
 
 std::unique_ptr<StreamSocket> HttpStreamPool::Group::GetIdleStreamSocket() {
@@ -241,9 +261,6 @@ std::unique_ptr<StreamSocket> HttpStreamPool::Group::GetIdleStreamSocket() {
   idle_stream_sockets_.erase(idle_it);
   pool_->DecrementTotalIdleStreamCount();
 
-  TRACE_EVENT_INSTANT("net.stream", "Group::GetIdleStreamSocket", track_, flow_,
-                      "idle_stream_count", idle_stream_sockets_.size());
-
   return stream_socket;
 }
 
@@ -271,7 +288,7 @@ bool HttpStreamPool::Group::CloseOneIdleStreamSocket() {
 }
 
 size_t HttpStreamPool::Group::ConnectingStreamSocketCount() const {
-  return attempt_manager_ ? attempt_manager_->TcpBasedAttemptSlotCount() : 0;
+  return attempt_manager_ ? attempt_manager_->TcpBasedAttemptCount() : 0;
 }
 
 size_t HttpStreamPool::Group::ActiveStreamSocketCount() const {
@@ -299,14 +316,11 @@ void HttpStreamPool::Group::FlushWithError(
     StreamSocketCloseReason attempt_cancel_reason,
     std::string_view net_log_close_reason_utf8) {
   Refresh(net_log_close_reason_utf8, attempt_cancel_reason);
-  CancelJobs(error, attempt_cancel_reason);
+  CancelJobs(error);
 }
 
 void HttpStreamPool::Group::Refresh(std::string_view net_log_close_reason_utf8,
                                     StreamSocketCloseReason cancel_reason) {
-  TRACE_EVENT_INSTANT("net.stream", "Group::Refresh", track_, flow_,
-                      "cancel_reason", static_cast<int>(cancel_reason));
-
   ++generation_;
   if (attempt_manager_) {
     attempt_manager_->CancelTcpBasedAttempts(cancel_reason);
@@ -319,73 +333,65 @@ void HttpStreamPool::Group::CloseIdleStreams(
   CleanupIdleStreamSockets(CleanupMode::kForce, net_log_close_reason_utf8);
 }
 
-void HttpStreamPool::Group::CancelJobs(int error,
-                                       StreamSocketCloseReason cancel_reason) {
-  TRACE_EVENT_INSTANT("net.stream", "Group::CancelJobs", track_, flow_,
-                      "cancel_reason", static_cast<int>(cancel_reason));
+void HttpStreamPool::Group::CancelJobs(int error) {
+  if (!paused_jobs_.empty()) {
+    CancelPausedJob(error);
+  }
   if (attempt_manager_) {
-    attempt_manager_->CancelJobs(error, cancel_reason);
+    attempt_manager_->CancelJobs(error);
   }
 }
 
-HttpStreamPool::AttemptManager* HttpStreamPool::Group::GetAttemptManagerForJob(
-    Job* job) {
-  if (job->type() == JobType::kAltSvcQuicPreconnect) {
-    return GetAttemptManagerForAltSvcQuicPreconnect();
+void HttpStreamPool::Group::EnsureAttemptManager() {
+  if (attempt_manager_) {
+    return;
   }
-
-  if (!attempt_manager_) {
-    attempt_manager_ = std::make_unique<AttemptManager>(
-        this, http_network_session()->net_log());
-  }
-  return attempt_manager_.get();
+  attempt_manager_ =
+      std::make_unique<AttemptManager>(this, http_network_session()->net_log());
 }
 
-void HttpStreamPool::Group::OnAttemptManagerShuttingDown(
-    AttemptManager* attempt_manager) {
-  if (attempt_manager == attempt_manager_.get()) {
-    shutting_down_attempt_managers_.emplace(std::move(attempt_manager_));
-    CHECK(!attempt_manager_.get());
-  } else if (attempt_manager ==
-             alt_svc_quic_preconnect_attempt_manager_.get()) {
-    shutting_down_attempt_managers_.emplace(
-        std::move(alt_svc_quic_preconnect_attempt_manager_));
-    CHECK(!alt_svc_quic_preconnect_attempt_manager_.get());
+void HttpStreamPool::Group::OnAttemptManagerComplete() {
+  CHECK(attempt_manager_);
+
+  const bool should_resume_paused_job =
+      attempt_manager_->is_failing() && !paused_jobs_.empty();
+
+  attempt_manager_.reset();
+
+  if (on_attempt_manager_complete_callback_for_testing_) {
+    std::move(on_attempt_manager_complete_callback_for_testing_).Run();
+  }
+
+  if (should_resume_paused_job) {
+    ResumePausedJob();
   } else {
-    NOTREACHED();
+    MaybeComplete();
   }
 }
 
-void HttpStreamPool::Group::OnAttemptManagerComplete(
-    AttemptManager* attempt_manager) {
-  auto it = shutting_down_attempt_managers_.find(attempt_manager);
-  if (it != shutting_down_attempt_managers_.end()) {
-    CHECK_NE(attempt_manager_.get(), attempt_manager);
-    CHECK_NE(alt_svc_quic_preconnect_attempt_manager_.get(), attempt_manager);
-    shutting_down_attempt_managers_.erase(it);
-  } else {
-    if (attempt_manager == attempt_manager_.get()) {
-      attempt_manager_.reset();
-    } else if (attempt_manager ==
-               alt_svc_quic_preconnect_attempt_manager_.get()) {
-      alt_svc_quic_preconnect_attempt_manager_.reset();
-    } else {
-      NOTREACHED();
-    }
-  }
-
-  MaybeComplete();
-}
-
-base::DictValue HttpStreamPool::Group::GetInfoAsValue() const {
-  base::DictValue dict;
+base::Value::Dict HttpStreamPool::Group::GetInfoAsValue() const {
+  base::Value::Dict dict;
   dict.Set("active_socket_count", static_cast<int>(ActiveStreamSocketCount()));
   dict.Set("idle_socket_count", static_cast<int>(IdleStreamSocketCount()));
   dict.Set("handed_out_socket_count",
            static_cast<int>(HandedOutStreamSocketCount()));
+  dict.Set("paused_job_count", static_cast<int>(PausedJobCount()));
+  dict.Set("resumed_job_count", static_cast<int>(resumed_jobs_.size()));
   dict.Set("attempt_manager_alive", !!attempt_manager_);
   if (attempt_manager_) {
     dict.Set("attempt_state", attempt_manager_->GetInfoAsValue());
+  }
+
+  if (!paused_jobs_.empty()) {
+    base::Value::List paused_jobs;
+    for (const auto job : paused_jobs_) {
+      base::Value::Dict job_dict;
+      job_dict.Set(
+          "create_to_resume_ms",
+          static_cast<int>(job->CreateToResumeTime().InMilliseconds()));
+      paused_jobs.Append(std::move(job_dict));
+    }
+    dict.Set("paused_jobs", std::move(paused_jobs));
   }
 
   return dict;
@@ -393,6 +399,67 @@ base::DictValue HttpStreamPool::Group::GetInfoAsValue() const {
 
 void HttpStreamPool::Group::CleanupTimedoutIdleStreamSocketsForTesting() {
   CleanupIdleStreamSockets(CleanupMode::kTimeoutOnly, "For testing");
+}
+
+void HttpStreamPool::Group::SetOnAttemptManagerCompleteCallbackForTesting(
+    base::OnceClosure callback) {
+  CHECK(on_attempt_manager_complete_callback_for_testing_.is_null());
+  on_attempt_manager_complete_callback_for_testing_ = std::move(callback);
+}
+
+bool HttpStreamPool::Group::IsFailing() const {
+  // If we don't have an AttemptManager the group is not considered as failing
+  // because we destroy an AttemptManager after all in-flight attempts are
+  // completed (There are only handed out streams and/or idle streams).
+  return attempt_manager_ && attempt_manager_->is_failing();
+}
+
+void HttpStreamPool::Group::ResumePausedJob() {
+  // The current AttemptManager could be failing again while resuming jobs.
+  if (IsFailing()) {
+    return;
+  }
+
+  raw_ptr<Job> job = ExtractOnePausedJob();
+  if (!job) {
+    return;
+  }
+
+  // Using PostTask() to resume the remaining paused jobs to avoid reentrancy.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&Group::ResumePausedJob, weak_ptr_factory_.GetWeakPtr()));
+
+  job->Resume();
+}
+
+void HttpStreamPool::Group::CancelPausedJob(int error) {
+  Job* job = ExtractOnePausedJob();
+  if (!job) {
+    // Try to complete asynchronously because this method can be called in the
+    // middle of CancelJobs() and `this` must be alive until CancelJobs()
+    // completes.
+    MaybeCompleteLater();
+    return;
+  }
+
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&Group::CancelPausedJob,
+                                weak_ptr_factory_.GetWeakPtr(), error));
+
+  job->OnStreamFailed(error, NetErrorDetails(), ResolveErrorInfo());
+}
+
+HttpStreamPool::Job* HttpStreamPool::Group::ExtractOnePausedJob() {
+  if (paused_jobs_.empty()) {
+    return nullptr;
+  }
+
+  raw_ptr<Job> job =
+      std::move(paused_jobs_.extract(paused_jobs_.begin())).value();
+  Job* job_raw_ptr = job.get();
+  resumed_jobs_.emplace(std::move(job));
+  return job_raw_ptr;
 }
 
 void HttpStreamPool::Group::CleanupIdleStreamSockets(
@@ -421,19 +488,9 @@ void HttpStreamPool::Group::CleanupIdleStreamSockets(
   MaybeCompleteLater();
 }
 
-HttpStreamPool::AttemptManager*
-HttpStreamPool::Group::GetAttemptManagerForAltSvcQuicPreconnect() {
-  if (!alt_svc_quic_preconnect_attempt_manager_) {
-    alt_svc_quic_preconnect_attempt_manager_ = std::make_unique<AttemptManager>(
-        this, http_network_session()->net_log());
-  }
-  return alt_svc_quic_preconnect_attempt_manager_.get();
-}
-
 bool HttpStreamPool::Group::CanComplete() const {
-  return ActiveStreamSocketCount() == 0 && !attempt_manager_ &&
-         !alt_svc_quic_preconnect_attempt_manager_ &&
-         shutting_down_attempt_managers_.empty();
+  return ActiveStreamSocketCount() == 0 && paused_jobs_.empty() &&
+         resumed_jobs_.empty() && !attempt_manager_;
 }
 
 void HttpStreamPool::Group::MaybeComplete() {
@@ -447,8 +504,7 @@ void HttpStreamPool::Group::MaybeComplete() {
 
 void HttpStreamPool::Group::MaybeCompleteLater() {
   if (CanComplete()) {
-    // Use IDLE priority since completing group is not urgent.
-    TaskRunner(IDLE)->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(&Group::MaybeComplete, weak_ptr_factory_.GetWeakPtr()));
   }

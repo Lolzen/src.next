@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -23,7 +24,6 @@
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/escape.h"
-#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -51,12 +51,12 @@ using extensions::mojom::ManifestLocation;
 namespace extensions::file_util {
 namespace {
 
-enum class SafeInstallationFlag {
-  kDefault,   // Default case, controlled by a field trial.
-  kDisabled,  // Safe installation is disabled.
-  kEnabled,   // Safe installation is enabled.
+enum SafeInstallationFlag {
+  DEFAULT,   // Default case, controlled by a field trial.
+  DISABLED,  // Safe installation is disabled.
+  ENABLED,   // Safe installation is enabled.
 };
-SafeInstallationFlag g_use_safe_installation = SafeInstallationFlag::kDefault;
+SafeInstallationFlag g_use_safe_installation = DEFAULT;
 
 bool g_report_error_for_invisible_icon = false;
 
@@ -69,18 +69,18 @@ bool ValidateFilePath(const base::FilePath& path) {
 // Returns true if the extension installation should flush all files and the
 // directory.
 bool UseSafeInstallation() {
-  if (g_use_safe_installation == SafeInstallationFlag::kDefault) {
+  if (g_use_safe_installation == DEFAULT) {
     const char kFieldTrialName[] = "ExtensionUseSafeInstallation";
     const char kEnable[] = "Enable";
     return base::FieldTrialList::FindFullName(kFieldTrialName) == kEnable;
   }
 
-  return g_use_safe_installation == SafeInstallationFlag::kEnabled;
+  return g_use_safe_installation == ENABLED;
 }
 
-enum class FlushOneOrAllFiles {
-  kOneFileOnly,
-  kAllFiles,
+enum FlushOneOrAllFiles {
+   ONE_FILE_ONLY,
+   ALL_FILES
 };
 
 // Flush all files in a directory or just one.  When flushing all files, it
@@ -100,7 +100,7 @@ void FlushFilesInDir(const base::FilePath& path,
                            base::File::FLAG_OPEN | base::File::FLAG_WRITE);
     currentFile.Flush();
     currentFile.Close();
-    if (one_or_all_files == FlushOneOrAllFiles::kOneFileOnly) {
+    if (one_or_all_files == ONE_FILE_ONLY) {
       break;
     }
   }
@@ -111,9 +111,7 @@ void FlushFilesInDir(const base::FilePath& path,
 const base::FilePath::CharType kTempDirectoryName[] = FILE_PATH_LITERAL("Temp");
 
 void SetUseSafeInstallation(bool use_safe_installation) {
-  g_use_safe_installation = use_safe_installation
-                                ? SafeInstallationFlag::kEnabled
-                                : SafeInstallationFlag::kDisabled;
+  g_use_safe_installation = use_safe_installation ? ENABLED : DISABLED;
 }
 
 base::FilePath InstallExtension(const base::FilePath& unpacked_source_dir,
@@ -168,7 +166,7 @@ base::FilePath InstallExtension(const base::FilePath& unpacked_source_dir,
   // on disk. Otherwise a sudden power loss could cause the newly installed
   // extension to be in a corrupted state. Note that empty sub-directories
   // may still be lost.
-  FlushFilesInDir(crx_temp_source, FlushOneOrAllFiles::kAllFiles);
+  FlushFilesInDir(crx_temp_source, ALL_FILES);
 
   // The target version_dir does not exists yet, so base::Move() is using
   // rename() on POSIX systems. It is atomic in the sense that it will
@@ -184,7 +182,7 @@ base::FilePath InstallExtension(const base::FilePath& unpacked_source_dir,
   // is going to be updated with the new version_dir later. In the event of
   // data loss ExtensionPrefs should be pointing to the previous version which
   // is still fine.
-  FlushFilesInDir(version_dir, FlushOneOrAllFiles::kOneFileOnly);
+  FlushFilesInDir(version_dir, ONE_FILE_ONLY);
 
   return version_dir;
 }
@@ -229,7 +227,7 @@ void UninstallExtension(const base::FilePath& profile_dir,
 scoped_refptr<Extension> LoadExtension(const base::FilePath& extension_path,
                                        ManifestLocation location,
                                        int flags,
-                                       std::u16string* error) {
+                                       std::string* error) {
   return LoadExtension(extension_path, nullptr, std::string(), location, flags,
                        error);
 }
@@ -238,7 +236,7 @@ scoped_refptr<Extension> LoadExtension(const base::FilePath& extension_path,
                                        const ExtensionId& extension_id,
                                        ManifestLocation location,
                                        int flags,
-                                       std::u16string* error) {
+                                       std::string* error) {
   return LoadExtension(extension_path, nullptr, extension_id, location, flags,
                        error);
 }
@@ -249,28 +247,22 @@ scoped_refptr<Extension> LoadExtension(
     const ExtensionId& extension_id,
     ManifestLocation location,
     int flags,
-    std::u16string* error) {
-  error->clear();
-  std::string utf8_error;
-  std::optional<base::DictValue> manifest;
+    std::string* error) {
+  std::optional<base::Value::Dict> manifest;
   if (!manifest_file) {
-    manifest = LoadManifest(extension_path, &utf8_error);
+    manifest = LoadManifest(extension_path, error);
   } else {
-    manifest = LoadManifest(extension_path, manifest_file, &utf8_error);
+    manifest = LoadManifest(extension_path, manifest_file, error);
   }
   if (!manifest) {
-    *error = base::UTF8ToUTF16(utf8_error);
     return nullptr;
   }
 
-  // TODO(crbug.com/41317803): Continue removing std::string errors and
-  // replacing with std::u16string.
   if (!extension_l10n_util::LocalizeExtension(
           extension_path, &manifest.value(),
           extension_l10n_util::GetGzippedMessagesPermissionForLocation(
               location),
-          &utf8_error)) {
-    *error = base::UTF8ToUTF16(utf8_error);
+          error)) {
     return nullptr;
   }
 
@@ -289,15 +281,13 @@ scoped_refptr<Extension> LoadExtension(
   return extension;
 }
 
-// TODO(crbug.com/41317803): Continue removing std::string errors and replacing
-// with std::u16string.
-std::optional<base::DictValue> LoadManifest(
+std::optional<base::Value::Dict> LoadManifest(
     const base::FilePath& extension_path,
     std::string* error) {
   return LoadManifest(extension_path, kManifestFilename, error);
 }
 
-std::optional<base::DictValue> LoadManifest(
+std::optional<base::Value::Dict> LoadManifest(
     const base::FilePath& extension_path,
     const base::FilePath::CharType* manifest_filename,
     std::string* error) {
@@ -332,30 +322,26 @@ std::optional<base::DictValue> LoadManifest(
 }
 
 bool ValidateExtension(const Extension* extension,
-                       std::u16string* error,
+                       std::string* error,
                        std::vector<InstallWarning>* warnings) {
   // Ask registered manifest handlers to validate their paths.
-  std::string utf8_error;
-  // TODO(crbug.com/41317803): Continue removing std::string errors and
-  // replacing with std::u16string.
-  if (!ManifestHandler::ValidateExtension(extension, &utf8_error, warnings)) {
-    *error = base::UTF8ToUTF16(utf8_error);
+  if (!ManifestHandler::ValidateExtension(extension, error, warnings)) {
     return false;
   }
 
   // Check children of extension root to see if any of them start with _ and is
   // not on the reserved list. We only warn, and do not block the loading of the
   // extension.
-  std::u16string warning;
+  std::string warning;
   if (!CheckForIllegalFilenames(extension->path(), &warning)) {
-    warnings->emplace_back(base::UTF16ToUTF8(warning));
+    warnings->emplace_back(warning);
   }
 
   // Check that the extension does not include any Windows reserved filenames.
-  std::u16string windows_reserved_warning;
+  std::string windows_reserved_warning;
   if (!CheckForWindowsReservedFilenames(extension->path(),
                                         &windows_reserved_warning)) {
-    warnings->emplace_back(base::UTF16ToUTF8(windows_reserved_warning));
+    warnings->emplace_back(windows_reserved_warning);
   }
 
   // Check that extensions don't include private key files.
@@ -366,8 +352,8 @@ bool ValidateExtension(const Extension* extension,
       // Only print one of the private keys because l10n_util doesn't have a way
       // to translate a list of strings.
       *error =
-          l10n_util::GetStringFUTF16(IDS_EXTENSION_CONTAINS_PRIVATE_KEY,
-                                     private_keys.front().LossyDisplayName());
+          l10n_util::GetStringFUTF8(IDS_EXTENSION_CONTAINS_PRIVATE_KEY,
+                                    private_keys.front().LossyDisplayName());
       return false;
     }
   } else {
@@ -409,7 +395,7 @@ std::vector<base::FilePath> FindPrivateKeyFiles(
 }
 
 bool CheckForIllegalFilenames(const base::FilePath& extension_path,
-                              std::u16string* error) {
+                              std::string* error) {
   // Enumerate all files and directories in the extension root.
   // There is a problem when using pattern "_*" with FileEnumerator, so we have
   // to cheat with find_first_of and match all.
@@ -432,11 +418,10 @@ bool CheckForIllegalFilenames(const base::FilePath& extension_path,
       continue;
     }
 
-    *error =
-        base::StrCat({u"Cannot load extension with file or directory name ",
-                      file.BaseName().LossyDisplayName(),
-                      u". Filenames starting with \"_\" are reserved for use "
-                      u"by the system."});
+    *error = base::StringPrintf(
+        "Cannot load extension with file or directory name %s. "
+        "Filenames starting with \"_\" are reserved for use by the system.",
+        file.BaseName().AsUTF8Unsafe().c_str());
     return false;
   }
 
@@ -444,7 +429,7 @@ bool CheckForIllegalFilenames(const base::FilePath& extension_path,
 }
 
 bool CheckForWindowsReservedFilenames(const base::FilePath& extension_dir,
-                                      std::u16string* error) {
+                                      std::string* error) {
   const int kFilesAndDirectories =
       base::FileEnumerator::DIRECTORIES | base::FileEnumerator::FILES;
   base::FileEnumerator traversal(extension_dir, true, kFilesAndDirectories);
@@ -454,10 +439,10 @@ bool CheckForWindowsReservedFilenames(const base::FilePath& extension_dir,
     base::FilePath::StringType filename = current.BaseName().value();
     bool is_reserved_filename = net::IsReservedNameOnWindows(filename);
     if (is_reserved_filename) {
-      *error =
-          base::StrCat({u"Cannot load extension with file or directory name ",
-                        current.BaseName().LossyDisplayName(),
-                        u". The filename is illegal."});
+      *error = base::StringPrintf(
+          "Cannot load extension with file or directory name %s. "
+          "The filename is illegal.",
+          current.BaseName().AsUTF8Unsafe().c_str());
       return false;
     }
   }
@@ -496,7 +481,7 @@ base::FilePath GetInstallTempDir(const base::FilePath& extensions_dir) {
 }
 
 base::FilePath ExtensionURLToRelativeFilePath(const GURL& url) {
-  std::string_view url_path = url.path();
+  std::string_view url_path = url.path_piece();
   if (url_path.empty() || url_path[0] != '/') {
     return base::FilePath();
   }
@@ -526,20 +511,6 @@ base::FilePath ExtensionURLToRelativeFilePath(const GURL& url) {
   }
 
   return path;
-}
-
-base::FilePath ExtensionURLToAbsoluteFilePath(const Extension& extension,
-                                              const GURL& url) {
-  if (!url::IsSameOriginWith(url, extension.url())) {
-    return base::FilePath();
-  }
-
-  base::FilePath relative_path = ExtensionURLToRelativeFilePath(url);
-  if (relative_path.empty()) {
-    return base::FilePath();
-  }
-
-  return extension.GetResource(relative_path).GetFilePath();
 }
 
 void SetReportErrorForInvisibleIconForTesting(bool value) {
@@ -592,7 +563,8 @@ MessageBundle* LoadMessageBundle(
   extension_l10n_util::GetAllLocales(&chrome_locales);
 
   base::FilePath default_locale_path = locale_path.AppendASCII(default_locale);
-  if (default_locale.empty() || !chrome_locales.contains(default_locale) ||
+  if (default_locale.empty() ||
+      !base::Contains(chrome_locales, default_locale) ||
       !base::PathExists(default_locale_path)) {
     *error = l10n_util::GetStringUTF8(
         IDS_EXTENSION_LOCALES_NO_DEFAULT_LOCALE_SPECIFIED);

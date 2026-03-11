@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import 'chrome://resources/cr_elements/cr_button/cr_button.js';
 import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import 'chrome://resources/cr_elements/cr_link_row/cr_link_row.js';
@@ -24,7 +23,7 @@ import type {CrLinkRowElement} from 'chrome://resources/cr_elements/cr_link_row/
 import type {CrToggleElement} from 'chrome://resources/cr_elements/cr_toggle/cr_toggle.js';
 import {I18nMixinLit} from 'chrome://resources/cr_elements/i18n_mixin_lit.js';
 import type {CrTooltipIconElement} from 'chrome://resources/cr_elements/policy/cr_tooltip_icon.js';
-import {assert, assertNotReached, assertNotReachedCase} from 'chrome://resources/js/assert.js';
+import {assert, assertNotReached} from 'chrome://resources/js/assert.js';
 import {focusWithoutInk} from 'chrome://resources/js/focus_without_ink.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
@@ -35,7 +34,7 @@ import {getHtml} from './detail_view.html.js';
 import type {ItemDelegate} from './item.js';
 import {DummyItemDelegate} from './item.js';
 import {ItemMixin} from './item_mixin.js';
-import {computeInspectableViewLabel, convertSafetyCheckReason, createDummyExtensionInfo, EnableControl, getEnableControl, getEnableToggleAriaLabel, getItemSource, getItemSourceString, isEnabled, SAFETY_HUB_EXTENSION_KEPT_HISTOGRAM_NAME, SAFETY_HUB_EXTENSION_REMOVED_HISTOGRAM_NAME, SAFETY_HUB_WARNING_REASON_MAX_SIZE, sortViews, UPLOAD_EXTENSION_TO_ACCOUNT_DETAILS_VIEW_PAGE_HISTOGRAM_NAME, userCanChangeEnablement} from './item_util.js';
+import {computeInspectableViewLabel, convertSafetyCheckReason, createDummyExtensionInfo, EnableControl, getEnableControl, getEnableToggleAriaLabel, getEnableToggleTooltipText, getItemSource, getItemSourceString, isEnabled, SAFETY_HUB_EXTENSION_KEPT_HISTOGRAM_NAME, SAFETY_HUB_EXTENSION_REMOVED_HISTOGRAM_NAME, SAFETY_HUB_WARNING_REASON_MAX_SIZE, sortViews, UPLOAD_EXTENSION_TO_ACCOUNT_DETAILS_VIEW_PAGE_HISTOGRAM_NAME, userCanChangeEnablement} from './item_util.js';
 import type {Mv2DeprecationDelegate} from './mv2_deprecation_delegate.js';
 import {getMv2ExperimentStage, Mv2ExperimentStage} from './mv2_deprecation_util.js';
 import {navigation, Page} from './navigation_helper.js';
@@ -218,6 +217,10 @@ export class ExtensionsDetailViewElement extends
         this.i18n('extensionEnabled'), this.i18n('itemOff'));
   }
 
+  protected getEnableToggleTooltipText_(): string {
+    return getEnableToggleTooltipText(this.data);
+  }
+
   protected onCloseButtonClick_() {
     navigation.navigateTo({page: Page.LIST});
   }
@@ -362,8 +365,6 @@ export class ExtensionsDetailViewElement extends
         chrome.metricsPrivate.recordUserAction(
             'Extensions.Mv2Deprecation.Unsupported.RemoveExtension.DetailPage');
         break;
-      default:
-        assertNotReachedCase(this.mv2ExperimentStage_);
     }
 
     this.delegate.deleteItem(this.data.id);
@@ -440,14 +441,9 @@ export class ExtensionsDetailViewElement extends
   }
 
   protected onSiteSettingsClick_() {
-    // <if expr="is_android">
-    this.delegate.showSiteSettings(this.data.id);
-    // </if>
-    // <if expr="not is_android">
     this.delegate.openUrl(
         `chrome://settings/content/siteDetails?site=chrome-extension://${
             this.data.id}`);
-    // </if>
   }
 
   protected onViewInStoreClick_() {
@@ -549,7 +545,7 @@ export class ExtensionsDetailViewElement extends
         return this.data.isAffectedByMV2Deprecation &&
           this.data.disableReasons.unsupportedManifestVersion;
       default:
-        assertNotReachedCase(this.mv2ExperimentStage_);
+        assertNotReached();
     }
   }
 
@@ -574,8 +570,6 @@ export class ExtensionsDetailViewElement extends
       case Mv2ExperimentStage.DISABLE_WITH_REENABLE:
       case Mv2ExperimentStage.UNSUPPORTED:
         return !this.data.mustRemainInstalled;
-      default:
-        assertNotReachedCase(this.mv2ExperimentStage_);
     }
   }
 
@@ -595,8 +589,6 @@ export class ExtensionsDetailViewElement extends
         // show the menu if the action should be visible. For UNSUPPORTED, this
         // is when the recommendationsUrl is non-empty.
         return !!this.data.recommendationsUrl;
-      default:
-        assertNotReachedCase(this.mv2ExperimentStage_);
     }
   }
 
@@ -612,8 +604,6 @@ export class ExtensionsDetailViewElement extends
       case Mv2ExperimentStage.DISABLE_WITH_REENABLE:
       case Mv2ExperimentStage.UNSUPPORTED:
         return !!this.data.recommendationsUrl;
-      default:
-        assertNotReachedCase(this.mv2ExperimentStage_);
     }
   }
 
@@ -683,8 +673,6 @@ export class ExtensionsDetailViewElement extends
         chrome.metricsPrivate.recordUserAction(
             'Extensions.Mv2Deprecation.Unsupported.FindAlternativeForExtension.DetailPage');
         break;
-      default:
-        assertNotReachedCase(this.mv2ExperimentStage_);
     }
 
     this.$.actionMenu.close();
@@ -720,7 +708,7 @@ export class ExtensionsDetailViewElement extends
       case Mv2ExperimentStage.UNSUPPORTED:
         return this.i18n('mv2DeprecationMessageDisabledHeader');
       default:
-        assertNotReachedCase(this.mv2ExperimentStage_);
+        assertNotReached();
     }
   }
 
@@ -752,7 +740,7 @@ export class ExtensionsDetailViewElement extends
           attrs: ['aria-description'],
         });
       default:
-        assertNotReachedCase(this.mv2ExperimentStage_);
+        assertNotReached();
     }
   }
 
@@ -768,7 +756,7 @@ export class ExtensionsDetailViewElement extends
       case Mv2ExperimentStage.UNSUPPORTED:
         return 'extensions-icons:extension_off';
       default:
-        assertNotReachedCase(this.mv2ExperimentStage_);
+        assertNotReached();
     }
   }
 

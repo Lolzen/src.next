@@ -7,7 +7,6 @@ package org.chromium.chrome.browser.tasks.tab_management;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -24,8 +23,7 @@ import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
 import org.chromium.base.Token;
-import org.chromium.base.supplier.ObservableSuppliers;
-import org.chromium.base.supplier.SettableNullableObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplierImpl;
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.chrome.browser.collaboration.messaging.MessagingBackendServiceFactory;
 import org.chromium.chrome.browser.profiles.Profile;
@@ -58,14 +56,15 @@ public class TabBubblerUnitTest {
     @Captor private ArgumentCaptor<PersistentMessageObserver> mPersistentMessageObserverCaptor;
     @Captor private ArgumentCaptor<Set<Integer>> mTabIdsCaptor;
 
-    private final SettableNullableObservableSupplier<Token> mTabGroupIdSupplier =
-            ObservableSuppliers.createNullable(GROUP_ID1);
+    private final ObservableSupplierImpl<Token> mTabGroupIdSupplier =
+            new ObservableSupplierImpl<>();
 
     private TabBubbler mTabBubbler;
 
     @Before
     public void setUp() {
         MessagingBackendServiceFactory.setForTesting(mMessagingBackendService);
+        mTabGroupIdSupplier.set(GROUP_ID1);
         mTabBubbler = new TabBubbler(mProfile, mTabListNotificationHandler, mTabGroupIdSupplier);
     }
 
@@ -92,7 +91,7 @@ public class TabBubblerUnitTest {
     @Test
     public void testShowAll_Added() {
         List<PersistentMessage> messageList = List.of(makeStandardMessage());
-        when(mMessagingBackendService.getMessagesForGroup(any(), anyInt())).thenReturn(messageList);
+        when(mMessagingBackendService.getMessagesForGroup(any(), any())).thenReturn(messageList);
 
         mTabBubbler.showAll();
 
@@ -106,7 +105,7 @@ public class TabBubblerUnitTest {
         PersistentMessage message = makeStandardMessage();
         message.attribution.tabGroupMetadata.localTabGroupId = new LocalTabGroupId(GROUP_ID2);
         List<PersistentMessage> messageList = List.of(message);
-        when(mMessagingBackendService.getMessagesForGroup(any(), anyInt())).thenReturn(messageList);
+        when(mMessagingBackendService.getMessagesForGroup(any(), any())).thenReturn(messageList);
 
         mTabBubbler.showAll();
         verify(mTabListNotificationHandler, never())
@@ -118,7 +117,7 @@ public class TabBubblerUnitTest {
         PersistentMessage message = makeStandardMessage();
         message.attribution.tabGroupMetadata.localTabGroupId = null;
         List<PersistentMessage> messageList = List.of(message);
-        when(mMessagingBackendService.getMessagesForGroup(any(), anyInt())).thenReturn(messageList);
+        when(mMessagingBackendService.getMessagesForGroup(any(), any())).thenReturn(messageList);
 
         mTabBubbler.showAll();
         verify(mTabListNotificationHandler, never())
@@ -129,7 +128,7 @@ public class TabBubblerUnitTest {
     public void testShowAll_NullCurrentTabGroup() {
         mTabGroupIdSupplier.set(null);
         List<PersistentMessage> messageList = List.of(makeStandardMessage());
-        when(mMessagingBackendService.getMessagesForGroup(any(), anyInt())).thenReturn(messageList);
+        when(mMessagingBackendService.getMessagesForGroup(any(), any())).thenReturn(messageList);
 
         mTabBubbler.showAll();
         verify(mTabListNotificationHandler, never())
@@ -141,7 +140,7 @@ public class TabBubblerUnitTest {
         PersistentMessage message = makeStandardMessage();
         message.type = PersistentNotificationType.CHIP;
         List<PersistentMessage> messageList = List.of(message);
-        when(mMessagingBackendService.getMessagesForGroup(any(), anyInt())).thenReturn(messageList);
+        when(mMessagingBackendService.getMessagesForGroup(any(), any())).thenReturn(messageList);
 
         mTabBubbler.showAll();
         verify(mTabListNotificationHandler, never())
@@ -153,7 +152,7 @@ public class TabBubblerUnitTest {
         PersistentMessage message = makeStandardMessage();
         message.attribution.tabMetadata.localTabId = Tab.INVALID_TAB_ID;
         List<PersistentMessage> messageList = List.of(message);
-        when(mMessagingBackendService.getMessagesForGroup(any(), anyInt())).thenReturn(messageList);
+        when(mMessagingBackendService.getMessagesForGroup(any(), any())).thenReturn(messageList);
 
         mTabBubbler.showAll();
         verify(mTabListNotificationHandler, never())
@@ -185,7 +184,7 @@ public class TabBubblerUnitTest {
     @Test
     public void testOnMessagingBackendServiceInitialized() {
         List<PersistentMessage> messageList = List.of(makeStandardMessage());
-        when(mMessagingBackendService.getMessagesForGroup(any(), anyInt())).thenReturn(messageList);
+        when(mMessagingBackendService.getMessagesForGroup(any(), any())).thenReturn(messageList);
 
         verify(mMessagingBackendService)
                 .addPersistentMessageObserver(mPersistentMessageObserverCaptor.capture());

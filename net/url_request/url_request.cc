@@ -234,6 +234,10 @@ void URLRequest::set_upload(std::unique_ptr<UploadDataStream> upload) {
   upload_data_stream_ = std::move(upload);
 }
 
+const UploadDataStream* URLRequest::get_upload_for_testing() const {
+  return upload_data_stream_.get();
+}
+
 bool URLRequest::has_upload() const {
   return upload_data_stream_.get() != nullptr;
 }
@@ -303,13 +307,12 @@ LoadStateWithParam URLRequest::GetLoadState() const {
                             std::u16string());
 }
 
-base::DictValue URLRequest::GetStateAsValue(
-    NetLogCaptureMode capture_mode) const {
-  base::DictValue dict;
-  dict.Set("url", SanitizeUrlForNetLog(original_url(), capture_mode));
+base::Value::Dict URLRequest::GetStateAsValue() const {
+  base::Value::Dict dict;
+  dict.Set("url", original_url().possibly_invalid_spec());
 
   if (url_chain_.size() > 1) {
-    base::ListValue list;
+    base::Value::List list;
     for (const GURL& url : url_chain_) {
       list.Append(url.possibly_invalid_spec());
     }
@@ -467,8 +470,6 @@ void URLRequest::SetLoadFlags(int flags) {
     DCHECK(flags & LOAD_IGNORE_LIMITS);
     DCHECK_EQ(priority_, MAXIMUM_PRIORITY);
   }
-  CHECK(allow_credentials_ || (flags & LOAD_DO_NOT_SAVE_COOKIES));
-
   partial_load_flags_ = flags;
 
   // This should be a no-op given the above DCHECKs, but do this
@@ -573,9 +574,13 @@ void URLRequest::set_referrer_policy(ReferrerPolicy referrer_policy) {
   referrer_policy_ = referrer_policy;
 }
 
-void URLRequest::set_disallow_credentials() {
-  allow_credentials_ = false;
-  partial_load_flags_ |= LOAD_DO_NOT_SAVE_COOKIES;
+void URLRequest::set_allow_credentials(bool allow_credentials) {
+  allow_credentials_ = allow_credentials;
+  if (allow_credentials) {
+    partial_load_flags_ &= ~LOAD_DO_NOT_SAVE_COOKIES;
+  } else {
+    partial_load_flags_ |= LOAD_DO_NOT_SAVE_COOKIES;
+  }
 }
 
 void URLRequest::Start() {
@@ -649,11 +654,10 @@ URLRequest::URLRequest(base::PassKey<URLRequestContext> pass_key,
   DCHECK(base::SingleThreadTaskRunner::HasCurrentDefault());
 
   context->url_requests()->insert(this);
-  net_log_.BeginEvent(NetLogEventType::REQUEST_ALIVE,
-                      [&](NetLogCaptureMode capture_mode) {
-                        return NetLogURLRequestConstructorParams(
-                            url, priority_, traffic_annotation_, capture_mode);
-                      });
+  net_log_.BeginEvent(NetLogEventType::REQUEST_ALIVE, [&] {
+    return NetLogURLRequestConstructorParams(url, priority_,
+                                             traffic_annotation_);
+  });
 }
 
 void URLRequest::BeforeRequestComplete(int error) {
@@ -691,15 +695,12 @@ void URLRequest::StartJob(std::unique_ptr<URLRequestJob> job) {
     DCHECK(!allow_credentials_);
   }
 
-  net_log_.BeginEvent(
-      NetLogEventType::URL_REQUEST_START_JOB,
-      [&](NetLogCaptureMode capture_mode) {
-        return NetLogURLRequestStartParams(
-            url(), method_, load_flags(), isolation_info_, site_for_cookies_,
-            initiator_,
-            upload_data_stream_ ? upload_data_stream_->identifier() : -1,
-            capture_mode);
-      });
+  net_log_.BeginEvent(NetLogEventType::URL_REQUEST_START_JOB, [&] {
+    return NetLogURLRequestStartParams(
+        url(), method_, load_flags(), isolation_info_, site_for_cookies_,
+        initiator_,
+        upload_data_stream_ ? upload_data_stream_->identifier() : -1);
+  });
 
   job_ = std::move(job);
   job_->SetExtraRequestHeaders(extra_request_headers_);

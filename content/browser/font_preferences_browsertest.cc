@@ -6,7 +6,6 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/devtools/protocol/devtools_protocol_test_support.h"
-#include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -16,6 +15,16 @@
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 
 namespace content {
+namespace {
+std::string_view MaybeStripFontationsSuffix(const std::string& font_name) {
+  std::string_view view = font_name;
+  std::size_t pos = view.rfind(" (Fontations)");
+  if (pos != std::string_view::npos) {
+    view.remove_suffix(view.size() - pos);
+  }
+  return view;
+}
+}  // namespace
 
 class FontPreferencesBrowserTest : public DevToolsProtocolTest {
  public:
@@ -24,16 +33,16 @@ class FontPreferencesBrowserTest : public DevToolsProtocolTest {
 
  protected:
   std::string GetFirstPlatformFontForBody() {
-    base::DictValue params1;
+    base::Value::Dict params1;
     params1.Set("depth", 0);
-    const base::DictValue* result =
+    const base::Value::Dict* result =
         SendCommand("DOM.getDocument", std::move(params1));
 
     std::optional<int> body_node_id =
         result->FindIntByDottedPath("root.nodeId");
     DCHECK(body_node_id);
 
-    base::DictValue params2;
+    base::Value::Dict params2;
     params2.Set("nodeId", *body_node_id);
     params2.Set("selector", "body");
     result = SendCommand("DOM.querySelector", std::move(params2));
@@ -41,12 +50,12 @@ class FontPreferencesBrowserTest : public DevToolsProtocolTest {
     body_node_id = result->FindInt("nodeId");
     DCHECK(body_node_id);
 
-    base::DictValue params3;
+    base::Value::Dict params3;
     params3.Set("nodeId", *body_node_id);
-    const base::DictValue* font_info =
+    const base::Value::Dict* font_info =
         SendCommand("CSS.getPlatformFontsForNode", std::move(params3));
     DCHECK(font_info);
-    const base::ListValue* font_list = font_info->FindList("fonts");
+    const base::Value::List* font_list = font_info->FindList("fonts");
     DCHECK(font_list);
     DCHECK(font_list->size() > 0);
     const base::Value& first_font_info = font_list->front();
@@ -99,14 +108,16 @@ class FontPreferencesBrowserTest : public DevToolsProtocolTest {
     // Verify that by default, the non-default system font above is not used.
     web_contents->SetWebPreferences(default_preferences);
     EXPECT_TRUE(ExecJs(web_contents, "document.body.offsetTop"));
-    EXPECT_NE(GetFirstPlatformFontForBody(), non_default_system_font);
+    EXPECT_NE(MaybeStripFontationsSuffix(GetFirstPlatformFontForBody()),
+              non_default_system_font);
 
     // Set the preference to that non-default system font and try again.
     default_preferences_font_family_map[blink::web_pref::kCommonScript] =
         base::ASCIIToUTF16(non_default_system_font);
     web_contents->SetWebPreferences(default_preferences);
     EXPECT_TRUE(ExecJs(web_contents, "document.body.offsetTop"));
-    EXPECT_EQ(GetFirstPlatformFontForBody(), non_default_system_font);
+    EXPECT_EQ(MaybeStripFontationsSuffix(GetFirstPlatformFontForBody()),
+              non_default_system_font);
 
     // Restore the preference to its default value.
     default_preferences_font_family_map[blink::web_pref::kCommonScript] =
@@ -119,8 +130,8 @@ IN_PROC_BROWSER_TEST_F(FontPreferencesBrowserTest, GenericFamilies) {
   EXPECT_TRUE(NavigateToURL(shell(), GURL("data:text/html,BODY_TEXT")));
   Attach();
 
-  ASSERT_TRUE(SendCommand("DOM.enable", base::DictValue(), true));
-  ASSERT_TRUE(SendCommand("CSS.enable", base::DictValue(), true));
+  ASSERT_TRUE(SendCommand("DOM.enable", base::Value::Dict(), true));
+  ASSERT_TRUE(SendCommand("CSS.enable", base::Value::Dict(), true));
 
   blink::web_pref::WebPreferences default_preferences =
       shell()->web_contents()->GetOrCreateWebPreferences();

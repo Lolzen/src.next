@@ -9,13 +9,13 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/android/android_theme_resources.h"
 #include "chrome/browser/android/resource_mapper.h"
 #include "chrome/browser/download/android/download_dialog_utils.h"
 #include "chrome/grit/generated_resources.h"
-#include "components/url_formatter/elide_url.h"
 #include "ui/android/window_android.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -23,16 +23,7 @@
 #include "chrome/browser/download/android/jni_headers/DangerousDownloadDialogBridge_jni.h"
 
 using base::android::ConvertJavaStringToUTF8;
-using base::android::JavaRef;
-
-namespace {
-// Gets the "download domain" string shown in the dialog. Currently, this is
-// derived from the download URL.
-std::u16string GetDownloadDomain(download::DownloadItem* item) {
-  return url_formatter::FormatUrlForDisplayOmitSchemePathAndTrivialSubdomains(
-      item->GetURL());
-}
-}  // namespace
+using base::android::JavaParamRef;
 
 DangerousDownloadDialogBridge::DangerousDownloadDialogBridge() {
   JNIEnv* env = base::android::AttachCurrentThread();
@@ -51,7 +42,7 @@ DangerousDownloadDialogBridge::~DangerousDownloadDialogBridge() {
 void DangerousDownloadDialogBridge::Show(download::DownloadItem* download_item,
                                          ui::WindowAndroid* window_android) {
   // Don't show dangerous download again if it is already showing.
-  if (std::ranges::contains(download_items_, download_item)) {
+  if (base::Contains(download_items_, download_item)) {
     return;
   }
   if (!window_android) {
@@ -68,8 +59,6 @@ void DangerousDownloadDialogBridge::Show(download::DownloadItem* download_item,
       download_item->GetGuid(),
       base::UTF8ToUTF16(download_item->GetFileNameToReportUser().value()),
       download_item->GetTotalBytes(),
-      base::android::ConvertUTF16ToJavaString(env,
-                                              GetDownloadDomain(download_item)),
       ResourceMapper::MapToJavaDrawableId(IDR_ANDROID_INFOBAR_WARNING));
 }
 
@@ -101,5 +90,3 @@ void DangerousDownloadDialogBridge::Cancelled(JNIEnv* env,
     download->Remove();
   }
 }
-
-DEFINE_JNI(DangerousDownloadDialogBridge)

@@ -13,7 +13,6 @@
 #include "third_party/blink/renderer/core/css/css_uri_value.h"
 #include "third_party/blink/renderer/core/css/css_value_list.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_idioms.h"
-#include "third_party/blink/renderer/core/css/parser/css_parser_local_context.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_save_point.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_token.h"
 #include "third_party/blink/renderer/core/css/parser/css_variable_parser.h"
@@ -171,7 +170,6 @@ std::optional<CSSSyntaxComponent> ConsumeSyntaxComponent(
 const CSSValue* ConsumeSingleType(const CSSSyntaxComponent& syntax,
                                   CSSParserTokenStream& stream,
                                   const CSSParserContext& context,
-                                  CSSParserLocalContext& local_context,
                                   bool is_attr_tainted) {
   switch (syntax.GetType()) {
     case CSSSyntaxType::kIdent:
@@ -186,54 +184,49 @@ const CSSValue* ConsumeSingleType(const CSSSyntaxComponent& syntax,
       CSSParserContext::ParserModeOverridingScope scope(context,
                                                         kHTMLStandardMode);
       return css_parsing_utils::ConsumeLength(
-          stream, context, local_context, CSSPrimitiveValue::ValueRange::kAll);
+          stream, context, CSSPrimitiveValue::ValueRange::kAll);
     }
     case CSSSyntaxType::kNumber:
       return css_parsing_utils::ConsumeNumber(
-          stream, context, local_context, CSSPrimitiveValue::ValueRange::kAll);
+          stream, context, CSSPrimitiveValue::ValueRange::kAll);
     case CSSSyntaxType::kPercentage:
       return css_parsing_utils::ConsumePercent(
-          stream, context, local_context, CSSPrimitiveValue::ValueRange::kAll);
+          stream, context, CSSPrimitiveValue::ValueRange::kAll);
     case CSSSyntaxType::kLengthPercentage: {
       CSSParserContext::ParserModeOverridingScope scope(context,
                                                         kHTMLStandardMode);
       return css_parsing_utils::ConsumeLengthOrPercent(
-          stream, context, local_context, CSSPrimitiveValue::ValueRange::kAll);
+          stream, context, CSSPrimitiveValue::ValueRange::kAll,
+          css_parsing_utils::UnitlessQuirk::kForbid, kCSSAnchorQueryTypesAll);
     }
     case CSSSyntaxType::kColor: {
       CSSParserContext::ParserModeOverridingScope scope(context,
                                                         kHTMLStandardMode);
-      return css_parsing_utils::ConsumeColor(stream, context, local_context);
+      return css_parsing_utils::ConsumeColor(stream, context);
     }
     case CSSSyntaxType::kImage:
-      return css_parsing_utils::ConsumeImage(stream, context, local_context);
+      return css_parsing_utils::ConsumeImage(stream, context);
     case CSSSyntaxType::kUrl:
       if (is_attr_tainted) {
         return nullptr;
       }
       return css_parsing_utils::ConsumeUrl(stream, context);
     case CSSSyntaxType::kInteger:
-      return css_parsing_utils::ConsumeIntegerOrNumberCalc(stream, context,
-                                                           local_context);
+      return css_parsing_utils::ConsumeIntegerOrNumberCalc(stream, context);
     case CSSSyntaxType::kAngle:
-      return css_parsing_utils::ConsumeAngle(stream, context, local_context,
+      return css_parsing_utils::ConsumeAngle(stream, context,
                                              std::optional<WebFeature>());
     case CSSSyntaxType::kTime:
       return css_parsing_utils::ConsumeTime(
-          stream, context, local_context, CSSPrimitiveValue::ValueRange::kAll);
+          stream, context, CSSPrimitiveValue::ValueRange::kAll);
     case CSSSyntaxType::kResolution:
-      return css_parsing_utils::ConsumeResolution(stream, context,
-                                                  local_context);
-    case CSSSyntaxType::kTransformFunction: {
-      return css_parsing_utils::ConsumeTransformValue(stream, context,
-                                                      local_context);
-    }
+      return css_parsing_utils::ConsumeResolution(stream, context);
+    case CSSSyntaxType::kTransformFunction:
+      return css_parsing_utils::ConsumeTransformValue(stream, context);
     case CSSSyntaxType::kTransformList:
-      return css_parsing_utils::ConsumeTransformList(stream, context,
-                                                     local_context);
+      return css_parsing_utils::ConsumeTransformList(stream, context);
     case CSSSyntaxType::kCustomIdent:
-      return css_parsing_utils::ConsumeCustomIdent(stream, context,
-                                                   local_context);
+      return css_parsing_utils::ConsumeCustomIdent(stream, context);
     case CSSSyntaxType::kString:
       return css_parsing_utils::ConsumeString(stream);
     default:
@@ -244,14 +237,13 @@ const CSSValue* ConsumeSingleType(const CSSSyntaxComponent& syntax,
 const CSSValue* ConsumeSyntaxComponent(const CSSSyntaxComponent& syntax,
                                        CSSParserTokenStream& stream,
                                        const CSSParserContext& context,
-                                       CSSParserLocalContext& local_context,
                                        bool is_attr_tainted) {
   // CSS-wide keywords are already handled by the CSSPropertyParser
   if (syntax.GetRepeat() == CSSSyntaxRepeat::kSpaceSeparated) {
     CSSValueList* list = CSSValueList::CreateSpaceSeparated();
     while (!stream.AtEnd()) {
-      const CSSValue* value = ConsumeSingleType(syntax, stream, context,
-                                                local_context, is_attr_tainted);
+      const CSSValue* value =
+          ConsumeSingleType(syntax, stream, context, is_attr_tainted);
       if (!value) {
         return nullptr;
       }
@@ -262,8 +254,8 @@ const CSSValue* ConsumeSyntaxComponent(const CSSSyntaxComponent& syntax,
   if (syntax.GetRepeat() == CSSSyntaxRepeat::kCommaSeparated) {
     CSSValueList* list = CSSValueList::CreateCommaSeparated();
     do {
-      const CSSValue* value = ConsumeSingleType(syntax, stream, context,
-                                                local_context, is_attr_tainted);
+      const CSSValue* value =
+          ConsumeSingleType(syntax, stream, context, is_attr_tainted);
       if (!value) {
         return nullptr;
       }
@@ -271,8 +263,8 @@ const CSSValue* ConsumeSyntaxComponent(const CSSSyntaxComponent& syntax,
     } while (css_parsing_utils::ConsumeCommaIncludingWhitespace(stream));
     return list->length() && stream.AtEnd() ? list : nullptr;
   }
-  const CSSValue* result = ConsumeSingleType(syntax, stream, context,
-                                             local_context, is_attr_tainted);
+  const CSSValue* result =
+      ConsumeSingleType(syntax, stream, context, is_attr_tainted);
   if (!stream.AtEnd()) {
     return nullptr;
   }
@@ -316,7 +308,6 @@ std::optional<CSSSyntaxDefinition> CSSSyntaxDefinition::ConsumeComponent(
 
 const CSSValue* CSSSyntaxDefinition::Parse(StringView text,
                                            const CSSParserContext& context,
-                                           CSSParserLocalContext& local_context,
                                            bool is_animation_tainted,
                                            bool is_attr_tainted) const {
   if (IsUniversal()) {
@@ -327,11 +318,22 @@ const CSSValue* CSSSyntaxDefinition::Parse(StringView text,
     CSSParserTokenStream stream(text);
     stream.ConsumeWhitespace();
     if (const CSSValue* result = ConsumeSyntaxComponent(
-            component, stream, context, local_context, is_attr_tainted)) {
+            component, stream, context, is_attr_tainted)) {
       return result;
     }
   }
   return nullptr;
+}
+
+CSSSyntaxDefinition CSSSyntaxDefinition::IsolatedCopy() const {
+  Vector<CSSSyntaxComponent> syntax_components_copy;
+  syntax_components_copy.reserve(syntax_components_.size());
+  for (const auto& syntax_component : syntax_components_) {
+    syntax_components_copy.push_back(CSSSyntaxComponent(
+        syntax_component.GetType(), syntax_component.GetString(),
+        syntax_component.GetRepeat()));
+  }
+  return CSSSyntaxDefinition(std::move(syntax_components_copy));
 }
 
 CSSSyntaxDefinition::CSSSyntaxDefinition(Vector<CSSSyntaxComponent> components)
@@ -351,19 +353,13 @@ String CSSSyntaxDefinition::ToString() const {
     return String("*");
   }
   StringBuilder builder;
-  builder.AppendRange(syntax_components_, " | ", [](const auto& component) {
-    return component.ToString();
-  });
-  return builder.ReleaseString();
-}
-
-CSSSyntaxDefinition CSSSyntaxDefinition::CreateNumericSyntax() {
-  CSSParserTokenStream stream(
-      "<number> | <length> | <percentage> | <angle> | <time> | <resolution>");
-  std::optional<CSSSyntaxDefinition> syntax_definition =
-      CSSSyntaxDefinition::Consume(stream);
-  DCHECK(syntax_definition.has_value());
-  return *syntax_definition;
+  builder.Append(syntax_components_[0].ToString());
+  for (size_t i = 1; i < syntax_components_.size(); i++) {
+    CSSSyntaxComponent component = syntax_components_[i];
+    builder.Append(" | ");
+    builder.Append(component.ToString());
+  }
+  return builder.ToString();
 }
 
 }  // namespace blink

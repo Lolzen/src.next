@@ -294,6 +294,8 @@ public class WebContentsDarkModeMessageController {
                 new Controller() {
                     @Override
                     public void onClick(PropertyModel model, int buttonType) {
+                        // TODO(crbug.com/40200588): Set clickable to false for title icon.
+                        if (buttonType == ButtonType.TITLE_ICON) return;
                         if (buttonType == ButtonType.POSITIVE) {
                             if (feedbackDialogEnabled) {
                                 showFeedback(activity, profile, url);
@@ -367,7 +369,7 @@ public class WebContentsDarkModeMessageController {
 
     @VisibleForTesting
     static class AutoDarkClickableSpan extends ClickableSpan {
-        private final Context mContext;
+        private Context mContext;
 
         AutoDarkClickableSpan(Context context) {
             mContext = context;

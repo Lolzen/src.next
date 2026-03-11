@@ -41,8 +41,8 @@ import javax.annotation.concurrent.GuardedBy;
 /**
  * Provides information about the current activity's status, and a way to register / unregister
  * listeners for state changes. TODO(crbug.com/40411113): ApplicationStatus will not work on
- * WebView, and should be moved out of base and into //chrome. It should not be relied upon for
- * //components.
+ * WebView/WebLayer, and should be moved out of base and into //chrome. It should not be relied upon
+ * for //components.
  */
 @NullMarked
 @JNINamespace("base::android")
@@ -52,8 +52,7 @@ public class ApplicationStatus {
 
     private static class ActivityInfo {
         private int mStatus = ActivityState.DESTROYED;
-        private boolean mHasWindowFocus;
-        private final ObserverList<ActivityStateListener> mListeners = new ObserverList<>();
+        private ObserverList<ActivityStateListener> mListeners = new ObserverList<>();
 
         /**
          * @return The current {@link ActivityState} of the activity.
@@ -71,20 +70,6 @@ public class ApplicationStatus {
         }
 
         /**
-         * @return Whether the activity has window focus.
-         */
-        public boolean hasWindowFocus() {
-            return mHasWindowFocus;
-        }
-
-        /**
-         * @param hasWindowFocus Whether the activity has window focus.
-         */
-        public void setHasWindowFocus(boolean hasWindowFocus) {
-            mHasWindowFocus = hasWindowFocus;
-        }
-
-        /**
          * @return A list of {@link ActivityStateListener}s listening to this activity.
          */
         public ObserverList<ActivityStateListener> getListeners() {
@@ -92,14 +77,9 @@ public class ApplicationStatus {
         }
     }
 
-    /**
-     * A map of which observers listen to state changes from which {@link Activity}.
-     *
-     * <p>Access to the cached state should be synchronized by this map.
-     **/
-    @GuardedBy("sActivityInfo")
+    /** A map of which observers listen to state changes from which {@link Activity}. */
     private static final Map<Activity, ActivityInfo> sActivityInfo =
-            new HashMap<Activity, ActivityInfo>();
+            Collections.synchronizedMap(new HashMap<Activity, ActivityInfo>());
 
     /** A map to cache TaskId for each {@link Activity}. */
     public static final Map<Activity, Integer> sActivityTaskId =
@@ -169,7 +149,7 @@ public class ApplicationStatus {
          * @param activity The {@link Activity} that has a window focus changed event.
          * @param hasFocus Whether or not {@code activity} gained or lost focus.
          */
-        void onWindowFocusChanged(Activity activity, boolean hasFocus);
+        public void onWindowFocusChanged(Activity activity, boolean hasFocus);
     }
 
     /** Interface to be implemented by listeners for task visibility changes. */
@@ -299,12 +279,6 @@ public class ApplicationStatus {
 
         public void onWindowFocusChanged(boolean hasFocus) {
             mCallback.onWindowFocusChanged(hasFocus);
-            synchronized (sActivityInfo) {
-                ActivityInfo info = sActivityInfo.get(mActivity);
-                if (info != null) {
-                    info.setHasWindowFocus(hasFocus);
-                }
-            }
 
             if (sWindowFocusListeners != null) {
                 for (WindowFocusChangedListener listener : sWindowFocusListeners) {
@@ -560,10 +534,8 @@ public class ApplicationStatus {
     public static int getStateForActivity(@Nullable Activity activity) {
         assert isInitialized();
         if (activity == null) return ActivityState.DESTROYED;
-        synchronized (sActivityInfo) {
-            ActivityInfo info = sActivityInfo.get(activity);
-            return info != null ? info.getStatus() : ActivityState.DESTROYED;
-        }
+        ActivityInfo info = sActivityInfo.get(activity);
+        return info != null ? info.getStatus() : ActivityState.DESTROYED;
     }
 
     /**
@@ -602,9 +574,7 @@ public class ApplicationStatus {
     @AnyThread
     public static boolean isEveryActivityDestroyed() {
         assert isInitialized();
-        synchronized (sActivityInfo) {
-            return sActivityInfo.isEmpty();
-        }
+        return sActivityInfo.isEmpty();
     }
 
     /**
@@ -617,13 +587,11 @@ public class ApplicationStatus {
     @AnyThread
     public static boolean isTaskVisible(int taskId) {
         assert isInitialized();
-        synchronized (sActivityInfo) {
-            for (Map.Entry<Activity, ActivityInfo> entry : sActivityInfo.entrySet()) {
-                if (getTaskId(entry.getKey()) == taskId) {
-                    @ActivityState int state = entry.getValue().getStatus();
-                    if (state == ActivityState.RESUMED || state == ActivityState.PAUSED) {
-                        return true;
-                    }
+        for (Map.Entry<Activity, ActivityInfo> entry : sActivityInfo.entrySet()) {
+            if (getTaskId(entry.getKey()) == taskId) {
+                @ActivityState int state = entry.getValue().getStatus();
+                if (state == ActivityState.RESUMED || state == ActivityState.PAUSED) {
+                    return true;
                 }
             }
         }
@@ -631,21 +599,22 @@ public class ApplicationStatus {
     }
 
     /**
-     * Returns true if there is any activity with window focus.
+     * Cleanup Activity info from an app Task that is no longer reachable.
      *
-     * @return Whether any Activity under this Application has window focus.
+     * @param taskId The id of the Task that is no longer running.
+     * @return Whether any tasks were cleaned up.
      */
-    public static boolean hasWindowFocusedActivity() {
-        assert isInitialized();
-        synchronized (sActivityInfo) {
-            for (Map.Entry<Activity, ActivityInfo> entry : sActivityInfo.entrySet()) {
-                // Check cached value in ActivityInfo.
-                if (entry.getValue().hasWindowFocus()) {
-                    return true;
-                }
+    public static boolean cleanupInvalidTask(int taskId) {
+        List<Activity> inaccessibleActivities = new ArrayList<>();
+        for (Entry<Activity, Integer> activityTaskInfo : sActivityTaskId.entrySet()) {
+            if (taskId == activityTaskInfo.getValue()) {
+                inaccessibleActivities.add(activityTaskInfo.getKey());
             }
         }
-        return false;
+        for (Activity activity : inaccessibleActivities) {
+            onStateChange(activity, ActivityState.DESTROYED);
+        }
+        return !inaccessibleActivities.isEmpty();
     }
 
     /**
@@ -678,15 +647,13 @@ public class ApplicationStatus {
         assert isInitialized();
         assert activity != null;
 
-        synchronized (sActivityInfo) {
-            ActivityInfo info = sActivityInfo.get(activity);
-            assert info != null
-                    : String.format(
-                            "Found untracked Activity: %s isDestroyed=%s isFinishing=%s",
-                            activity, activity.isDestroyed(), activity.isFinishing());
-            assert info.getStatus() != ActivityState.DESTROYED : activity.toString();
-            info.getListeners().addObserver(listener);
-        }
+        ActivityInfo info = sActivityInfo.get(activity);
+        assert info != null
+                : String.format(
+                        "Found untracked Activity: %s isDestroyed=%s isFinishing=%s",
+                        activity, activity.isDestroyed(), activity.isFinishing());
+        assert info.getStatus() != ActivityState.DESTROYED : activity.toString();
+        info.getListeners().addObserver(listener);
     }
 
     /**
@@ -831,11 +798,6 @@ public class ApplicationStatus {
 
     public static int getApplicationStateListenerCountForTesting() {
         return sApplicationStateListeners == null ? 0 : sApplicationStateListeners.size();
-    }
-
-    public static @Nullable ObserverList<TaskVisibilityListener>
-            getTaskVisibilityListenersForTesting() {
-        return sTaskVisibilityListeners;
     }
 
     @NativeMethods

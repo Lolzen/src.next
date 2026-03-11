@@ -12,7 +12,6 @@
 #include "components/content_settings/core/common/cookie_settings_base.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/features.h"
-#include "net/cookies/cookie_partition_key.h"
 #include "net/cookies/cookie_setting_override.h"
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/site_for_cookies.h"
@@ -44,8 +43,7 @@ bool AllowWorkerStorageAccess(
     StorageType storage_type,
     const GURL& url,
     const std::vector<content::GlobalRenderFrameHostId>& render_frames,
-    const content_settings::CookieSettings* cookie_settings,
-    const blink::StorageKey& storage_key) {
+    const content_settings::CookieSettings* cookie_settings) {
   // TODO(crbug.com/40247160): Consider whether the following check should
   // somehow determine real CookieSettingOverrides rather than default to none.
   content_settings::CookieSettingsBase::CookieSettingWithMetadata
@@ -53,8 +51,7 @@ bool AllowWorkerStorageAccess(
 
   bool allow = cookie_settings->IsFullCookieAccessAllowed(
       url, net::SiteForCookies::FromUrl(url), url::Origin::Create(url),
-      net::CookieSettingOverrides(), storage_key.ToCookiePartitionKey(),
-      &cookie_settings_metadata);
+      net::CookieSettingOverrides(), &cookie_settings_metadata);
 
   if (!allow && PartitionedStorageByDefaultAllowed(cookie_settings_metadata)) {
     allow = true;
@@ -85,7 +82,6 @@ content::AllowServiceWorkerResult AllowServiceWorker(
     const GURL& scope,
     const net::SiteForCookies& site_for_cookies,
     const std::optional<url::Origin>& top_frame_origin,
-    const blink::StorageKey& storage_key,
     const content_settings::CookieSettings* cookie_settings,
     const HostContentSettingsMap* settings_map) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -99,18 +95,6 @@ content::AllowServiceWorkerResult AllowServiceWorker(
       first_party_url, first_party_url, ContentSettingsType::JAVASCRIPT, &info);
   bool allow_javascript = setting == CONTENT_SETTING_ALLOW;
 
-  // We need to manually create a cookie_partition_key without a nonce since
-  // nonced contexts (e.g. FencedFrames or Credentialless iFrames) do not have
-  // unpartitioned cookie access, BUT may allow Service Workers. This nonceless
-  // cookie_partition_key allows this function to return the correct result for
-  // such contexts.
-  std::optional<const net::CookiePartitionKey> cookie_partition_key =
-      net::CookiePartitionKey::FromStorageKeyComponents(
-          storage_key.top_level_site(),
-          net::CookiePartitionKey::BoolToAncestorChainBit(
-              storage_key.IsThirdPartyContext()),
-          /*nonce=*/std::nullopt);
-
   // Check if cookies are allowed. Storage Access API grants and Top-Level
   // Storage Access API grants may only be considered if storage is partitioned
   // (or if Storage Access API is intended to grant access to storage - which is
@@ -121,10 +105,8 @@ content::AllowServiceWorkerResult AllowServiceWorker(
       cookie_settings_metadata;
 
   bool allow_cookies = cookie_settings->IsFullCookieAccessAllowed(
-      scope, site_for_cookies, top_frame_origin, net::CookieSettingOverrides(),
-      cookie_partition_key,
-
-      &cookie_settings_metadata);
+      scope, site_for_cookies, top_frame_origin,
+      cookie_settings->SettingOverridesForStorage(), &cookie_settings_metadata);
 
   if (!allow_cookies &&
       PartitionedStorageByDefaultAllowed(cookie_settings_metadata)) {
@@ -157,22 +139,9 @@ bool AllowSharedWorker(
   content_settings::CookieSettingsBase::CookieSettingWithMetadata
       cookie_settings_metadata;
 
-  // We need to manually create a cookie_partition_key without a nonce since
-  // nonced contexts (e.g. FencedFrames or Credentialless iFrames) do not have
-  // unpartitioned cookie access, BUT may allow Shared Workers. This nonceless
-  // cookie_partition_key allows this function to return the correct result for
-  // such contexts.
-  std::optional<const net::CookiePartitionKey> cookie_partition_key =
-      net::CookiePartitionKey::FromStorageKeyComponents(
-          storage_key.top_level_site(),
-          net::CookiePartitionKey::BoolToAncestorChainBit(
-              storage_key.IsThirdPartyContext()),
-          /*nonce=*/std::nullopt);
-
   bool allow = cookie_settings->IsFullCookieAccessAllowed(
       worker_url, site_for_cookies, top_frame_origin,
-      net::CookieSettingOverrides(), cookie_partition_key,
-      &cookie_settings_metadata);
+      cookie_settings->SettingOverridesForStorage(), &cookie_settings_metadata);
 
   if (!allow && PartitionedStorageByDefaultAllowed(cookie_settings_metadata)) {
     allow = true;
@@ -195,36 +164,32 @@ bool AllowSharedWorker(
 bool AllowWorkerFileSystem(
     const GURL& url,
     const std::vector<content::GlobalRenderFrameHostId>& render_frames,
-    const content_settings::CookieSettings* cookie_settings,
-    const blink::StorageKey& storage_key) {
+    const content_settings::CookieSettings* cookie_settings) {
   return AllowWorkerStorageAccess(StorageType::FILE_SYSTEM, url, render_frames,
-                                  cookie_settings, storage_key);
+                                  cookie_settings);
 }
 
 bool AllowWorkerIndexedDB(
     const GURL& url,
     const std::vector<content::GlobalRenderFrameHostId>& render_frames,
-    const content_settings::CookieSettings* cookie_settings,
-    const blink::StorageKey& storage_key) {
+    const content_settings::CookieSettings* cookie_settings) {
   return AllowWorkerStorageAccess(StorageType::INDEXED_DB, url, render_frames,
-                                  cookie_settings, storage_key);
+                                  cookie_settings);
 }
 
 bool AllowWorkerCacheStorage(
     const GURL& url,
     const std::vector<content::GlobalRenderFrameHostId>& render_frames,
-    const content_settings::CookieSettings* cookie_settings,
-    const blink::StorageKey& storage_key) {
+    const content_settings::CookieSettings* cookie_settings) {
   return AllowWorkerStorageAccess(StorageType::CACHE, url, render_frames,
-                                  cookie_settings, storage_key);
+                                  cookie_settings);
 }
 
 bool AllowWorkerWebLocks(
     const GURL& url,
-    const content_settings::CookieSettings* cookie_settings,
-    const blink::StorageKey& storage_key) {
+    const content_settings::CookieSettings* cookie_settings) {
   return AllowWorkerStorageAccess(StorageType::WEB_LOCKS, url, {},
-                                  cookie_settings, storage_key);
+                                  cookie_settings);
 }
 
 }  // namespace embedder_support

@@ -38,18 +38,6 @@ struct PaintPropertyTreeBuilderFragmentContext {
     STACK_ALLOCATED();
 
    public:
-    // Sets the given node to be the new overscroll parent node for this node.
-    void SetOverscrollParent(
-        const ScrollPaintPropertyNode& overscroll_parent) const {
-      // We should only be creating overscroll nodes for non-root
-      // scroll container elements.
-      CHECK(!scroll->IsRoot());
-      const_cast<ScrollPaintPropertyNode&>(overscroll_parent)
-          .SetParent(*scroll->Parent());
-      const_cast<ScrollPaintPropertyNode*>(scroll)->SetParent(
-          overscroll_parent);
-    }
-
     // The combination of a transform and paint offset describes a linear space.
     // When a layout object recur to its children, the main context is expected
     // to refer the object's border box, then the callee will derive its own
@@ -119,6 +107,14 @@ struct PaintPropertyTreeBuilderFragmentContext {
     // that are baked in PaintOffsetTranslations since we entered the
     // fragmentainer.
     PhysicalOffset paint_offset_for_oof_in_fragmentainer;
+
+    // The fragmentainer index of the nearest ancestor that participates in
+    // block fragmentation. This is updated as we update properties for an
+    // object that participates in block fragmentation. If we enter monolithic
+    // content, the index will be kept and inherited down the tree, so that we
+    // eventually set the correct "NG" fragment index in the FragmentData
+    // object.
+    wtf_size_t fragmentainer_idx = WTF::kNotFound;
   };
 
   ContainingBlockContext current;
@@ -171,16 +167,6 @@ struct PaintPropertyTreeBuilderFragmentContext {
   // The delta between the old and new accumulated offsets of 2d translation
   // transforms to the layout shift root.
   gfx::Vector2dF translation_2d_to_layout_shift_root_delta;
-
-  // These node pointers provide the transform/clip space to be used by the
-  // ::view-transition pseudo element. The transform/clip ancestor for ::v-t is
-  // distinct from other descendants of the scope element. This is because some
-  // of the scope element's paint properties, like Transform, should apply to
-  // the ::v-t, but others like ScrollTranslation and OverflowClip should not.
-  const ClipPaintPropertyNodeOrAlias* clip_ancestor_for_transition_pseudo_root =
-      nullptr;
-  const TransformPaintPropertyNodeOrAlias*
-      transform_ancestor_for_transition_pseudo_root = nullptr;
 };
 
 struct PaintPropertyTreeBuilderContext final {
@@ -260,12 +246,14 @@ struct PrePaintInfo {
  public:
   PrePaintInfo(const PhysicalBoxFragment* box_fragment,
                PhysicalOffset paint_offset,
+               wtf_size_t fragmentainer_idx,
                bool is_first_for_node,
                bool is_last_for_node,
                bool is_inside_fragment_child,
                bool fragmentainer_is_oof_containing_block)
       : box_fragment(box_fragment),
         paint_offset(paint_offset),
+        fragmentainer_idx(fragmentainer_idx),
         is_first_for_node(is_first_for_node),
         is_last_for_node(is_last_for_node),
         is_inside_fragment_child(is_inside_fragment_child),
@@ -279,6 +267,7 @@ struct PrePaintInfo {
 
   FragmentData* fragment_data = nullptr;
   PhysicalOffset paint_offset;
+  wtf_size_t fragmentainer_idx;
   bool is_first_for_node;
   bool is_last_for_node;
 

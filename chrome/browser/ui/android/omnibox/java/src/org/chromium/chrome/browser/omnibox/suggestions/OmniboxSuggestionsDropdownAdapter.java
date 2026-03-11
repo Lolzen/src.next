@@ -20,13 +20,14 @@ import org.chromium.chrome.browser.omnibox.suggestions.base.BaseSuggestionViewBi
 import org.chromium.chrome.browser.omnibox.suggestions.basic.SuggestionViewViewBinder;
 import org.chromium.chrome.browser.omnibox.suggestions.carousel.BaseCarouselSuggestionItemViewBuilder;
 import org.chromium.chrome.browser.omnibox.suggestions.carousel.BaseCarouselSuggestionViewBinder;
+import org.chromium.chrome.browser.omnibox.suggestions.editurl.EditUrlSuggestionView;
+import org.chromium.chrome.browser.omnibox.suggestions.editurl.EditUrlSuggestionViewBinder;
 import org.chromium.chrome.browser.omnibox.suggestions.entity.EntitySuggestionViewBinder;
 import org.chromium.chrome.browser.omnibox.suggestions.groupseparator.GroupSeparatorView;
 import org.chromium.chrome.browser.omnibox.suggestions.header.HeaderView;
 import org.chromium.chrome.browser.omnibox.suggestions.header.HeaderViewBinder;
 import org.chromium.chrome.browser.omnibox.suggestions.tail.TailSuggestionView;
 import org.chromium.chrome.browser.omnibox.suggestions.tail.TailSuggestionViewBinder;
-import org.chromium.components.omnibox.OmniboxFeatures;
 import org.chromium.components.omnibox.suggestions.OmniboxSuggestionUiType;
 import org.chromium.ui.modelutil.SimpleRecyclerViewAdapter;
 
@@ -44,52 +45,42 @@ public class OmniboxSuggestionsDropdownAdapter extends SimpleRecyclerViewAdapter
         registerType(
                 OmniboxSuggestionUiType.DEFAULT,
                 parent ->
-                        new BaseSuggestionView<>(
+                        new BaseSuggestionView<View>(
                                 parent.getContext(), R.layout.omnibox_basic_suggestion),
-                new BaseSuggestionViewBinder<>(SuggestionViewViewBinder::bind));
+                new BaseSuggestionViewBinder<View>(SuggestionViewViewBinder::bind));
 
-        // Similar to a default suggestion, with more action buttons.
         registerType(
                 OmniboxSuggestionUiType.EDIT_URL_SUGGESTION,
-                parent ->
-                        new BaseSuggestionView<>(
-                                parent.getContext(), R.layout.omnibox_basic_suggestion),
-                new BaseSuggestionViewBinder<>(SuggestionViewViewBinder::bind));
+                parent -> new EditUrlSuggestionView(parent.getContext()),
+                new EditUrlSuggestionViewBinder());
 
         registerType(
                 OmniboxSuggestionUiType.ANSWER_SUGGESTION,
                 parent ->
-                        new BaseSuggestionView<>(
+                        new BaseSuggestionView<View>(
                                 parent.getContext(), R.layout.omnibox_answer_suggestion),
-                new BaseSuggestionViewBinder<>(AnswerSuggestionViewBinder::bind));
+                new BaseSuggestionViewBinder<View>(AnswerSuggestionViewBinder::bind));
 
         registerType(
                 OmniboxSuggestionUiType.ENTITY_SUGGESTION,
                 parent ->
-                        new BaseSuggestionView<>(
+                        new BaseSuggestionView<View>(
                                 parent.getContext(), R.layout.omnibox_basic_suggestion),
-                new BaseSuggestionViewBinder<>(EntitySuggestionViewBinder::bind));
+                new BaseSuggestionViewBinder<View>(EntitySuggestionViewBinder::bind));
 
         registerType(
                 OmniboxSuggestionUiType.TAIL_SUGGESTION,
-                parent -> new BaseSuggestionView<>(new TailSuggestionView(parent.getContext())),
-                new BaseSuggestionViewBinder<>(TailSuggestionViewBinder::bind));
+                parent ->
+                        new BaseSuggestionView<TailSuggestionView>(
+                                new TailSuggestionView(parent.getContext())),
+                new BaseSuggestionViewBinder<TailSuggestionView>(TailSuggestionViewBinder::bind));
 
         registerType(
                 OmniboxSuggestionUiType.CLIPBOARD_SUGGESTION,
                 parent ->
-                        new BaseSuggestionView<>(
+                        new BaseSuggestionView<View>(
                                 parent.getContext(), R.layout.omnibox_basic_suggestion),
-                new BaseSuggestionViewBinder<>(SuggestionViewViewBinder::bind));
-
-        if (OmniboxFeatures.sAndroidHubSearchTabGroups.isEnabled()) {
-            registerType(
-                    OmniboxSuggestionUiType.TAB_GROUP_SUGGESTION,
-                    parent ->
-                            new BaseSuggestionView<>(
-                                    parent.getContext(), R.layout.omnibox_basic_suggestion),
-                    new BaseSuggestionViewBinder<>(SuggestionViewViewBinder::bind));
-        }
+                new BaseSuggestionViewBinder<View>(SuggestionViewViewBinder::bind));
 
         registerType(
                 OmniboxSuggestionUiType.TILE_NAVSUGGEST,
@@ -105,6 +96,11 @@ public class OmniboxSuggestionsDropdownAdapter extends SimpleRecyclerViewAdapter
                 OmniboxSuggestionUiType.GROUP_SEPARATOR,
                 parent -> new GroupSeparatorView(parent.getContext()),
                 (m, v, p) -> {});
+
+        registerType(
+                OmniboxSuggestionUiType.QUERY_TILES,
+                BaseCarouselSuggestionItemViewBuilder::createView,
+                BaseCarouselSuggestionViewBinder::bind);
     }
 
     /* package */ void recordSessionMetrics() {

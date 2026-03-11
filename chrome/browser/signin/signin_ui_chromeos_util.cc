@@ -13,7 +13,6 @@ account_manager::AccountManagerFacade::AccountAdditionSource
 GetAddAccountSourceFromAccessPoint(signin_metrics::AccessPoint access_point) {
   switch (access_point) {
     case signin_metrics::AccessPoint::kSettings:
-    case signin_metrics::AccessPoint::kSettingsYourSavedInfo:
       return account_manager::AccountManagerFacade::AccountAdditionSource::
           kChromeSettingsTurnOnSyncButton;
     case signin_metrics::AccessPoint::kAvatarBubbleSignIn:
@@ -27,6 +26,7 @@ GetAddAccountSourceFromAccessPoint(signin_metrics::AccessPoint access_point) {
     case signin_metrics::AccessPoint::kExtensionInstallBubble:
     case signin_metrics::AccessPoint::kRecentTabs:
     case signin_metrics::AccessPoint::kTabOrganization:
+    case signin_metrics::AccessPoint::kSearchCompanion:
     case signin_metrics::AccessPoint::kWebauthnModalDialog:
       return account_manager::AccountManagerFacade::AccountAdditionSource::
           kChromeSyncPromoAddAccount;
@@ -36,9 +36,6 @@ GetAddAccountSourceFromAccessPoint(signin_metrics::AccessPoint access_point) {
     case signin_metrics::AccessPoint::kAutofillDropdown:
       return account_manager::AccountManagerFacade::AccountAdditionSource::
           kChromeSigninPromoAddAccount;
-    case signin_metrics::AccessPoint::kGlicLaunchButton:
-      return account_manager::AccountManagerFacade::AccountAdditionSource::
-          kGeminiInChromeReauth;
     default:
       NOTREACHED() << "Add account is requested from an unknown access point "
                    << static_cast<int>(access_point);
@@ -50,7 +47,6 @@ GetAccountReauthSourceFromAccessPoint(
     signin_metrics::AccessPoint access_point) {
   switch (access_point) {
     case signin_metrics::AccessPoint::kSettings:
-    case signin_metrics::AccessPoint::kSettingsYourSavedInfo:
       return account_manager::AccountManagerFacade::AccountAdditionSource::
           kChromeSettingsReauthAccountButton;
     case signin_metrics::AccessPoint::kAvatarBubbleSignIn:
@@ -64,6 +60,7 @@ GetAccountReauthSourceFromAccessPoint(
     case signin_metrics::AccessPoint::kExtensionInstallBubble:
     case signin_metrics::AccessPoint::kRecentTabs:
     case signin_metrics::AccessPoint::kTabOrganization:
+    case signin_metrics::AccessPoint::kSearchCompanion:
     case signin_metrics::AccessPoint::kWebauthnModalDialog:
       return account_manager::AccountManagerFacade::AccountAdditionSource::
           kChromeSyncPromoReauth;
@@ -73,9 +70,6 @@ GetAccountReauthSourceFromAccessPoint(
     case signin_metrics::AccessPoint::kMenu:
       return account_manager::AccountManagerFacade::AccountAdditionSource::
           kChromeMenuTurnOnSync;
-    case signin_metrics::AccessPoint::kGlicLaunchButton:
-      return account_manager::AccountManagerFacade::AccountAdditionSource::
-          kGeminiInChromeReauth;
     default:
       NOTREACHED() << "Reauth is requested from an unknown access point "
                    << static_cast<int>(access_point);

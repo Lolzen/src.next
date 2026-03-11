@@ -32,12 +32,11 @@
 #include <memory>
 
 #include "base/notreached.h"
-#include "base/time/time.h"
 #include "cc/paint/paint_canvas.h"
 #include "cc/trees/paint_holding_reason.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
-#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/input/web_menu_source_type.h"
 #include "third_party/blink/public/common/scheduler/task_attribution_id.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
@@ -100,14 +99,10 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   WebViewImpl* GetWebView() const override { return nullptr; }
   void ChromeDestroyed() override {}
   void SetWindowRect(const gfx::Rect&, LocalFrame&) override {}
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-  void Minimize(LocalFrame&, WindowingControlsChangeCallback) override {}
-  void Maximize(LocalFrame&, WindowingControlsChangeCallback) override {}
-  void Restore(LocalFrame&, WindowingControlsChangeCallback) override {}
-  void SetResizable(bool resizable,
-                    LocalFrame&,
-                    WindowingControlsChangeCallback) override {}
-#endif
+  void Minimize(LocalFrame&) override {}
+  void Maximize(LocalFrame&) override {}
+  void Restore(LocalFrame&) override {}
+  void SetResizable(bool resizable, LocalFrame&) override {}
   gfx::Rect RootWindowRect(LocalFrame&) override { return gfx::Rect(); }
   void DidAccessInitialMainDocument() override {}
   void FocusPage() override {}
@@ -116,6 +111,10 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   void TakeFocus(mojom::blink::FocusType) override {}
   bool SupportsDraggableRegions() override { return false; }
   void DraggableRegionsChanged() override {}
+  void Show(LocalFrame& frame,
+            LocalFrame& opener_frame,
+            NavigationPolicy navigation_policy,
+            bool consumed_user_gesture) override {}
   void SetOverscrollBehavior(LocalFrame& frame,
                              const cc::OverscrollBehavior&) override {}
   void BeginLifecycleUpdates(LocalFrame& main_frame) override {}
@@ -131,10 +130,6 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   void StopDeferringCommits(LocalFrame& main_frame,
                             cc::PaintHoldingCommitTrigger) override {}
   void SetShouldThrottleFrameRate(bool flag, LocalFrame& main_frame) override {}
-  void RequestMainFrameOnCompositorAnimation(
-      LocalFrame&,
-      cc::PropertyChangeForcesCommitCriteria criteria,
-      bool force_propagation) override {}
   void StartDragging(LocalFrame*,
                      const WebDragData&,
                      DragOperationsMask,
@@ -206,9 +201,6 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   const display::ScreenInfos& GetScreenInfos(LocalFrame&) const override {
     return empty_screen_infos_;
   }
-  const display::ScreenInfo& GetOriginalScreenInfo(LocalFrame&) const override {
-    return empty_screen_infos_.current();
-  }
   void ContentsSizeChanged(LocalFrame*, const gfx::Size&) const override {}
   void ShowMouseOverURL(const HitTestResult&) override {}
   void UpdateTooltipUnderCursor(LocalFrame&,
@@ -260,6 +252,9 @@ class CORE_EXPORT EmptyChromeClient : public ChromeClient {
   void RegisterPopupOpeningObserver(PopupOpeningObserver*) override {}
   void UnregisterPopupOpeningObserver(PopupOpeningObserver*) override {}
   void NotifyPopupOpeningObservers() const override {}
+
+  void RequestBeginMainFrameNotExpected(LocalFrame& frame,
+                                        bool request) override {}
   int GetLayerTreeId(LocalFrame& frame) override { return 0; }
   void SetCursorForPlugin(const ui::Cursor&, LocalFrame*) override {}
   void InstallSupplements(LocalFrame&) override {}
@@ -363,12 +358,10 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
       const String&,
       const std::optional<Impression>&,
       const LocalFrameToken* initiator_frame_token,
-      SourceLocation*,
+      std::unique_ptr<SourceLocation>,
       mojo::PendingRemote<mojom::blink::NavigationStateKeepAliveHandle>,
       bool is_container_initiated,
-      bool has_rel_opener,
-      mojo::PendingReceiver<
-          mojom::blink::NavigationResumeDeferredCommitListener>) override;
+      bool has_rel_opener) override;
 
   void DispatchWillSendSubmitEvent(HTMLFormElement*) override;
 
@@ -389,7 +382,6 @@ class CORE_EXPORT EmptyLocalFrameClient : public LocalFrameClient {
 
   bool NavigateBackForward(
       int offset,
-      base::TimeTicks,
       std::optional<scheduler::TaskAttributionId>) const override {
     return false;
   }

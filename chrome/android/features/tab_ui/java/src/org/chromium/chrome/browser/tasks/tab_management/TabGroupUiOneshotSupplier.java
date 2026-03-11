@@ -4,23 +4,20 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.app.Activity;
 import android.view.ViewGroup;
 
-import org.chromium.base.Callback;
+import androidx.annotation.Nullable;
+
 import org.chromium.base.CallbackController;
 import org.chromium.base.Token;
 import org.chromium.base.ValueChangedCallback;
-import org.chromium.base.supplier.MonotonicObservableSupplier;
-import org.chromium.base.supplier.NonNullObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.base.supplier.OneshotSupplier;
 import org.chromium.base.supplier.OneshotSupplierImpl;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.base.task.PostTask;
 import org.chromium.base.task.TaskTraits;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.ActivityTabProvider;
 import org.chromium.chrome.browser.bookmarks.TabBookmarker;
 import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider;
@@ -32,7 +29,6 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabObserver;
 import org.chromium.chrome.browser.tab_ui.TabContentManager;
 import org.chromium.chrome.browser.tabmodel.TabCreatorManager;
-import org.chromium.chrome.browser.tabmodel.TabGroupModelFilter;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.theme.ThemeColorProvider;
 import org.chromium.chrome.browser.undo_tab_close_snackbar.UndoBarThrottle;
@@ -40,13 +36,10 @@ import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.browser_ui.widget.scrim.ScrimManager;
 import org.chromium.ui.modaldialog.ModalDialogManager;
 
-import java.util.function.Supplier;
-
 /**
  * A custom {@link OneshotSupplier} for a {@link TabGroupUi}. The supplied value will remain null
  * until the current activity tab is in a tab group.
  */
-@NullMarked
 public class TabGroupUiOneshotSupplier extends OneshotSupplierImpl<TabGroupUi> {
 
     /** Controller containing the logic that manages when the supplier is set with a value. */
@@ -58,7 +51,7 @@ public class TabGroupUiOneshotSupplier extends OneshotSupplierImpl<TabGroupUi> {
                         postMaybeCreateTabGroupUi(tab);
                     }
                 };
-        private final Callback<@Nullable Tab> mActivityTabObserver =
+        private final ValueChangedCallback<Tab> mActivityTabObserver =
                 new ValueChangedCallback<>(this::onActivityTabChanged);
         private final ActivityTabProvider mActivityTabProvider;
         private final TabModelSelector mTabModelSelector;
@@ -72,7 +65,7 @@ public class TabGroupUiOneshotSupplier extends OneshotSupplierImpl<TabGroupUi> {
             mSetter = setter;
             mActivityTabProvider = activityTabProvider;
             mTabModelSelector = tabModelSelector;
-            activityTabProvider.asObservable().addObserver(mActivityTabObserver);
+            activityTabProvider.addObserver(mActivityTabObserver);
         }
 
         void destroy() {
@@ -80,7 +73,7 @@ public class TabGroupUiOneshotSupplier extends OneshotSupplierImpl<TabGroupUi> {
                 mCallbackController.destroy();
                 mCallbackController = null;
             }
-            mActivityTabProvider.asObservable().removeObserver(mActivityTabObserver);
+            mActivityTabProvider.removeObserver(mActivityTabObserver);
             // Trigger a null new tab selection to effectively unregister the observer from the old
             // tab.
             mActivityTabObserver.onResult(null);
@@ -99,10 +92,12 @@ public class TabGroupUiOneshotSupplier extends OneshotSupplierImpl<TabGroupUi> {
 
             if (tab == null || tab.isClosing() || tab.isDestroyed()) return;
 
-            TabGroupModelFilter filter =
-                    mTabModelSelector.getTabGroupModelFilter(tab.isIncognito());
-            assumeNonNull(filter);
-            if (!filter.isTabInTabGroup(tab)) return;
+            boolean isInTabGroup =
+                    mTabModelSelector
+                            .getTabGroupModelFilterProvider()
+                            .getTabGroupModelFilter(tab.isIncognito())
+                            .isTabInTabGroup(tab);
+            if (!isInTabGroup) return;
 
             mSetter.run();
             mSetter = null;
@@ -153,7 +148,7 @@ public class TabGroupUiOneshotSupplier extends OneshotSupplierImpl<TabGroupUi> {
             ViewGroup parentView,
             BrowserControlsStateProvider browserControlsStateProvider,
             ScrimManager scrimManager,
-            NonNullObservableSupplier<Boolean> omniboxFocusStateSupplier,
+            ObservableSupplier<Boolean> omniboxFocusStateSupplier,
             BottomSheetController bottomSheetController,
             DataSharingTabManager dataSharingTabManager,
             TabContentManager tabContentManager,
@@ -162,8 +157,8 @@ public class TabGroupUiOneshotSupplier extends OneshotSupplierImpl<TabGroupUi> {
             ModalDialogManager modalDialogManager,
             ThemeColorProvider themeColorProvider,
             UndoBarThrottle undoBarThrottle,
-            MonotonicObservableSupplier<TabBookmarker> tabBookmarkerSupplier,
-            Supplier<@Nullable ShareDelegate> shareDelegateSupplier) {
+            ObservableSupplier<TabBookmarker> tabBookmarkerSupplier,
+            Supplier<ShareDelegate> shareDelegateSupplier) {
         Runnable setter =
                 () -> {
                     var tabGroupUi =

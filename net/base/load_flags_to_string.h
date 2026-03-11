@@ -12,7 +12,7 @@
 namespace net {
 
 // Convert `load_flags` to a string of the form "LOAD_ONLY_FROM_CACHE |
-// LOAD_PREFETCH".
+// LOAD_SKIP_VARY_CHECK".
 NET_EXPORT_PRIVATE std::string LoadFlagsToString(int load_flags);
 
 }  // namespace net

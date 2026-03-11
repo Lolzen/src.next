@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/signin/force_signin_verifier.h"
-
 #include <string>
 
-#include "base/feature_list.h"
+#include "chrome/browser/signin/force_signin_verifier.h"
+
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -26,7 +25,7 @@
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/primary_account_access_token_fetcher.h"
 #include "components/signin/public/identity_manager/primary_account_mutator.h"
-#include "components/sync/base/features.h"
+#include "components/signin/public/identity_manager/scope_set.h"
 #include "content/public/browser/network_service_instance.h"
 #include "google_apis/gaia/gaia_constants.h"
 
@@ -43,11 +42,8 @@ const net::BackoffEntry::Policy kForceSigninVerifierBackoffPolicy = {
 };
 
 signin::ConsentLevel GetProfileConsentLevelToVerify(Profile* profile) {
-  if (base::FeatureList::IsEnabled(
-          syncer::kReplaceSyncPromosWithSignInPromos)) {
-    return signin::ConsentLevel::kSignin;
-  }
-
+  // TODO(crbug.com/40280466): Condition to remove when we decide to
+  // align requirements for Managed vs Consumer accounts.
   return enterprise_util::UserAcceptedAccountManagement(profile)
              ? signin::ConsentLevel::kSignin
              : signin::ConsentLevel::kSync;
@@ -112,7 +108,7 @@ void ForceSigninVerifier::OnAccessTokenFetchComplete(
 }
 
 void ForceSigninVerifier::OnConnectionChanged(
-    net::NetworkChangeNotifier::ConnectionType type) {
+    network::mojom::ConnectionType type) {
   // Try again immediately once the network is back and cancel any pending
   // request.
   backoff_entry_.Reset();
@@ -131,7 +127,7 @@ void ForceSigninVerifier::Cancel() {
 }
 
 void ForceSigninVerifier::SendRequest() {
-  auto type = net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE;
+  auto type = network::mojom::ConnectionType::CONNECTION_NONE;
   if (content::GetNetworkConnectionTracker()->GetConnectionType(
           &type,
           base::BindOnce(&ForceSigninVerifier::SendRequestIfNetworkAvailable,
@@ -141,21 +137,22 @@ void ForceSigninVerifier::SendRequest() {
 }
 
 void ForceSigninVerifier::SendRequestIfNetworkAvailable(
-    net::NetworkChangeNotifier::ConnectionType network_type) {
+    network::mojom::ConnectionType network_type) {
   if (!identity_manager_ || !identity_manager_->AreRefreshTokensLoaded()) {
     request_waiting_for_refresh_tokens_ = true;
     return;
   }
 
-  if (network_type ==
-          net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE ||
+  if (network_type == network::mojom::ConnectionType::CONNECTION_NONE ||
       !ShouldSendRequest()) {
     return;
   }
 
+  signin::ScopeSet oauth2_scopes;
+  oauth2_scopes.insert(GaiaConstants::kChromeSyncOAuth2Scope);
   access_token_fetcher_ =
       std::make_unique<signin::PrimaryAccountAccessTokenFetcher>(
-          signin::OAuthConsumerId::kForceSigninVerifier, identity_manager_,
+          "force_signin_verifier", identity_manager_, oauth2_scopes,
           base::BindOnce(&ForceSigninVerifier::OnAccessTokenFetchComplete,
                          weak_factory_.GetWeakPtr()),
           signin::PrimaryAccountAccessTokenFetcher::Mode::kImmediate,

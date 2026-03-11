@@ -4,9 +4,7 @@
 
 package org.chromium.chrome.browser.toolbar;
 
-import org.chromium.base.supplier.NonNullObservableSupplier;
-import org.chromium.base.supplier.ObservableSuppliers;
-import org.chromium.base.supplier.SettableNonNullObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplierImpl;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.content_public.browser.ImeAdapter;
@@ -16,15 +14,16 @@ import org.chromium.content_public.browser.WebContents;
 /**
  * Supplier of a boolean indicating whether an editable node is focused in the currently active
  * WebContents. Changes to the WebContents considered active must be reflected with calls to
- * onWebContentsChanged; this class does not attempt to track these changes directly. This class
- * also allows limited interaction with the current
+ * onWebContentsChanged; this class does not attempt to track these changes.
  */
 @NullMarked
-public class FormFieldFocusedSupplier implements ImeEventObserver {
+class FormFieldFocusedSupplier extends ObservableSupplierImpl<Boolean> implements ImeEventObserver {
     private @Nullable WebContents mWebContents;
     private @Nullable ImeAdapter mImeAdapter;
-    private final SettableNonNullObservableSupplier<Boolean> mSupplier =
-            ObservableSuppliers.createNonNull(false);
+
+    public FormFieldFocusedSupplier() {
+        super(false);
+    }
 
     /**
      * Start tracking a new WebContents and stop tracking the previous one, if any. If
@@ -39,34 +38,18 @@ public class FormFieldFocusedSupplier implements ImeEventObserver {
 
         if (newWebContents == null) {
             mImeAdapter = null;
-            mSupplier.set(false);
+            set(false);
             return;
         }
 
         mWebContents = newWebContents;
         mImeAdapter = ImeAdapter.fromWebContents(mWebContents);
         mImeAdapter.addEventObserver(this);
-        mSupplier.set(mImeAdapter.focusedNodeEditable());
+        set(mImeAdapter.focusedNodeEditable());
     }
 
     @Override
     public void onNodeAttributeUpdated(boolean editable, boolean password) {
-        mSupplier.set(editable);
-    }
-
-    public boolean get() {
-        return mSupplier.get();
-    }
-
-    public NonNullObservableSupplier<Boolean> getObservable() {
-        return mSupplier;
-    }
-
-    /**
-     * See {@link ImeAdapter#resetAndHideKeyboard()}. Does nothing if there is no active ImeAdapter
-     * for the current web contents.
-     */
-    public void resetAndHideKeyboard() {
-        if (mImeAdapter != null) mImeAdapter.resetAndHideKeyboard();
+        super.set(editable);
     }
 }

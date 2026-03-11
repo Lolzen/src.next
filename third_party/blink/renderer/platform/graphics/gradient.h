@@ -29,16 +29,16 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_GRADIENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_GRADIENT_H_
 
-#include <memory>
-
+#include "base/memory/scoped_refptr.h"
 #include "cc/paint/paint_flags.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_shader.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
+#include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
-#include "third_party/skia/include/effects/SkGradient.h"
+#include "third_party/skia/include/effects/SkGradientShader.h"
 
 class SkMatrix;
 
@@ -51,7 +51,7 @@ namespace blink {
 struct ImageDrawOptions;
 class DarkModeFilter;
 
-class PLATFORM_EXPORT Gradient {
+class PLATFORM_EXPORT Gradient : public RefCounted<Gradient> {
   USING_FAST_MALLOC(Gradient);
 
  public:
@@ -73,14 +73,14 @@ class PLATFORM_EXPORT Gradient {
     kRepeat,
   };
 
-  static std::unique_ptr<Gradient> CreateLinear(
+  static scoped_refptr<Gradient> CreateLinear(
       const gfx::PointF& p0,
       const gfx::PointF& p1,
       SpreadMethod = SpreadMethod::kPad,
       PremultipliedAlpha = PremultipliedAlpha::kUnpremultiplied,
       DegenerateHandling = DegenerateHandling::kAllow);
 
-  static std::unique_ptr<Gradient> CreateRadial(
+  static scoped_refptr<Gradient> CreateRadial(
       const gfx::PointF& p0,
       float r0,
       const gfx::PointF& p1,
@@ -90,7 +90,7 @@ class PLATFORM_EXPORT Gradient {
       PremultipliedAlpha = PremultipliedAlpha::kUnpremultiplied,
       DegenerateHandling = DegenerateHandling::kAllow);
 
-  static std::unique_ptr<Gradient> CreateConic(
+  static scoped_refptr<Gradient> CreateConic(
       const gfx::PointF& position,
       float rotation,
       float start_angle,
@@ -154,7 +154,7 @@ class PLATFORM_EXPORT Gradient {
   virtual sk_sp<PaintShader> CreateShader(const ColorBuffer&,
                                           const OffsetBuffer&,
                                           SkTileMode,
-                                          SkGradient::Interpolation,
+                                          SkGradientShader::Interpolation,
                                           const SkMatrix&,
                                           SkColor4f) const = 0;
 
@@ -164,7 +164,7 @@ class PLATFORM_EXPORT Gradient {
 
  private:
   sk_sp<PaintShader> CreateShaderInternal(const SkMatrix& local_matrix);
-  SkGradient::Interpolation ResolveSkInterpolation() const;
+  SkGradientShader::Interpolation ResolveSkInterpolation() const;
 
   void SortStopsIfNecessary() const;
   void FillSkiaStops(ColorBuffer&, OffsetBuffer&) const;

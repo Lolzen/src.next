@@ -36,7 +36,7 @@
 #include "chrome/common/pref_names.h"
 #include "components/download/public/common/download_features.h"
 #include "components/download/public/common/download_item.h"
-#include "components/policy/core/browser/url_list/url_blocklist_manager.h"
+#include "components/policy/core/browser/url_blocklist_manager.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/buildflags.h"
@@ -47,7 +47,6 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "base/json/values_util.h"
 #include "chrome/browser/ash/drive/drive_integration_service.h"
-#include "chrome/browser/ash/drive/drive_integration_service_factory.h"
 #include "chrome/browser/ash/drive/file_system_util.h"
 #include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/ui/webui/ash/cloud_upload/cloud_upload_util.h"
@@ -83,7 +82,7 @@ bool DownloadPathIsDangerous(const base::FilePath& download_path) {
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
-  // Android does not have a desktop dir.
+  // Neither Fuchsia nor Android have a desktop dir.
   return false;
 #else
   base::FilePath desktop_dir;
@@ -526,7 +525,7 @@ bool DownloadPrefs::IsAutoOpenPdfEnabled() {
 
 void DownloadPrefs::SaveAutoOpenState() {
   std::string extensions;
-  for (const auto& it : auto_open_by_user_) {
+  for (auto it : auto_open_by_user_) {
 #if BUILDFLAG(IS_WIN)
     // TODO(phajdan.jr): Why we're using Sys conversion here, but not in ctor?
     std::string this_extension = base::SysWideToUTF8(it);
@@ -661,7 +660,7 @@ void DownloadPrefs::UpdateAllowedURLsForOpenByPolicy() {
 
     // Since we only want to auto-open for the specified urls, block everything
     // else.
-    auto blocked = base::ListValue();
+    auto blocked = base::Value::List();
     blocked.Append("*");
     allowed_urls->Block(blocked);
   }

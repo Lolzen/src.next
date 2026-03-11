@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "base/atomicops.h"
 
 #include <stdint.h>
@@ -10,7 +15,6 @@
 #include <type_traits>
 #include <vector>
 
-#include "base/compiler_specific.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 template <class AtomicType>
@@ -29,8 +33,8 @@ static void TestAtomicIncrement() {
   } s;
 
   AtomicType prev_word_value, next_word_value;
-  UNSAFE_TODO(memset(&prev_word_value, 0xFF, sizeof(AtomicType)));
-  UNSAFE_TODO(memset(&next_word_value, 0xEE, sizeof(AtomicType)));
+  memset(&prev_word_value, 0xFF, sizeof(AtomicType));
+  memset(&next_word_value, 0xEE, sizeof(AtomicType));
 
   s.prev_word = prev_word_value;
   s.count = 0;
@@ -163,7 +167,7 @@ static void TestAtomicIncrementBounds() {
 template <class AtomicType>
 static AtomicType TestFillValue() {
   AtomicType val = 0;
-  UNSAFE_TODO(memset(&val, 0xa5, sizeof(AtomicType)));
+  memset(&val, 0xa5, sizeof(AtomicType));
   return val;
 }
 
@@ -216,6 +220,7 @@ TEST(AtomicOpsTest, Inc) {
 
 TEST(AtomicOpsTest, CompareAndSwap) {
   TestCompareAndSwap<base::subtle::Atomic32>();
+  TestCompareAndSwap<base::subtle::AtomicWord>();
 }
 
 TEST(AtomicOpsTest, Exchange) {

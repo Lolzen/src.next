@@ -47,10 +47,6 @@ class CustomScrollbarTheme final : public ScrollbarTheme {
     return GetTheme().NativeThemeHasButtons();
   }
 
-  int NativeThemeMinimumThumbLength(const Scrollbar& scrollbar) {
-    return GetTheme().MinimumThumbLength(scrollbar);
-  }
-
   void PaintScrollCorner(GraphicsContext&,
                          const ScrollableArea&,
                          const DisplayItemClient&,

@@ -4,8 +4,6 @@
 
 package org.chromium.chrome.browser.feed;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Rect;
@@ -14,11 +12,7 @@ import android.view.View;
 
 import androidx.recyclerview.widget.RecyclerView;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
-
 // Used to draw the background for the feed containment.
-@NullMarked
 public class FeedItemDecoration extends RecyclerView.ItemDecoration {
     /** Allows to mock for testing purpose. */
     public interface DrawableProvider {
@@ -27,13 +21,12 @@ public class FeedItemDecoration extends RecyclerView.ItemDecoration {
 
     private final FeedSurfaceCoordinator mCoordinator;
     private final Drawable mTopRoundedBackground;
-    private final @Nullable Drawable mTopLeftRoundedBackground;
-    private final @Nullable Drawable mTopRightRoundedBackground;
+    private final Drawable mTopLeftRoundedBackground;
+    private final Drawable mTopRightRoundedBackground;
     private final Drawable mBottomRoundedBackground;
-    private final @Nullable Drawable mBottomLeftRoundedBackground;
-    private final @Nullable Drawable mBottomRightRoundedBackground;
+    private final Drawable mBottomLeftRoundedBackground;
+    private final Drawable mBottomRightRoundedBackground;
     private final Drawable mNotRoundedBackground;
-    private final Drawable mAllRoundedBackground;
     private final int mGutterPadding;
     private final int mAdditionalBottomCardPadding;
 
@@ -50,8 +43,6 @@ public class FeedItemDecoration extends RecyclerView.ItemDecoration {
                 drawableProvider.getDrawable(R.drawable.home_surface_ui_background_not_rounded);
         mBottomRoundedBackground =
                 drawableProvider.getDrawable(R.drawable.home_surface_ui_background_bottom_rounded);
-        mAllRoundedBackground =
-                drawableProvider.getDrawable(R.drawable.home_surface_ui_background_rounded);
         if (mCoordinator.useStaggeredLayout()) {
             mTopLeftRoundedBackground =
                     drawableProvider.getDrawable(
@@ -258,8 +249,7 @@ public class FeedItemDecoration extends RecyclerView.ItemDecoration {
     // Returns the column index of the view in the staggered layout. Returns -1 if the view
     // takes the full span.
     private int getColumnIndex(View view) {
-        var listLayoutHelper = mCoordinator.getHybridListRenderer().getListLayoutHelper();
-        return assumeNonNull(listLayoutHelper).getColumnIndex(view);
+        return mCoordinator.getHybridListRenderer().getListLayoutHelper().getColumnIndex(view);
     }
 
     private boolean belongsToFeedContainment(int position) {
@@ -275,9 +265,7 @@ public class FeedItemDecoration extends RecyclerView.ItemDecoration {
 
     private Drawable getBackgroundDrawable(int position) {
         if (position == mCoordinator.getHeaderPosition()) {
-            return isLastViewInFeedContainment(position)
-                    ? mAllRoundedBackground
-                    : mTopRoundedBackground;
+            return mTopRoundedBackground;
         } else if (isLastViewInFeedContainment(position)) {
             return mBottomRoundedBackground;
         } else {

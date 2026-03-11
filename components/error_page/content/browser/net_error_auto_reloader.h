@@ -24,7 +24,7 @@
 
 namespace content {
 class NavigationHandle;
-class NavigationThrottleRegistry;
+class NavigationThrottle;
 class WebContents;
 }  // namespace content
 
@@ -35,8 +35,8 @@ namespace error_page {
 // excludes errors that aren't connectivity related since a reload doesn't
 // generally fix them (e.g. SSL errors or when the client blocked the request).
 // To use this behavior as a Content embedder, simply call the static
-// `MaybeCreateAndAddNavigationThrottle()` method from within your
-// implementation of ContentBrowserClient::CreateThrottlesForNavigation.
+// `MaybeCreateNavigationThrottle()` method from within your implementation of
+// ContentBrowserClient::CreateThrottlesForNavigation.
 class NetErrorAutoReloader
     : public content::WebContentsObserver,
       public content::WebContentsUserData<NetErrorAutoReloader>,
@@ -51,8 +51,8 @@ class NetErrorAutoReloader
   // embedders wanting to use NetErrorAutoReload's behavior, it's sufficient to
   // call this from ContentBrowserClient::CreateThrottlesForNavigation for each
   // navigation processed.
-  static void MaybeCreateAndAddNavigationThrottle(
-      content::NavigationThrottleRegistry& registry);
+  static std::unique_ptr<content::NavigationThrottle> MaybeCreateThrottleFor(
+      content::NavigationHandle* handle);
 
   // content::WebContentsObserver:
   void DidStartNavigation(content::NavigationHandle* handle) override;
@@ -61,8 +61,7 @@ class NetErrorAutoReloader
   void OnVisibilityChanged(content::Visibility visibility) override;
 
   // network::NetworkConnectionTracker::NetworkConnectionObserver:
-  void OnConnectionChanged(
-      net::NetworkChangeNotifier::ConnectionType type) override;
+  void OnConnectionChanged(network::mojom::ConnectionType type) override;
 
   // Returns the delay applied when scheduling the next auto-reload of a page
   // after it's already been auto-reloaded `reload_count` times.
@@ -83,16 +82,15 @@ class NetErrorAutoReloader
 
   explicit NetErrorAutoReloader(content::WebContents* web_contents);
 
-  void SetInitialConnectionType(
-      net::NetworkChangeNotifier::ConnectionType type);
+  void SetInitialConnectionType(network::mojom::ConnectionType type);
   bool IsWebContentsVisible();
   void Reset();
   void PauseAutoReloadTimerIfRunning();
   void ResumeAutoReloadIfPaused();
   void ScheduleNextAutoReload();
   void ReloadMainFrame();
-  void MaybeCreateAndAdd(
-      content::NavigationThrottleRegistry& registry);
+  std::unique_ptr<content::NavigationThrottle> MaybeCreateThrottle(
+      content::NavigationHandle* handle);
   bool ShouldSuppressErrorPage(content::NavigationHandle* handle);
 
   struct ErrorPageInfo {

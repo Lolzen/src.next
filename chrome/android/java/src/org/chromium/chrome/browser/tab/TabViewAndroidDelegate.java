@@ -4,21 +4,19 @@
 
 package org.chromium.chrome.browser.tab;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.util.SparseArray;
 import android.view.ViewGroup;
 import android.view.ViewStructure;
 import android.view.autofill.AutofillValue;
 
+import androidx.annotation.Nullable;
+
 import org.chromium.base.Callback;
-import org.chromium.base.supplier.NonNullObservableSupplier;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.dragdrop.ChromeDragAndDropBrowserDelegate;
 import org.chromium.components.embedder_support.view.ContentView;
 import org.chromium.content_public.browser.ContentFeatureMap;
 import org.chromium.content_public.common.ContentFeatures;
+import org.chromium.ui.base.ApplicationViewportInsetSupplier;
 import org.chromium.ui.base.ViewAndroidDelegate;
 import org.chromium.ui.base.ViewportInsets;
 import org.chromium.ui.base.WindowAndroid;
@@ -26,20 +24,19 @@ import org.chromium.ui.dragdrop.DragAndDropBrowserDelegate;
 import org.chromium.ui.dragdrop.DragStateTracker;
 
 /** Implementation of the abstract class {@link ViewAndroidDelegate} for Chrome. */
-@NullMarked
 public class TabViewAndroidDelegate extends ViewAndroidDelegate {
     private final TabImpl mTab;
 
-    private @Nullable DragAndDropBrowserDelegate mDragAndDropBrowserDelegate;
+    @Nullable private DragAndDropBrowserDelegate mDragAndDropBrowserDelegate;
 
     /**
-     * The inset for the bottom of the Visual Viewport in pixels, or 0 for no insetting. This is the
-     * source of truth for the application viewport inset for this embedder.
+     * The inset for the bottom of the Visual Viewport in pixels, or 0 for no insetting.
+     * This is the source of truth for the application viewport inset for this embedder.
      */
     private int mVisualViewportInsetBottomPx;
 
     /** The inset supplier the observer is currently attached to. */
-    private @Nullable NonNullObservableSupplier<ViewportInsets> mCurrentInsetSupplier;
+    private ApplicationViewportInsetSupplier mCurrentInsetSupplier;
 
     private final Callback<ViewportInsets> mInsetObserver =
             (unused) -> updateVisualViewportBottomInset();
@@ -59,9 +56,8 @@ public class TabViewAndroidDelegate extends ViewAndroidDelegate {
             getDragAndDropDelegate().setDragAndDropBrowserDelegate(mDragAndDropBrowserDelegate);
         }
 
-        mCurrentInsetSupplier =
-                tab.getWindowAndroidChecked().getApplicationBottomInsetTracker().getSupplier();
-        mCurrentInsetSupplier.addSyncObserverAndPostIfNonNull(mInsetObserver);
+        mCurrentInsetSupplier = tab.getWindowAndroid().getApplicationBottomInsetSupplier();
+        mCurrentInsetSupplier.addObserver(mInsetObserver);
 
         mTab.addObserver(
                 new EmptyTabObserver() {
@@ -74,10 +70,8 @@ public class TabViewAndroidDelegate extends ViewAndroidDelegate {
                         }
                         if (window != null) {
                             mCurrentInsetSupplier =
-                                    tab.getWindowAndroidChecked()
-                                            .getApplicationBottomInsetTracker()
-                                            .getSupplier();
-                            mCurrentInsetSupplier.addSyncObserverAndPostIfNonNull(mInsetObserver);
+                                    tab.getWindowAndroid().getApplicationBottomInsetSupplier();
+                            mCurrentInsetSupplier.addObserver(mInsetObserver);
                         }
                         updateVisualViewportBottomInset();
                     }
@@ -123,9 +117,7 @@ public class TabViewAndroidDelegate extends ViewAndroidDelegate {
     /** Sets the Visual Viewport bottom inset. */
     private void updateVisualViewportBottomInset() {
         int inset =
-                mTab.isHidden()
-                                || mCurrentInsetSupplier == null
-                                || mCurrentInsetSupplier.get() == null
+                mTab.isHidden() || mCurrentInsetSupplier == null
                         ? 0
                         : mCurrentInsetSupplier.get().visualViewportBottomInset;
 
@@ -149,9 +141,8 @@ public class TabViewAndroidDelegate extends ViewAndroidDelegate {
     }
 
     @Override
-    public void updateAnchorViews(@Nullable ViewGroup oldContainerView) {
+    public void updateAnchorViews(ViewGroup oldContainerView) {
         super.updateAnchorViews(oldContainerView);
-        assumeNonNull(oldContainerView);
 
         assert oldContainerView instanceof ContentView
                 : "TabViewAndroidDelegate does not host container views other than ContentView.";
@@ -168,7 +159,7 @@ public class TabViewAndroidDelegate extends ViewAndroidDelegate {
         return (ContentView) getContainerView();
     }
 
-    /** Destroy and clean up {@link DragStateTracker} to the content view. */
+    /* Destroy and clean up {@link DragStateTracker} to the content view. */
     @Override
     public void destroy() {
         super.destroy();
@@ -200,7 +191,7 @@ public class TabViewAndroidDelegate extends ViewAndroidDelegate {
         return mTab.providesAutofillStructure();
     }
 
-    @Nullable DragAndDropBrowserDelegate getDragAndDropBrowserDelegateForTesting() {
+    DragAndDropBrowserDelegate getDragAndDropBrowserDelegateForTesting() {
         return mDragAndDropBrowserDelegate;
     }
 }

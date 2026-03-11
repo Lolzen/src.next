@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory/memory_pressure_listener.h"
@@ -13,7 +14,7 @@
 #include "chrome/common/chrome_features.h"
 #include "components/dbus/thread_linux/dbus_thread_linux.h"
 #include "components/dbus/utils/check_for_service_and_start.h"
-#include "components/dbus/utils/connect_to_signal.h"
+#include "dbus/message.h"
 #include "dbus/object_path.h"
 #include "dbus/object_proxy.h"
 
@@ -96,8 +97,8 @@ void DbusMemoryPressureEvaluatorLinux::CheckIfLmmIsAvailableResponse(
 
     object_proxy_ =
         system_bus_->GetObjectProxy(kLmmService, dbus::ObjectPath(kLmmObject));
-    dbus_utils::ConnectToSignal<"y">(
-        object_proxy_, kLmmInterface, kLowMemoryWarningSignal,
+    object_proxy_->ConnectToSignal(
+        kLmmInterface, kLowMemoryWarningSignal,
         base::BindRepeating(
             &DbusMemoryPressureEvaluatorLinux::OnLowMemoryWarning,
             weak_ptr_factory_.GetWeakPtr()),
@@ -135,9 +136,8 @@ void DbusMemoryPressureEvaluatorLinux::CheckIfPortalIsAvailableResponse(
 
     object_proxy_ = session_bus_->GetObjectProxy(
         kXdgPortalService, dbus::ObjectPath(kXdgPortalObject));
-    dbus_utils::ConnectToSignal<"y">(
-        object_proxy_, kXdgPortalMemoryMonitorInterface,
-        kLowMemoryWarningSignal,
+    object_proxy_->ConnectToSignal(
+        kXdgPortalMemoryMonitorInterface, kLowMemoryWarningSignal,
         base::BindRepeating(
             &DbusMemoryPressureEvaluatorLinux::OnLowMemoryWarning,
             weak_ptr_factory_.GetWeakPtr()),
@@ -165,14 +165,15 @@ void DbusMemoryPressureEvaluatorLinux::OnSignalConnected(
 }
 
 void DbusMemoryPressureEvaluatorLinux::OnLowMemoryWarning(
-    dbus_utils::ConnectToSignalResultSig<"y"> result) {
+    dbus::Signal* signal) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (!result.has_value()) {
+  dbus::MessageReader reader(signal);
+  uint8_t lmm_level;
+  if (!reader.PopByte(&lmm_level)) {
     LOG(WARNING) << "Failed to parse low memory level";
     return;
   }
-  auto [lmm_level] = *result;
 
   // static_cast is needed as lmm_level is a uint8_t, which is often an alias to
   // char, meaning that sending it to the output stream would just print the
@@ -180,46 +181,46 @@ void DbusMemoryPressureEvaluatorLinux::OnLowMemoryWarning(
   VLOG(1) << "Monitor sent memory pressure level: "
           << static_cast<int>(lmm_level);
 
-  base::MemoryPressureLevel new_level = LmmToBasePressureLevel(lmm_level);
+  base::MemoryPressureListener::MemoryPressureLevel new_level =
+      LmmToBasePressureLevel(lmm_level);
 
   VLOG(1) << "MemoryPressureLevel: " << new_level;
   UpdateLevel(new_level);
 }
 
-base::MemoryPressureLevel
+base::MemoryPressureListener::MemoryPressureLevel
 DbusMemoryPressureEvaluatorLinux::LmmToBasePressureLevel(uint8_t lmm_level) {
   if (lmm_level >= critical_level_) {
-    return base::MEMORY_PRESSURE_LEVEL_CRITICAL;
+    return base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL;
   }
   if (lmm_level >= moderate_level_) {
-    return base::MEMORY_PRESSURE_LEVEL_MODERATE;
+    return base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE;
   }
-  return base::MEMORY_PRESSURE_LEVEL_NONE;
+  return base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE;
 }
 
 void DbusMemoryPressureEvaluatorLinux::UpdateLevel(
-    base::MemoryPressureLevel new_level) {
+    base::MemoryPressureListener::MemoryPressureLevel new_level) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   reset_vote_timer_.Stop();
 
-  base::MemoryPressureLevel old_vote = current_vote();
-
   SetCurrentVote(new_level);
   switch (new_level) {
-    case base::MEMORY_PRESSURE_LEVEL_NONE:
-      // Only notify when transitioning to no pressure.
-      SendCurrentVote(old_vote != base::MEMORY_PRESSURE_LEVEL_NONE);
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE:
+      // By convention no notifications are sent when returning to NONE level.
+      SendCurrentVote(false);
       break;
-    case base::MEMORY_PRESSURE_LEVEL_MODERATE:
-    case base::MEMORY_PRESSURE_LEVEL_CRITICAL:
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE:
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL:
       SendCurrentVote(true);
 
       reset_vote_timer_.Start(
           FROM_HERE, kResetVotePeriod,
-          base::BindOnce(&DbusMemoryPressureEvaluatorLinux::UpdateLevel,
-                         weak_ptr_factory_.GetWeakPtr(),
-                         base::MEMORY_PRESSURE_LEVEL_NONE));
+          base::BindOnce(
+              &DbusMemoryPressureEvaluatorLinux::UpdateLevel,
+              weak_ptr_factory_.GetWeakPtr(),
+              base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE));
       break;
   }
 }

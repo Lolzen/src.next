@@ -37,7 +37,6 @@
 #include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
-#include "third_party/blink/renderer/core/events/current_input_event.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/policy_container.h"
@@ -59,7 +58,6 @@
 #include "third_party/blink/renderer/platform/network/form_data_encoder.h"
 #include "third_party/blink/renderer/platform/network/http_names.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
 
@@ -82,7 +80,7 @@ static void AppendMailtoPostFormDataToURL(KURL& url,
     // Convention seems to be to decode, and s/&/\r\n/. Also, spaces are encoded
     // as %20.
     body = DecodeURLEscapeSequences(
-        StrCat({body.Replace('&', "\r\n").Replace('+', ' '), "\r\n"}),
+        String(body.Replace('&', "\r\n").Replace('+', ' ') + "\r\n"),
         DecodeURLMode::kUTF8OrIsomorphic);
   }
 
@@ -170,7 +168,7 @@ inline FormSubmission::FormSubmission(
     LocalDOMWindow* origin_window,
     const LocalFrameToken& initiator_frame_token,
     bool has_rel_opener,
-    SourceLocation* source_location,
+    std::unique_ptr<SourceLocation> source_location,
     mojo::PendingRemote<mojom::blink::NavigationStateKeepAliveHandle>
         initiator_navigation_state_keep_alive_handle)
     : method_(method),
@@ -188,10 +186,7 @@ inline FormSubmission::FormSubmission(
       origin_window_(origin_window),
       initiator_frame_token_(initiator_frame_token),
       has_rel_opener_(has_rel_opener),
-      input_start_time_(CurrentInputEvent::Get()
-                            ? CurrentInputEvent::Get()->TimeStamp()
-                            : base::TimeTicks()),
-      source_location_(source_location),
+      source_location_(std::move(source_location)),
       initiator_navigation_state_keep_alive_handle_(
           std::move(initiator_navigation_state_keep_alive_handle)) {}
 
@@ -262,9 +257,9 @@ FormSubmission* FormSubmission::Create(HTMLFormElement* form,
       is_multi_part_form = false;
     }
   }
-  TextEncoding data_encoding =
+  WTF::TextEncoding data_encoding =
       is_mailto_form
-          ? Utf8Encoding()
+          ? UTF8Encoding()
           : FormDataEncoder::EncodingFromAcceptCharset(
                 copied_attributes.AcceptCharset(), document.Encoding());
   FormData* dom_form_data = form->ConstructEntryList(
@@ -309,8 +304,8 @@ FormSubmission* FormSubmission::Create(HTMLFormElement* form,
     if (boundary.empty()) {
       resource_request->SetHTTPContentType(encoding_type);
     } else {
-      resource_request->SetHTTPContentType(
-          AtomicString(StrCat({encoding_type, "; boundary=", boundary})));
+      resource_request->SetHTTPContentType(encoding_type +
+                                           "; boundary=" + boundary);
     }
   }
   LocalFrame* form_local_frame = form->GetDocument().GetFrame();
@@ -398,7 +393,6 @@ void FormSubmission::Trace(Visitor* visitor) const {
   visitor->Trace(submitter_);
   visitor->Trace(target_frame_);
   visitor->Trace(origin_window_);
-  visitor->Trace(source_location_);
 }
 
 void FormSubmission::NotifyInspector() {
@@ -421,8 +415,7 @@ void FormSubmission::Navigate() {
   frame_request.SetInitiatorFrameToken(initiator_frame_token_);
   frame_request.SetInitiatorNavigationStateKeepAliveHandle(
       std::move(initiator_navigation_state_keep_alive_handle_));
-  frame_request.SetSourceLocation(source_location_);
-  frame_request.SetInputStartTime(input_start_time_);
+  frame_request.SetSourceLocation(std::move(source_location_));
   if (has_rel_opener_) {
     frame_request.SetExplicitOpener();
   }

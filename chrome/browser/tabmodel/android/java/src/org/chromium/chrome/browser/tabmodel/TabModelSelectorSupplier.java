@@ -5,28 +5,28 @@
 package org.chromium.chrome.browser.tabmodel;
 
 import org.chromium.base.ResettersForTesting;
-import org.chromium.base.UnownedUserDataHost;
 import org.chromium.base.UnownedUserDataKey;
-import org.chromium.base.supplier.MonotonicObservableSupplier;
-import org.chromium.base.supplier.NonNullObservableSupplier;
-import org.chromium.base.supplier.ObservableSuppliers;
+import org.chromium.base.supplier.ObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplierImpl;
+import org.chromium.base.supplier.UnownedUserDataSupplier;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.ui.base.WindowAndroid;
 
-/** A class which manages the supplier and UnownedUserData for a {@link TabModelSelector}. */
+/**
+ * A {@link UnownedUserDataSupplier} which manages the supplier and UnownedUserData for a {@link
+ * TabModelSelector}.
+ */
 @NullMarked
-public class TabModelSelectorSupplier {
-    private static final UnownedUserDataKey<MonotonicObservableSupplier<TabModelSelector>> KEY =
-            new UnownedUserDataKey<>();
-    private static @Nullable NonNullObservableSupplier<TabModelSelector> sInstanceForTesting;
+public class TabModelSelectorSupplier extends UnownedUserDataSupplier<TabModelSelector> {
+    private static final UnownedUserDataKey<TabModelSelectorSupplier> KEY =
+            new UnownedUserDataKey<TabModelSelectorSupplier>(TabModelSelectorSupplier.class);
+    private static @Nullable ObservableSupplierImpl<TabModelSelector> sInstanceForTesting;
 
     /** Return {@link TabModelSelector} supplier associated with the given {@link WindowAndroid}. */
-    public static @Nullable MonotonicObservableSupplier<TabModelSelector> from(
-            @Nullable WindowAndroid windowAndroid) {
+    public static @Nullable ObservableSupplier<TabModelSelector> from(WindowAndroid windowAndroid) {
         if (sInstanceForTesting != null) return sInstanceForTesting;
-        if (windowAndroid == null) return null;
         return KEY.retrieveDataFromHost(windowAndroid.getUnownedUserDataHost());
     }
 
@@ -34,37 +34,27 @@ public class TabModelSelectorSupplier {
      * Return {@link TabModelSelector} associated with the given {@link WindowAndroid} or null if
      * none exists.
      */
-    public static @Nullable TabModelSelector getValueOrNullFrom(
-            @Nullable WindowAndroid windowAndroid) {
-        MonotonicObservableSupplier<TabModelSelector> supplier = from(windowAndroid);
-        return supplier == null ? null : supplier.get();
+    public static @Nullable TabModelSelector getValueOrNullFrom(WindowAndroid windowAndroid) {
+        ObservableSupplier<TabModelSelector> supplier = from(windowAndroid);
+        if (supplier == null) return null;
+        return supplier.get();
     }
 
     /** Return the current {@link Tab} associated with {@link WindowAndroid} or null. */
-    public static @Nullable Tab getCurrentTabFrom(@Nullable WindowAndroid windowAndroid) {
-        TabModelSelector selector = getValueOrNullFrom(windowAndroid);
-        return selector == null ? null : selector.getCurrentTab();
+    public static @Nullable Tab getCurrentTabFrom(WindowAndroid windowAndroid) {
+        ObservableSupplier<TabModelSelector> supplier = from(windowAndroid);
+        return supplier == null || !supplier.hasValue() ? null : supplier.get().getCurrentTab();
     }
 
-    /**
-     * Attach to the specified host.
-     *
-     * @param host The host to attach the supplier to.
-     */
-    public static void attach(
-            UnownedUserDataHost host, MonotonicObservableSupplier<TabModelSelector> supplier) {
-        KEY.attachToHost(host, supplier);
-    }
-
-    public static void destroy(MonotonicObservableSupplier<TabModelSelector> supplier) {
-        KEY.detachFromAllHosts(supplier);
+    /** Constructs a TabModelSelectorSupplier and attaches it to the {@link WindowAndroid} */
+    public TabModelSelectorSupplier() {
+        super(KEY);
     }
 
     /** Sets an instance for testing. */
     public static void setInstanceForTesting(TabModelSelector tabModelSelector) {
-        sInstanceForTesting = ObservableSuppliers.createNonNull(tabModelSelector);
+        sInstanceForTesting = new ObservableSupplierImpl<>();
+        sInstanceForTesting.set(tabModelSelector);
         ResettersForTesting.register(() -> sInstanceForTesting = null);
     }
-
-    private TabModelSelectorSupplier() {}
 }

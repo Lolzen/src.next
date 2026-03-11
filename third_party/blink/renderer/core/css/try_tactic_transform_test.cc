@@ -40,27 +40,19 @@ LogicalSides InitialLogicalSides() {
 }
 
 LogicalSides TransformLogicalSides(TryTacticList tactic_list) {
-  TryTacticTransform transform(tactic_list, WritingMode::kHorizontalTb);
+  TryTacticTransform transform(tactic_list);
   return transform.Transform(InitialLogicalSides());
 }
 
 TEST_F(TryTacticTransformTest, Equality) {
-  EXPECT_EQ(
-      TryTacticTransform(Tactics(TryTactic::kNone), WritingMode::kHorizontalTb),
-      TryTacticTransform(Tactics(TryTactic::kNone),
-                         WritingMode::kHorizontalTb));
-  EXPECT_EQ(TryTacticTransform(Tactics(TryTactic::kFlipBlock),
-                               WritingMode::kHorizontalTb),
-            TryTacticTransform(Tactics(TryTactic::kFlipBlock),
-                               WritingMode::kHorizontalTb));
-  EXPECT_NE(TryTacticTransform(Tactics(TryTactic::kFlipInline),
-                               WritingMode::kHorizontalTb),
-            TryTacticTransform(Tactics(TryTactic::kFlipBlock),
-                               WritingMode::kHorizontalTb));
-  EXPECT_NE(TryTacticTransform(Tactics(TryTactic::kFlipBlock),
-                               WritingMode::kHorizontalTb),
-            TryTacticTransform(Tactics(TryTactic::kFlipInline),
-                               WritingMode::kHorizontalTb));
+  EXPECT_EQ(TryTacticTransform(Tactics(TryTactic::kNone)),
+            TryTacticTransform(Tactics(TryTactic::kNone)));
+  EXPECT_EQ(TryTacticTransform(Tactics(TryTactic::kFlipBlock)),
+            TryTacticTransform(Tactics(TryTactic::kFlipBlock)));
+  EXPECT_NE(TryTacticTransform(Tactics(TryTactic::kFlipInline)),
+            TryTacticTransform(Tactics(TryTactic::kFlipBlock)));
+  EXPECT_NE(TryTacticTransform(Tactics(TryTactic::kFlipBlock)),
+            TryTacticTransform(Tactics(TryTactic::kFlipInline)));
 }
 
 // First test that tactics that overlap produce the same transforms:
@@ -86,66 +78,53 @@ TEST_F(TryTacticTransformTest, Equality) {
 
 // (3)
 TEST_F(TryTacticTransformTest, BlockInlineEquality) {
-  TryTacticTransform expected =
-      TryTacticTransform(Tactics(TryTactic::kFlipBlock, TryTactic::kFlipInline),
-                         WritingMode::kHorizontalTb);
+  TryTacticTransform expected = TryTacticTransform(
+      Tactics(TryTactic::kFlipBlock, TryTactic::kFlipInline));
   EXPECT_EQ(expected, TryTacticTransform(Tactics(TryTactic::kFlipInline,
-                                                 TryTactic::kFlipBlock),
-                                         WritingMode::kHorizontalTb));
+                                                 TryTactic::kFlipBlock)));
 }
 
 // (4)
 TEST_F(TryTacticTransformTest, StartEquality) {
-  TryTacticTransform expected = TryTacticTransform(
-      Tactics(TryTactic::kFlipStart), WritingMode::kHorizontalTb);
-  EXPECT_EQ(expected, TryTacticTransform(
-                          Tactics(TryTactic::kFlipBlock, TryTactic::kFlipStart,
-                                  TryTactic::kFlipInline),
-                          WritingMode::kHorizontalTb));
-  EXPECT_EQ(expected, TryTacticTransform(
-                          Tactics(TryTactic::kFlipInline, TryTactic::kFlipStart,
-                                  TryTactic::kFlipBlock),
-                          WritingMode::kHorizontalTb));
+  TryTacticTransform expected =
+      TryTacticTransform(Tactics(TryTactic::kFlipStart));
+  EXPECT_EQ(expected, TryTacticTransform(Tactics(TryTactic::kFlipBlock,
+                                                 TryTactic::kFlipStart,
+                                                 TryTactic::kFlipInline)));
+  EXPECT_EQ(expected, TryTacticTransform(Tactics(TryTactic::kFlipInline,
+                                                 TryTactic::kFlipStart,
+                                                 TryTactic::kFlipBlock)));
 }
 
 // (5)
 TEST_F(TryTacticTransformTest, BlockStartEquality) {
   TryTacticTransform expected =
-      TryTacticTransform(Tactics(TryTactic::kFlipBlock, TryTactic::kFlipStart),
-                         WritingMode::kHorizontalTb);
+      TryTacticTransform(Tactics(TryTactic::kFlipBlock, TryTactic::kFlipStart));
   EXPECT_EQ(expected, TryTacticTransform(Tactics(TryTactic::kFlipStart,
-                                                 TryTactic::kFlipInline),
-                                         WritingMode::kHorizontalTb));
+                                                 TryTactic::kFlipInline)));
 }
 
 // (6)
 TEST_F(TryTacticTransformTest, InlineStartEquality) {
-  TryTacticTransform expected =
-      TryTacticTransform(Tactics(TryTactic::kFlipInline, TryTactic::kFlipStart),
-                         WritingMode::kHorizontalTb);
-  EXPECT_EQ(expected, TryTacticTransform(
-                          Tactics(TryTactic::kFlipStart, TryTactic::kFlipBlock),
-                          WritingMode::kHorizontalTb));
+  TryTacticTransform expected = TryTacticTransform(
+      Tactics(TryTactic::kFlipInline, TryTactic::kFlipStart));
+  EXPECT_EQ(expected, TryTacticTransform(Tactics(TryTactic::kFlipStart,
+                                                 TryTactic::kFlipBlock)));
 }
 
 // (7)
 TEST_F(TryTacticTransformTest, BlockInlineStartEquality) {
-  TryTacticTransform expected =
-      TryTacticTransform(Tactics(TryTactic::kFlipBlock, TryTactic::kFlipInline,
-                                 TryTactic::kFlipStart),
-                         WritingMode::kHorizontalTb);
-  EXPECT_EQ(expected, TryTacticTransform(
-                          Tactics(TryTactic::kFlipStart, TryTactic::kFlipBlock,
-                                  TryTactic::kFlipInline),
-                          WritingMode::kHorizontalTb));
-  EXPECT_EQ(expected, TryTacticTransform(
-                          Tactics(TryTactic::kFlipStart, TryTactic::kFlipBlock,
-                                  TryTactic::kFlipInline),
-                          WritingMode::kHorizontalTb));
-  EXPECT_EQ(expected, TryTacticTransform(
-                          Tactics(TryTactic::kFlipStart, TryTactic::kFlipInline,
-                                  TryTactic::kFlipBlock),
-                          WritingMode::kHorizontalTb));
+  TryTacticTransform expected = TryTacticTransform(Tactics(
+      TryTactic::kFlipBlock, TryTactic::kFlipInline, TryTactic::kFlipStart));
+  EXPECT_EQ(expected, TryTacticTransform(Tactics(TryTactic::kFlipStart,
+                                                 TryTactic::kFlipBlock,
+                                                 TryTactic::kFlipInline)));
+  EXPECT_EQ(expected, TryTacticTransform(Tactics(TryTactic::kFlipStart,
+                                                 TryTactic::kFlipBlock,
+                                                 TryTactic::kFlipInline)));
+  EXPECT_EQ(expected, TryTacticTransform(Tactics(TryTactic::kFlipStart,
+                                                 TryTactic::kFlipInline,
+                                                 TryTactic::kFlipBlock)));
 }
 
 // Test Transform:
@@ -247,8 +226,7 @@ TEST_F(TryTacticTransformTest, Transform_Block_Inline_Start) {
 
 // (0)
 TEST_F(TryTacticTransformTest, Inverse_None) {
-  TryTacticTransform transform(Tactics(TryTactic::kNone),
-                               WritingMode::kHorizontalTb);
+  TryTacticTransform transform(Tactics(TryTactic::kNone));
   EXPECT_EQ(InitialLogicalSides(),
             transform.Inverse().Transform(
                 transform.Transform(InitialLogicalSides())));
@@ -256,8 +234,7 @@ TEST_F(TryTacticTransformTest, Inverse_None) {
 
 // (1)
 TEST_F(TryTacticTransformTest, Inverse_Block) {
-  TryTacticTransform transform(Tactics(TryTactic::kFlipBlock),
-                               WritingMode::kHorizontalTb);
+  TryTacticTransform transform(Tactics(TryTactic::kFlipBlock));
   EXPECT_EQ(InitialLogicalSides(),
             transform.Inverse().Transform(
                 transform.Transform(InitialLogicalSides())));
@@ -265,8 +242,7 @@ TEST_F(TryTacticTransformTest, Inverse_Block) {
 
 // (2)
 TEST_F(TryTacticTransformTest, Inverse_Inline) {
-  TryTacticTransform transform(Tactics(TryTactic::kFlipInline),
-                               WritingMode::kHorizontalTb);
+  TryTacticTransform transform(Tactics(TryTactic::kFlipInline));
   EXPECT_EQ(InitialLogicalSides(),
             transform.Inverse().Transform(
                 transform.Transform(InitialLogicalSides())));
@@ -275,8 +251,7 @@ TEST_F(TryTacticTransformTest, Inverse_Inline) {
 // (3)
 TEST_F(TryTacticTransformTest, Inverse_Block_Inline) {
   TryTacticTransform transform(
-      Tactics(TryTactic::kFlipBlock, TryTactic::kFlipInline),
-      WritingMode::kHorizontalTb);
+      Tactics(TryTactic::kFlipBlock, TryTactic::kFlipInline));
   EXPECT_EQ(InitialLogicalSides(),
             transform.Inverse().Transform(
                 transform.Transform(InitialLogicalSides())));
@@ -284,8 +259,7 @@ TEST_F(TryTacticTransformTest, Inverse_Block_Inline) {
 
 // (4)
 TEST_F(TryTacticTransformTest, Inverse_Start) {
-  TryTacticTransform transform(Tactics(TryTactic::kFlipStart),
-                               WritingMode::kHorizontalTb);
+  TryTacticTransform transform(Tactics(TryTactic::kFlipStart));
   EXPECT_EQ(InitialLogicalSides(),
             transform.Inverse().Transform(
                 transform.Transform(InitialLogicalSides())));
@@ -294,8 +268,7 @@ TEST_F(TryTacticTransformTest, Inverse_Start) {
 // (5)
 TEST_F(TryTacticTransformTest, Inverse_Block_Start) {
   TryTacticTransform transform(
-      Tactics(TryTactic::kFlipBlock, TryTactic::kFlipStart),
-      WritingMode::kHorizontalTb);
+      Tactics(TryTactic::kFlipBlock, TryTactic::kFlipStart));
   EXPECT_EQ(InitialLogicalSides(),
             transform.Inverse().Transform(
                 transform.Transform(InitialLogicalSides())));
@@ -304,8 +277,7 @@ TEST_F(TryTacticTransformTest, Inverse_Block_Start) {
 // (6)
 TEST_F(TryTacticTransformTest, Inverse_Inline_Start) {
   TryTacticTransform transform(
-      Tactics(TryTactic::kFlipInline, TryTactic::kFlipStart),
-      WritingMode::kHorizontalTb);
+      Tactics(TryTactic::kFlipInline, TryTactic::kFlipStart));
   EXPECT_EQ(InitialLogicalSides(),
             transform.Inverse().Transform(
                 transform.Transform(InitialLogicalSides())));
@@ -313,10 +285,8 @@ TEST_F(TryTacticTransformTest, Inverse_Inline_Start) {
 
 // (7)
 TEST_F(TryTacticTransformTest, Inverse_Block_Inline_Start) {
-  TryTacticTransform transform(
-      Tactics(TryTactic::kFlipBlock, TryTactic::kFlipInline,
-              TryTactic::kFlipStart),
-      WritingMode::kHorizontalTb);
+  TryTacticTransform transform(Tactics(
+      TryTactic::kFlipBlock, TryTactic::kFlipInline, TryTactic::kFlipStart));
   EXPECT_EQ(InitialLogicalSides(),
             transform.Inverse().Transform(
                 transform.Transform(InitialLogicalSides())));
@@ -324,7 +294,7 @@ TEST_F(TryTacticTransformTest, Inverse_Block_Inline_Start) {
 
 // CacheIndex
 TEST_F(TryTacticTransformTest, NoTacticsCacheIndex) {
-  TryTacticTransform transform(kNoTryTactics, WritingMode::kHorizontalTb);
+  TryTacticTransform transform(kNoTryTactics);
   // TryValueFlips::FlipSet relies on the kNoTryTactics transform having
   // a CacheIndex of zero.
   EXPECT_EQ(0u, transform.CacheIndex());

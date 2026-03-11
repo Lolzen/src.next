@@ -2,9 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "third_party/blink/renderer/core/paint/paint_property_tree_builder_test.h"
 
-#include "base/compiler_specific.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/trees/effect_node.h"
 #include "cc/trees/scroll_node.h"
@@ -13,7 +17,9 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
+#include "third_party/blink/renderer/core/layout/layout_flow_thread.h"
 #include "third_party/blink/renderer/core/layout/layout_image.h"
+#include "third_party/blink/renderer/core/layout/layout_multi_column_flow_thread.h"
 #include "third_party/blink/renderer/core/layout/layout_tree_as_text.h"
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_root.h"
@@ -211,7 +217,7 @@ TEST_P(PaintPropertyTreeBuilderTest, PositionAndScroll) {
   LoadTestData("position-and-scroll.html");
 
   Element* scroller = GetDocument().getElementById(AtomicString("scroller"));
-  scroller->scrollToForTesting(0, 100);
+  scroller->scrollTo(0, 100);
   LocalFrameView* frame_view = GetDocument().View();
   frame_view->UpdateAllLifecyclePhasesForTest();
   const ObjectPaintProperties* scroller_properties =
@@ -519,7 +525,7 @@ TEST_P(PaintPropertyTreeBuilderTest, OverflowScrollVerticalRLMulticol) {
 TEST_P(PaintPropertyTreeBuilderTest, DocScrollingTraditional) {
   SetBodyInnerHTML("<style> body { height: 10000px; } </style>");
 
-  GetDocument().domWindow()->scrollToForTesting(0, 100);
+  GetDocument().domWindow()->scrollTo(0, 100);
 
   LocalFrameView* frame_view = GetDocument().View();
   frame_view->UpdateAllLifecyclePhasesForTest();
@@ -717,26 +723,6 @@ TEST_P(PaintPropertyTreeBuilderTest,
   EXPECT_TRUE(perspective_properties->Transform());
   EXPECT_TRUE(
       perspective_properties->Transform()->HasDirectCompositingReasons());
-}
-
-TEST_P(PaintPropertyTreeBuilderTest, SkipRenderSurfaceDueToPreserves3D) {
-  SetBodyInnerHTML(R"HTML(
-    <style> body { margin: 0 } </style>
-    <div id='target' style='transform: scale(0.5); transform-style: preserve-3d'>
-      <div></div>
-    </div>
-  )HTML");
-
-  EXPECT_FALSE(PaintPropertiesForElement("target")->Effect());
-
-  SetBodyInnerHTML(R"HTML(
-    <style> body { margin: 0 } </style>
-    <div id='target' style='transform: scale(0.5)'>
-      <div></div>
-    </div>
-  )HTML");
-
-  EXPECT_TRUE(PaintPropertiesForElement("target")->Effect());
 }
 
 TEST_P(PaintPropertyTreeBuilderTest,
@@ -1362,7 +1348,7 @@ TEST_P(PaintPropertyTreeBuilderTest, SVGRootLocalToBorderBoxSnappingScale) {
             svg_properties->PaintOffsetTranslation()->Get2dTranslation());
   const float snapped_height = 99;
   const PhysicalSize unsnapped_size(LayoutUnit(100), LayoutUnit(99.99f));
-  EXPECT_EQ(To<LayoutSVGRoot>(svg).StitchedSize(), unsnapped_size);
+  EXPECT_EQ(To<LayoutSVGRoot>(svg).Size(), unsnapped_size);
   const float unsnapped_height = unsnapped_size.height.ToFloat();
   ASSERT_NE(svg_properties->ReplacedContentTransform(), nullptr);
   EXPECT_TRANSFORM_EQ(MakeScaleMatrix(snapped_height / unsnapped_height),
@@ -1396,7 +1382,7 @@ TEST_P(PaintPropertyTreeBuilderTest, SVGRootLocalToBorderBoxSnappingScaleWide) {
             svg_properties->PaintOffsetTranslation()->Get2dTranslation());
   const gfx::SizeF snapped_size(211, 2);
   const PhysicalSize unsnapped_size(LayoutUnit(211.419f), LayoutUnit(2.20228f));
-  EXPECT_EQ(To<LayoutSVGRoot>(svg).StitchedSize(), unsnapped_size);
+  EXPECT_EQ(To<LayoutSVGRoot>(svg).Size(), unsnapped_size);
   ASSERT_NE(svg_properties->ReplacedContentTransform(), nullptr);
   EXPECT_TRANSFORM_EQ(
       MakeScaleMatrix(snapped_size.width() / unsnapped_size.width.ToFloat(),
@@ -1432,7 +1418,7 @@ TEST_P(PaintPropertyTreeBuilderTest,
             svg_properties->PaintOffsetTranslation()->Get2dTranslation());
   const gfx::SizeF snapped_size(2, 211);
   const PhysicalSize unsnapped_size(LayoutUnit(2.20228f), LayoutUnit(211.419f));
-  EXPECT_EQ(To<LayoutSVGRoot>(svg).StitchedSize(), unsnapped_size);
+  EXPECT_EQ(To<LayoutSVGRoot>(svg).Size(), unsnapped_size);
   ASSERT_NE(svg_properties->ReplacedContentTransform(), nullptr);
   EXPECT_TRANSFORM_EQ(
       MakeScaleMatrix(snapped_size.width() / unsnapped_size.width.ToFloat(),
@@ -3733,7 +3719,7 @@ TEST_P(PaintPropertyTreeBuilderTest, ReplacedContentTransformFlattening) {
 TEST_P(PaintPropertyTreeBuilderTest, ContainPaintOrStyleLayoutTreeState) {
   for (const char* containment : {"paint", "style layout"}) {
     SCOPED_TRACE(containment);
-    SetBodyInnerHTML(UNSAFE_TODO(String::Format(R"HTML(
+    SetBodyInnerHTML(String::Format(R"HTML(
       <style>body { margin: 20px 30px; }</style>
       <div id='clipper'
           style='contain: %s; width: 300px; height: 200px;'>
@@ -3741,7 +3727,7 @@ TEST_P(PaintPropertyTreeBuilderTest, ContainPaintOrStyleLayoutTreeState) {
             style='position: relative; width: 400px; height: 500px;'></div>
       </div>
     )HTML",
-                                                containment)));
+                                    containment));
 
     auto* clipper =
         To<LayoutBoxModelObject>(GetLayoutObjectByElementId("clipper"));
@@ -3773,7 +3759,7 @@ TEST_P(PaintPropertyTreeBuilderTest, ContainPaintOrStyleLayoutTreeState) {
     // properties effect.
     EXPECT_EQ(clip_properties->EffectIsolationNode()->Parent(),
               &clip_local_properties.Effect());
-    if (UNSAFE_TODO(strcmp(containment, "paint")) == 0) {
+    if (strcmp(containment, "paint") == 0) {
       // If we contain paint, then clip isolation node is parented to the
       // overflow clip, which is in turn parented to the local border box
       // properties clip.
@@ -3855,7 +3841,7 @@ TEST_P(PaintPropertyTreeBuilderTest, OverflowScrollContentsTreeState) {
 
   Element* clipper_element =
       GetDocument().getElementById(AtomicString("clipper"));
-  clipper_element->scrollToForTesting(1, 2);
+  clipper_element->scrollTo(1, 2);
 
   auto* clipper = To<LayoutBoxModelObject>(clipper_element->GetLayoutObject());
   const ObjectPaintProperties* clip_properties =
@@ -4100,7 +4086,7 @@ TEST_P(PaintPropertyTreeBuilderTest, FrameOverflowHiddenScrollProperties) {
     <div class='forceScroll'></div>
   )HTML");
 
-  GetDocument().domWindow()->scrollToForTesting(0, 37);
+  GetDocument().domWindow()->scrollTo(0, 37);
 
   UpdateAllLifecyclePhasesForTest();
 
@@ -4635,7 +4621,10 @@ TEST_P(PaintPropertyTreeBuilderTest,
     </div>
   )HTML");
 
+  LayoutObject* thread =
+      GetLayoutObjectByElementId("multicol")->SlowFirstChild();
   LayoutObject* container = GetLayoutObjectByElementId("container");
+  EXPECT_TRUE(thread->IsLayoutFlowThread());
   ASSERT_EQ(2u, NumFragments(container));
   EXPECT_EQ(PhysicalOffset(100, 0), FragmentAt(container, 0).PaintOffset());
   EXPECT_EQ(PhysicalOffset(200, 100), FragmentAt(container, 1).PaintOffset());
@@ -4822,15 +4811,17 @@ TEST_P(PaintPropertyTreeBuilderTest, BecomingUnfragmented) {
     </div>
   )HTML");
 
-  Element* target_element = GetElementById("target");
+  LayoutObject* target = GetLayoutObjectByElementId("target");
   EXPECT_EQ(PhysicalOffset(LayoutUnit(208), LayoutUnit(8)),
-            target_element->GetLayoutObject()->FirstFragment().PaintOffset());
+            target->FirstFragment().PaintOffset());
+  Element* target_element =
+      GetDocument().getElementById(AtomicString("target"));
 
   target_element->setAttribute(html_names::kStyleAttr,
                                AtomicString("position: absolute"));
   UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(PhysicalOffset(LayoutUnit(8), LayoutUnit(28)),
-            target_element->GetLayoutObject()->FirstFragment().PaintOffset());
+            target->FirstFragment().PaintOffset());
 }
 
 TEST_P(PaintPropertyTreeBuilderTest, Reflection) {
@@ -5034,28 +5025,16 @@ TEST_P(PaintPropertyTreeBuilderTest, ChangePositionUpdateDescendantProperties) {
     </div>
   )HTML");
 
-  Element* ancestor = GetElementById("ancestor");
-  Element* descendant = GetElementById("descendant");
-  EXPECT_EQ(ancestor->GetLayoutObject()
-                ->FirstFragment()
-                .PaintProperties()
-                ->OverflowClip(),
-            &descendant->GetLayoutObject()
-                 ->FirstFragment()
-                 .LocalBorderBoxProperties()
-                 .Clip());
+  LayoutObject* ancestor = GetLayoutObjectByElementId("ancestor");
+  LayoutObject* descendant = GetLayoutObjectByElementId("descendant");
+  EXPECT_EQ(ancestor->FirstFragment().PaintProperties()->OverflowClip(),
+            &descendant->FirstFragment().LocalBorderBoxProperties().Clip());
 
-  ancestor->setAttribute(html_names::kStyleAttr,
-                         AtomicString("position: static"));
+  To<Element>(ancestor->GetNode())
+      ->setAttribute(html_names::kStyleAttr, AtomicString("position: static"));
   UpdateAllLifecyclePhasesForTest();
-  EXPECT_NE(ancestor->GetLayoutObject()
-                ->FirstFragment()
-                .PaintProperties()
-                ->OverflowClip(),
-            &descendant->GetLayoutObject()
-                 ->FirstFragment()
-                 .LocalBorderBoxProperties()
-                 .Clip());
+  EXPECT_NE(ancestor->FirstFragment().PaintProperties()->OverflowClip(),
+            &descendant->FirstFragment().LocalBorderBoxProperties().Clip());
 }
 
 TEST_P(PaintPropertyTreeBuilderTest,
@@ -5705,8 +5684,7 @@ TEST_P(PaintPropertyTreeBuilderTest, SVGRootWithMask) {
 
 TEST_P(PaintPropertyTreeBuilderTest, SVGRootWithCSSMask) {
   SetBodyInnerHTML(R"HTML(
-    <svg id="svg" width="16" height="16"
-        style="-webkit-mask-image: linear-gradient(black, transparent);">
+    <svg id="svg" width="16" height="16" style="-webkit-mask-image: url(fake);">
     </svg>
   )HTML");
 
@@ -5764,7 +5742,7 @@ TEST_P(PaintPropertyTreeBuilderTest, ClearClipPathEffectNode) {
   // removal of a clip-path.
   SetBodyInnerHTML(R"HTML(
     <svg>
-      <clipPath clip-path="circle()" id="clip"><text/></clipPath>
+      <clipPath clip-path="circle()" id="clip"></clipPath>
       <rect id="rect" width="800" clip-path="url(#clip)" height="800"/>
     </svg>
   )HTML");
@@ -5968,7 +5946,7 @@ TEST_P(PaintPropertyTreeBuilderTest, RepeatingFixedPositionInPagedMedia) {
     </div>
     <div id="normal" style="height: 1000px"></div>
   )HTML");
-  GetDocument().domWindow()->scrollToForTesting(0, 200);
+  GetDocument().domWindow()->scrollTo(0, 200);
   UpdateAllLifecyclePhasesForTest();
 
   const auto* fixed = GetLayoutObjectByElementId("fixed");
@@ -6027,7 +6005,7 @@ TEST_P(PaintPropertyTreeBuilderTest,
     </div>
     <div id="normal" style="height: 1000px"></div>
   )HTML");
-  GetDocument().domWindow()->scrollToForTesting(0, 200);
+  GetDocument().domWindow()->scrollTo(0, 200);
   UpdateAllLifecyclePhasesForTest();
 
   const auto* fixed = GetLayoutObjectByElementId("fixed");

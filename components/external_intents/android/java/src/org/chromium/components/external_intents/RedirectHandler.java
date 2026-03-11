@@ -51,22 +51,19 @@ public class RedirectHandler {
         final boolean mIsCustomTabIntent;
         final boolean mPreferToStayInChrome;
         final boolean mExternalIntentStartedTask;
-        final boolean mCanInitialNavigationLeaveChrome;
 
         // A resolver list which includes all resolvers of |mInitialIntent|.
-        final HashSet<ComponentName> mCachedResolvers = new HashSet<>();
+        HashSet<ComponentName> mCachedResolvers = new HashSet<ComponentName>();
 
         IntentState(
                 Intent initialIntent,
                 boolean preferToStayInChrome,
                 boolean isCustomTabIntent,
-                boolean externalIntentStartedTask,
-                boolean canInitialNavigationLeaveChrome) {
+                boolean externalIntentStartedTask) {
             mInitialIntent = initialIntent;
             mPreferToStayInChrome = preferToStayInChrome;
             mIsCustomTabIntent = isCustomTabIntent;
             mExternalIntentStartedTask = externalIntentStartedTask;
-            mCanInitialNavigationLeaveChrome = canInitialNavigationLeaveChrome;
         }
     }
 
@@ -74,6 +71,7 @@ public class RedirectHandler {
     public static class InitialNavigationState {
         public final boolean isRendererInitiated;
         public final boolean isFromReload;
+        public final boolean isFromTyping;
         public final boolean isFromFormSubmit;
         public final boolean isFromIntent;
         public final boolean hasUserGesture;
@@ -82,11 +80,13 @@ public class RedirectHandler {
                 boolean isRendererInitiated,
                 boolean hasUserGesture,
                 boolean isFromReload,
+                boolean isFromTyping,
                 boolean isFromFormSubmit,
                 boolean isFromIntent) {
             this.isRendererInitiated = isRendererInitiated;
             this.hasUserGesture = hasUserGesture;
             this.isFromReload = isFromReload;
+            this.isFromTyping = isFromTyping;
             this.isFromFormSubmit = isFromFormSubmit;
             this.isFromIntent = isFromIntent;
         }
@@ -126,11 +126,10 @@ public class RedirectHandler {
 
     /** Resets |mIntentState| for the newly received Intent. */
     public void updateIntent(
-            @Nullable Intent intent,
+            Intent intent,
             boolean isCustomTabIntent,
             boolean sendToExternalApps,
-            boolean externalIntentStartedTask,
-            boolean canInitialNavigationLeaveChrome) {
+            boolean externalIntentStartedTask) {
         if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) {
             mIntentState = null;
             return;
@@ -151,8 +150,7 @@ public class RedirectHandler {
                         initialIntent,
                         preferToStayInChrome,
                         isCustomTabIntent,
-                        externalIntentStartedTask,
-                        canInitialNavigationLeaveChrome);
+                        externalIntentStartedTask);
     }
 
     /**
@@ -255,6 +253,7 @@ public class RedirectHandler {
         boolean isFromApi = (pageTransType & PageTransition.FROM_API) != 0;
         boolean isFromIntent = isFromApi && (mIntentState != null || mIsPrefetchLoadForIntent);
         boolean isFromReload = pageTransitionCore == PageTransition.RELOAD;
+        boolean isFromTyping = pageTransitionCore == PageTransition.TYPED;
         boolean isFromFormSubmit = pageTransitionCore == PageTransition.FORM_SUBMIT;
 
         if (!isFromIntent) {
@@ -266,6 +265,7 @@ public class RedirectHandler {
                         isRendererInitiated,
                         hasUserGesture,
                         isFromReload,
+                        isFromTyping,
                         isFromFormSubmit,
                         isFromIntent);
 
@@ -295,9 +295,13 @@ public class RedirectHandler {
         return mIntentState != null && mIntentState.mIsCustomTabIntent;
     }
 
-    /**
-     * @return whether we should stay in Chrome or not.
-     */
+    /** @return whether navigation is from a user's typing or not. */
+    public boolean isNavigationFromUserTyping() {
+        assumeNonNull(mNavigationChainState);
+        return mNavigationChainState.mInitialNavigationState.isFromTyping;
+    }
+
+    /** @return whether we should stay in Chrome or not. */
     public boolean shouldNotOverrideUrlLoading() {
         assumeNonNull(mNavigationChainState);
         return mNavigationChainState.mShouldNotOverrideUrlLoadingOnCurrentNavigationChain;
@@ -372,10 +376,6 @@ public class RedirectHandler {
 
     public boolean intentPrefersToStayInChrome() {
         return mIntentState != null && mIntentState.mPreferToStayInChrome;
-    }
-
-    public boolean canInitialNavigationLeaveChrome() {
-        return mIntentState != null && mIntentState.mCanInitialNavigationLeaveChrome;
     }
 
     public void setPerformedHiddenCrossFrameNavigation() {

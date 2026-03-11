@@ -7,11 +7,9 @@ package org.chromium.chrome.browser.tasks.tab_management;
 import static androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.UNSET;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.app.Activity;
-import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
@@ -20,7 +18,6 @@ import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import androidx.annotation.ColorInt;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.test.ext.junit.rules.ActivityScenarioRule;
 
@@ -31,8 +28,6 @@ import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
-import org.robolectric.Shadows;
-import org.robolectric.annotation.Config;
 
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.components.browser_ui.styles.SemanticColorUtils;
@@ -110,70 +105,32 @@ public class TabGroupFaviconQuarterUnitTest {
         assertEquals(mDrawable, mImageView.getDrawable());
         assertEquals(View.INVISIBLE, mTextView.getVisibility());
         assertTrue(TextUtils.isEmpty(mTextView.getText()));
-        assertEquals(filterColor(mBackground), SemanticColorUtils.getColorSurfaceBright(mActivity));
+        assertEquals(
+                mBackground.getColor().getDefaultColor(),
+                SemanticColorUtils.getColorSurfaceBright(mActivity));
     }
 
     @Test
     public void testSetPlusCount() {
         mTabGroupFaviconQuarter.setPlusCount(PLUS_COUNT);
         assertEquals(View.INVISIBLE, mImageView.getVisibility());
-        assertNull(mImageView.getDrawable());
+        assertEquals(null, mImageView.getDrawable());
         assertEquals(View.VISIBLE, mTextView.getVisibility());
         assertEquals("+123", mTextView.getText());
         assertEquals(
-                filterColor(mBackground),
+                mBackground.getColor().getDefaultColor(),
                 SemanticColorUtils.getColorSurfaceContainerLow(mActivity));
-    }
-
-    @Test
-    @Config(qualifiers = "night")
-    public void testSetPlusCount_Night() {
-        mTabGroupFaviconQuarter.setPlusCount(PLUS_COUNT);
-        assertEquals(
-                filterColor(mBackground),
-                SemanticColorUtils.getColorSurfaceContainerHigh(mActivity));
     }
 
     @Test
     public void testClear() {
         mTabGroupFaviconQuarter.clear();
         assertEquals(View.INVISIBLE, mImageView.getVisibility());
-        assertNull(mImageView.getDrawable());
+        assertEquals(null, mImageView.getDrawable());
         assertEquals(View.INVISIBLE, mTextView.getVisibility());
         assertTrue(TextUtils.isEmpty(mTextView.getText()));
         assertEquals(
-                filterColor(mBackground),
+                mBackground.getColor().getDefaultColor(),
                 SemanticColorUtils.getColorSurfaceContainerLow(mActivity));
-    }
-
-    @Test
-    @Config(qualifiers = "night")
-    public void testClear_Night() {
-        mTabGroupFaviconQuarter.clear();
-        assertEquals(
-                filterColor(mBackground),
-                SemanticColorUtils.getColorSurfaceContainerHigh(mActivity));
-    }
-
-    @Test
-    public void testContainmentColor() {
-        mTabGroupFaviconQuarter.setContainmentEnabled(true);
-        mTabGroupFaviconQuarter.setImage(mDrawable);
-        assertEquals(
-                filterColor(mBackground), SemanticColorUtils.getColorSurfaceContainer(mActivity));
-    }
-
-    @Test
-    public void testContainmentColorWithPlusCount() {
-        mTabGroupFaviconQuarter.setContainmentEnabled(true);
-        mTabGroupFaviconQuarter.setPlusCount(PLUS_COUNT);
-        assertEquals(
-                filterColor(mBackground),
-                SemanticColorUtils.getColorSurfaceContainerLow(mActivity));
-    }
-
-    private static @ColorInt int filterColor(Drawable drawable) {
-        PorterDuffColorFilter filter = (PorterDuffColorFilter) drawable.getColorFilter();
-        return Shadows.shadowOf(filter).getColor();
     }
 }

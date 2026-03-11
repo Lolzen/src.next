@@ -18,8 +18,8 @@ jni_zero::ScopedJavaLocalRef<jobject> UnguessableTokenAndroid::Create(
   const uint64_t low = token.GetLowForSerialization();
   DCHECK(high);
   DCHECK(low);
-  return Java_UnguessableToken_Constructor(env, static_cast<int64_t>(high),
-                                           static_cast<int64_t>(low));
+  return Java_UnguessableToken_Constructor(env, static_cast<jlong>(high),
+                                           static_cast<jlong>(low));
 }
 
 base::UnguessableToken UnguessableTokenAndroid::FromJavaUnguessableToken(
@@ -44,5 +44,4 @@ UnguessableTokenAndroid::ParcelAndUnparcelForTesting(
 }  // namespace android
 }  // namespace base
 
-DEFINE_JNI(UnguessableToken)
-DEFINE_JNI(TokenBase)
+DEFINE_JNI_FOR_UnguessableToken()

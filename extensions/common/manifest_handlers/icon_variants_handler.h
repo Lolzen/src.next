@@ -8,13 +8,10 @@
 #include <memory>
 #include <string>
 
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/icons/extension_icon_variant.h"
 #include "extensions/common/icons/extension_icon_variants.h"
 #include "extensions/common/manifest_handler.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -57,7 +54,7 @@ class IconVariantsHandler : public ManifestHandler {
   ~IconVariantsHandler() override;
 
   bool Parse(Extension* extension, std::u16string* error) override;
-  bool Validate(const Extension& extension,
+  bool Validate(const Extension* extension,
                 std::string* error,
                 std::vector<InstallWarning>* warnings) const override;
 

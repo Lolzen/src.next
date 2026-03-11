@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "net/base/address_tracker_linux.h"
 
 #include <linux/if.h>
@@ -14,7 +19,6 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/containers/span.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -34,10 +38,9 @@
 #include "net/base/ip_address.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/multiprocess_func_list.h"
-#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/android_info.h"
+#include "base/android/build_info.h"
 #endif
 
 #ifndef IFA_F_HOMEADDRESS
@@ -56,17 +59,17 @@ const int kTestInterfaceAp = 456;
 
 const char kIgnoredInterfaceName[] = "uap0";
 
-std::string TestGetInterfaceName(int interface_index) {
-  switch (interface_index) {
-    case kTestInterfaceEth:
-      return "eth0";
-    case kTestInterfaceTun:
-      return "tun0";
-    case kTestInterfaceAp:
-      return kIgnoredInterfaceName;
-    default:
-      return std::string();
+char* TestGetInterfaceName(int interface_index, char* buf) {
+  if (interface_index == kTestInterfaceEth) {
+    snprintf(buf, IFNAMSIZ, "%s", "eth0");
+  } else if (interface_index == kTestInterfaceTun) {
+    snprintf(buf, IFNAMSIZ, "%s", "tun0");
+  } else if (interface_index == kTestInterfaceAp) {
+    snprintf(buf, IFNAMSIZ, "%s", kIgnoredInterfaceName);
+  } else {
+    snprintf(buf, IFNAMSIZ, "%s", "");
   }
+  return buf;
 }
 
 }  // namespace
@@ -95,62 +98,39 @@ class AddressTrackerLinuxTest : public testing::Test {
 
   bool HandleAddressMessage(const NetlinkBuffer& buf) {
     NetlinkBuffer writable_buf = buf;
-    NetworkChangeNotifier::IPAddressChangeType address_change_type =
-        NetworkChangeNotifier::IP_ADDRESS_CHANGE_NONE;
+    bool address_changed = false;
     bool link_changed = false;
     bool tunnel_changed = false;
-    tracker_->HandleMessage(&writable_buf[0], buf.size(), &address_change_type,
+    tracker_->HandleMessage(&writable_buf[0], buf.size(), &address_changed,
                             &link_changed, &tunnel_changed);
     UpdateCache();
     EXPECT_FALSE(link_changed);
-
-    if (buf.size() < sizeof(nlmsghdr) + sizeof(ifaddrmsg)) {
-      ADD_FAILURE() << "Message too small to read flags";
-      return false;
-    }
-    const ifaddrmsg* msg = UNSAFE_BUFFERS(
-        reinterpret_cast<const ifaddrmsg*>(buf.data() + sizeof(nlmsghdr)));
-    bool ipv6_tempaddr_changed =
-        msg->ifa_family == AF_INET6 && msg->ifa_flags & IFA_F_TEMPORARY;
-    EXPECT_TRUE(address_change_type ==
-                    NetworkChangeNotifier::IP_ADDRESS_CHANGE_NONE ||
-                (address_change_type ==
-                     NetworkChangeNotifier::IP_ADDRESS_CHANGE_IPV6_TEMPADDR &&
-                 ipv6_tempaddr_changed) ||
-                (address_change_type ==
-                     NetworkChangeNotifier::IP_ADDRESS_CHANGE_NORMAL &&
-                 !ipv6_tempaddr_changed));
-
-    return address_change_type != NetworkChangeNotifier::IP_ADDRESS_CHANGE_NONE;
+    return address_changed;
   }
 
   bool HandleLinkMessage(const NetlinkBuffer& buf) {
     NetlinkBuffer writable_buf = buf;
-    NetworkChangeNotifier::IPAddressChangeType address_change_type =
-        NetworkChangeNotifier::IP_ADDRESS_CHANGE_NONE;
+    bool address_changed = false;
     bool link_changed = false;
     bool tunnel_changed = false;
-    tracker_->HandleMessage(&writable_buf[0], buf.size(), &address_change_type,
+    tracker_->HandleMessage(&writable_buf[0], buf.size(), &address_changed,
                             &link_changed, &tunnel_changed);
     UpdateCache();
-    EXPECT_TRUE(address_change_type ==
-                NetworkChangeNotifier::IP_ADDRESS_CHANGE_NONE);
+    EXPECT_FALSE(address_changed);
     return link_changed;
   }
 
   bool HandleTunnelMessage(const NetlinkBuffer& buf) {
     NetlinkBuffer writable_buf = buf;
-    NetworkChangeNotifier::IPAddressChangeType address_change_type =
-        NetworkChangeNotifier::IP_ADDRESS_CHANGE_NONE;
+    bool address_changed = false;
     bool link_changed = false;
     bool tunnel_changed = false;
     AddressMapOwnerLinux::AddressMapDiff address_map_diff_;
     AddressMapOwnerLinux::OnlineLinksDiff online_links_diff_;
-    tracker_->HandleMessage(&writable_buf[0], buf.size(), &address_change_type,
+    tracker_->HandleMessage(&writable_buf[0], buf.size(), &address_changed,
                             &link_changed, &tunnel_changed);
     UpdateCache();
-    EXPECT_TRUE(address_change_type ==
-                NetworkChangeNotifier::IP_ADDRESS_CHANGE_NONE);
+    EXPECT_FALSE(address_changed);
     return tunnel_changed;
   }
 
@@ -170,7 +150,7 @@ class AddressTrackerLinuxTest : public testing::Test {
     return tracker_->GetThreadsWaitingForConnectionTypeInitForTesting();
   }
 
-  absl::flat_hash_set<std::string> ignored_interfaces_;
+  std::unordered_set<std::string> ignored_interfaces_;
   std::unique_ptr<AddressTrackerLinux> tracker_;
   AddressTrackerLinux::GetInterfaceNameFunction original_get_interface_name_;
 
@@ -204,9 +184,6 @@ const unsigned char kAddress1[] = { 10, 0, 0, 1 };
 const unsigned char kAddress2[] = { 192, 168, 0, 1 };
 const unsigned char kAddress3[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                     0, 0, 0, 1 };
-const unsigned char kAddress4[] = {0xfd, 0x00, 0,    0,    0,    0,
-                                   0,    0,    0xe9, 0xb2, 0x0b, 0x84,
-                                   0xb3, 0xd5, 0xff, 0x0b};
 
 TEST_F(AddressTrackerLinuxTest, NewAddress) {
   InitializeAddressTracker(true);
@@ -216,7 +193,6 @@ TEST_F(AddressTrackerLinuxTest, NewAddress) {
   const IPAddress kAddr1(kAddress1);
   const IPAddress kAddr2(kAddress2);
   const IPAddress kAddr3(kAddress3);
-  const IPAddress kAddr4(kAddress4);
 
   NetlinkBuffer buffer;
   MakeAddrMessage(RTM_NEWADDR, IFA_F_TEMPORARY, AF_INET, kTestInterfaceEth,
@@ -244,15 +220,6 @@ TEST_F(AddressTrackerLinuxTest, NewAddress) {
   map = GetAddressMap();
   EXPECT_EQ(3u, map.size());
   EXPECT_EQ(1u, map.count(kAddr3));
-
-  buffer.clear();
-  MakeAddrMessage(RTM_NEWADDR, IFA_F_TEMPORARY, AF_INET6, kTestInterfaceEth,
-                  kEmpty, kAddr4, &buffer);
-  EXPECT_TRUE(HandleAddressMessage(buffer));
-  map = GetAddressMap();
-  EXPECT_EQ(4u, map.size());
-  EXPECT_EQ(1u, map.count(kAddr4));
-  EXPECT_EQ(IFA_F_TEMPORARY, map[kAddr4].ifa_flags);
 }
 
 TEST_F(AddressTrackerLinuxTest, NewAddressChange) {
@@ -418,13 +385,13 @@ TEST_F(AddressTrackerLinuxTest, IgnoredMessage) {
 
   // Valid message after ignored messages.
   NetlinkMessage nlmsg(RTM_NEWADDR);
-  ifaddrmsg msg = {};
+  struct ifaddrmsg msg = {};
   msg.ifa_family = AF_INET;
-  nlmsg.AddPayload(base::byte_span_from_ref(msg));
+  nlmsg.AddPayload(msg);
   // Ignored attribute.
-  ifa_cacheinfo cache_info = {};
-  nlmsg.AddAttribute(IFA_CACHEINFO, base::byte_span_from_ref(cache_info));
-  nlmsg.AddAttribute(IFA_ADDRESS, kAddr0.bytes().span());
+  struct ifa_cacheinfo cache_info = {};
+  nlmsg.AddAttribute(IFA_CACHEINFO, &cache_info, sizeof(cache_info));
+  nlmsg.AddAttribute(IFA_ADDRESS, kAddr0.bytes().data(), kAddr0.size());
   nlmsg.AppendTo(&buffer);
 
   EXPECT_TRUE(HandleAddressMessage(buffer));
@@ -623,12 +590,13 @@ TEST_F(AddressTrackerLinuxTest, TunnelInterface) {
 }
 
 // Check AddressTrackerLinux::get_interface_name_ original implementation
-// doesn't crash.
+// doesn't crash or return NULL.
 TEST_F(AddressTrackerLinuxTest, GetInterfaceName) {
   InitializeAddressTracker(true);
 
   for (int i = 0; i < 10; i++) {
-    original_get_interface_name_(i);
+    char buf[IFNAMSIZ] = {};
+    EXPECT_NE((const char*)nullptr, original_get_interface_name_(i, buf));
   }
 }
 
@@ -656,10 +624,9 @@ TEST_F(AddressTrackerLinuxTest, NonTrackingMode) {
 TEST_F(AddressTrackerLinuxTest, NonTrackingModeInit) {
 #if BUILDFLAG(IS_ANDROID)
   // Calling Init() on Android P+ isn't supported.
-  if (base::android::android_info::sdk_int() >=
-      base::android::android_info::SDK_VERSION_P) {
+  if (base::android::BuildInfo::GetInstance()->sdk_int() >=
+      base::android::SDK_VERSION_P)
     return;
-  }
 #endif
   AddressTrackerLinux tracker;
   tracker.Init();
@@ -699,10 +666,9 @@ class GetCurrentConnectionTypeRunner
 TEST_F(AddressTrackerLinuxTest, BroadcastInit) {
 #if BUILDFLAG(IS_ANDROID)
   // Calling Init() on Android P+ isn't supported.
-  if (base::android::android_info::sdk_int() >=
-      base::android::android_info::SDK_VERSION_P) {
+  if (base::android::BuildInfo::GetInstance()->sdk_int() >=
+      base::android::SDK_VERSION_P)
     return;
-  }
 #endif
   base::test::TaskEnvironment task_environment(
       base::test::TaskEnvironment::MainThreadType::IO);
@@ -744,10 +710,9 @@ namespace net::internal {
 TEST(AddressTrackerLinuxNetlinkTest, TestInitializeTwoTrackers) {
 #if BUILDFLAG(IS_ANDROID)
   // Calling Init() on Android P+ isn't supported.
-  if (base::android::android_info::sdk_int() >=
-      base::android::android_info::SDK_VERSION_P) {
+  if (base::android::BuildInfo::GetInstance()->sdk_int() >=
+      base::android::SDK_VERSION_P)
     return;
-  }
 #endif
   base::test::TaskEnvironment task_env(
       base::test::TaskEnvironment::MainThreadType::IO);

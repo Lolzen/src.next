@@ -5,17 +5,7 @@
 #ifndef BASE_ANDROID_ANDROID_INFO_H_
 #define BASE_ANDROID_ANDROID_INFO_H_
 
-#include <string>
-
 #include "base/base_export.h"
-#if __ANDROID_API__ >= 29
-namespace aidl::org::chromium::base {
-class IAndroidInfo;
-}  // namespace aidl::org::chromium::base
-using ::aidl::org::chromium::base::IAndroidInfo;
-#else
-struct IAndroidInfo;
-#endif
 
 namespace base::android::android_info {
 
@@ -45,40 +35,41 @@ enum SdkVersion {
   SDK_VERSION_BAKLAVA = 36,
 };
 
-BASE_EXPORT const std::string& device();
+const char* device();
 
-BASE_EXPORT const std::string& manufacturer();
+const char* manufacturer();
 
-BASE_EXPORT const std::string& model();
+const char* model();
 
-BASE_EXPORT const std::string& brand();
+BASE_EXPORT const char* brand();
 
-BASE_EXPORT const std::string& android_build_id();
+const char* android_build_id();
 
-BASE_EXPORT const std::string& build_type();
+const char* build_type();
 
-BASE_EXPORT const std::string& board();
+const char* board();
 
-BASE_EXPORT const std::string& android_build_fp();
+const char* android_build_fp();
 
 BASE_EXPORT int sdk_int();
 
-BASE_EXPORT bool is_debug_android();
+bool is_debug_android();
 
-BASE_EXPORT const std::string& version_incremental();
+const char* version_incremental();
 
-BASE_EXPORT const std::string& hardware();
+BASE_EXPORT const char* hardware();
 
-BASE_EXPORT const std::string& codename();
+bool is_at_least_u();
+
+const char* codename();
 
 // Available only on android S+. For S-, this method returns empty string.
-BASE_EXPORT const std::string& soc_manufacturer();
+const char* soc_manufacturer();
 
-BASE_EXPORT const std::string& abi_name();
+bool is_at_least_t();
 
-BASE_EXPORT const std::string& security_patch();
+const char* abi_name();
 
-BASE_EXPORT void Set(const IAndroidInfo& info);
 }  // namespace base::android::android_info
 
 #endif  // BASE_ANDROID_ANDROID_INFO_H_

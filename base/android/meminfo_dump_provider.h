@@ -8,8 +8,7 @@
 #include "base/base_export.h"
 #include "base/no_destructor.h"
 #include "base/time/time.h"
-#include "base/trace_event/memory_dump_provider.h"
-#include "base/trace_event/trace_event.h"
+#include "base/trace_event/base_tracing.h"
 
 namespace base::android {
 

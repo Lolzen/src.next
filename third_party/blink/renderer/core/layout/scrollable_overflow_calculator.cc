@@ -10,11 +10,11 @@
 #include "third_party/blink/renderer/core/layout/inline/inline_cursor.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_text_combine.h"
+#include "third_party/blink/renderer/core/layout/legacy_layout_tree_walking.h"
 #include "third_party/blink/renderer/core/layout/length_utils.h"
 #include "third_party/blink/renderer/core/layout/logical_fragment.h"
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/physical_fragment.h"
-#include "third_party/blink/renderer/core/layout/transform_utils.h"
 #include "third_party/blink/renderer/core/style/style_overflow_clip_margin.h"
 #include "third_party/blink/renderer/platform/geometry/layout_unit.h"
 
@@ -79,8 +79,6 @@ ScrollableOverflowCalculator::ScrollableOverflowCalculator(
       writing_direction_(writing_direction),
       is_scroll_container_(is_css_box && node_.IsScrollContainer()),
       is_view_(node_.IsView()),
-      scrolls_all_directions_(is_css_box &&
-                              node_.IsOverscrollAreaParentPseudoElement()),
       has_left_overflow_(is_css_box && node_.HasLeftOverflow()),
       has_top_overflow_(is_css_box && node_.HasTopOverflow()),
       has_non_visible_overflow_(is_css_box && node_.HasNonVisibleOverflow()),
@@ -213,24 +211,23 @@ PhysicalRect ScrollableOverflowCalculator::AdjustOverflowForHanging(
 PhysicalRect ScrollableOverflowCalculator::AdjustOverflowForScrollOrigin(
     const PhysicalRect& overflow) {
   LayoutUnit left_offset =
-      scrolls_all_directions_ || has_left_overflow_
+      has_left_overflow_
           ? std::min(padding_rect_.Right(), overflow.offset.left)
           : std::max(padding_rect_.offset.left, overflow.offset.left);
 
   LayoutUnit right_offset =
-      scrolls_all_directions_ || !has_left_overflow_
-          ? std::max(padding_rect_.offset.left, overflow.Right())
-          : std::min(padding_rect_.Right(), overflow.Right());
+      has_left_overflow_
+          ? std::min(padding_rect_.Right(), overflow.Right())
+          : std::max(padding_rect_.offset.left, overflow.Right());
 
   LayoutUnit top_offset =
-      scrolls_all_directions_ || has_top_overflow_
+      has_top_overflow_
           ? std::min(padding_rect_.Bottom(), overflow.offset.top)
           : std::max(padding_rect_.offset.top, overflow.offset.top);
 
   LayoutUnit bottom_offset =
-      scrolls_all_directions_ || !has_top_overflow_
-          ? std::max(padding_rect_.offset.top, overflow.Bottom())
-          : std::min(padding_rect_.Bottom(), overflow.Bottom());
+      has_top_overflow_ ? std::min(padding_rect_.Bottom(), overflow.Bottom())
+                        : std::max(padding_rect_.offset.top, overflow.Bottom());
 
   return {PhysicalOffset(left_offset, top_offset),
           PhysicalSize(right_offset - left_offset, bottom_offset - top_offset)};
@@ -282,8 +279,8 @@ PhysicalRect ScrollableOverflowCalculator::ScrollableOverflowForPropagation(
   }
 
   // Apply any transforms to the overflow.
-  if (std::optional<gfx::Transform> transform = GetTransformForChildFragment(
-          child_fragment, *node_.GetLayoutBox(), size_)) {
+  if (std::optional<gfx::Transform> transform =
+          node_.GetTransformForChildFragment(child_fragment, size_)) {
     overflow =
         PhysicalRect::EnclosingRect(transform->MapRect(gfx::RectF(overflow)));
   }

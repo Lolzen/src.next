@@ -4,32 +4,22 @@
 
 package org.chromium.chrome.browser.tabmodel;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.text.TextUtils;
 
+import org.chromium.base.ContextUtils;
 import org.chromium.base.Token;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.tab.Tab;
 
-import java.util.List;
 import java.util.Objects;
 
 /** Helper class to handle tab group title related utilities. */
 @NullMarked
 public class TabGroupTitleUtils {
-    /** Represents an unset or default tab group title. */
-    public static final String UNSET_TAB_GROUP_TITLE = "";
-
-    /**
-     * @param title The title to check.
-     * @return Whether the title is unset.
-     */
-    public static boolean isTitleUnset(String title) {
-        return UNSET_TAB_GROUP_TITLE.equals(title);
-    }
+    private static final String TAB_GROUP_TITLES_FILE_NAME = "tab_group_titles";
 
     /**
      * @param context Context for accessing resources.
@@ -68,23 +58,62 @@ public class TabGroupTitleUtils {
      */
     public static String getDisplayableTitle(
             Context context, TabGroupModelFilter tabGroupModelFilter, @Nullable Token tabGroupId) {
-        boolean tabGroupExists =
-                tabGroupId != null && tabGroupModelFilter.tabGroupExists(tabGroupId);
-        String explicitTitle =
-                tabGroupExists
-                        ? tabGroupModelFilter.getTabGroupTitle(assumeNonNull(tabGroupId))
-                        : UNSET_TAB_GROUP_TITLE;
+        int rootId = tabGroupModelFilter.getRootIdFromTabGroupId(tabGroupId);
+        @Nullable String explicitTitle =
+                rootId == Tab.INVALID_TAB_ID ? null : tabGroupModelFilter.getTabGroupTitle(rootId);
         if (TextUtils.isEmpty(explicitTitle)) {
-            int tabCount = 0;
-            List<Tab> tabsInGroup = tabGroupModelFilter.getTabsInGroup(assumeNonNull(tabGroupId));
-            for (Tab tab : tabsInGroup) {
-                if (!tab.isClosing()) {
-                    tabCount++;
-                }
-            }
+            int tabCount = tabGroupModelFilter.getTabCountForGroup(tabGroupId);
             return getDefaultTitle(context, tabCount);
         } else {
             return explicitTitle;
         }
+    }
+
+    /**
+     * This method stores tab group title with reference to {@code tabRootId}. Package protected as
+     * all access should route through the {@link TabGroupModelFilter}.
+     *
+     * @param tabRootId The tab root ID which is used as reference to store group title.
+     * @param title The tab group title to store.
+     */
+    static void storeTabGroupTitle(int tabRootId, @Nullable String title) {
+        assert tabRootId != Tab.INVALID_TAB_ID;
+        if (TextUtils.isEmpty(title)) {
+            deleteTabGroupTitle(tabRootId);
+        } else {
+            getSharedPreferences().edit().putString(String.valueOf(tabRootId), title).apply();
+        }
+    }
+
+    /**
+     * This method deletes specific stored tab group title with reference to {@code tabRootId}.
+     * While currently public, the intent is to make this package protected and force all access to
+     * go through the {@Link TabGroupModelFilter}.
+     *
+     * @param tabRootId The tab root ID whose related tab group title will be deleted.
+     */
+    static void deleteTabGroupTitle(int tabRootId) {
+        assert tabRootId != Tab.INVALID_TAB_ID;
+        getSharedPreferences().edit().remove(String.valueOf(tabRootId)).apply();
+    }
+
+    /**
+     * This method fetches tab group title with related tab group root ID. While currently public,
+     * the intent is to make this package protected and force all access to go through the {@Link
+     * TabGroupModelFilter}.
+     *
+     * @param tabRootId The tab root ID whose related tab group title will be fetched.
+     * @return The stored title of the target tab group, default value is null.
+     */
+    static @Nullable String getTabGroupTitle(int tabRootId) {
+        assert tabRootId != Tab.INVALID_TAB_ID;
+        // TODO(crbug.com/40895368): Consider checking if this looks like the default plural string
+        // and deleting and returning null if any users have saved tab group titles.
+        return getSharedPreferences().getString(String.valueOf(tabRootId), null);
+    }
+
+    private static SharedPreferences getSharedPreferences() {
+        return ContextUtils.getApplicationContext()
+                .getSharedPreferences(TAB_GROUP_TITLES_FILE_NAME, Context.MODE_PRIVATE);
     }
 }

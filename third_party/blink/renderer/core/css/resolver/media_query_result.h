@@ -58,6 +58,9 @@ struct MediaQueryResultFlags {
            (is_viewport_dependent == o.is_viewport_dependent) &&
            (is_device_dependent == o.is_device_dependent);
   }
+  bool operator!=(const MediaQueryResultFlags& o) const {
+    return !(*this == o);
+  }
 
   void Add(const MediaQueryResultFlags& o) {
     unit_flags |= o.unit_flags;

@@ -9,236 +9,176 @@
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/size.h"
 
-enum class LayoutConstant {
+enum LayoutConstant {
   // The size of the avatar icon in the profile row of the app menu.
-  kAppMenuProfileRowAvatarIconSize,
+  APP_MENU_PROFILE_ROW_AVATAR_ICON_SIZE,
 
   // The maximum character length for strings in the app menu.
-  kAppMenuMaximumCharacterLength,
+  APP_MENU_MAXIMUM_CHARACTER_LENGTH,
 
   // The height of Bookmarks Bar when attached to the toolbar. The height of the
-  // Bookmarks Bar is larger than the kBookmarkBarHeight by a fixed
+  // Bookmarks Bar is larger than the BOOKMARK_BAR_BUTTON_HEIGHT by a fixed
   // amount.
-  kBookmarkBarHeight,
+  BOOKMARK_BAR_HEIGHT,
 
   // The height of a button within the Bookmarks Bar.
-  kBookmarkBarButtonHeight,
+  BOOKMARK_BAR_BUTTON_HEIGHT,
 
   // The horizontal padding between buttons within the Bookmarks Bar.
-  kBookmarkBarButtonPadding,
+  BOOKMARK_BAR_BUTTON_PADDING,
 
   // The horizontal padding between the image and the title of the bookmark
   // button.
-  kBookmarkBarButtonImageLabelPadding,
+  BOOKMARK_BAR_BUTTON_IMAGE_LABEL_PADDING,
 
   // The size of icons used in Download bubbles.
   // TODO(crbug.com/40214740): We should be sourcing the size of the file icon
-  // from the layout provider rather than relying on hardcoded constants.
-  kDownloadIconSize,
+  // from
+  // the layout
+  // provider rather than relying on hardcoded constants.
+  DOWNLOAD_ICON_SIZE,
 
   // The vertical padding between the edge of a location bar bubble and its
   // contained text.
-  kLocationBarBubbleFontVerticalPadding,
+  LOCATION_BAR_BUBBLE_FONT_VERTICAL_PADDING,
 
   // The vertical inset to apply to the bounds of a location bar bubble's anchor
   // view, to bring the bubble closer to the anchor.  This compensates for the
   // space between the bottoms of most such views and the visible bottoms of the
   // images inside.
-  kLocationBarBubbleAnchorVerticalInset,
+  LOCATION_BAR_BUBBLE_ANCHOR_VERTICAL_INSET,
 
   // The internal padding to use inside children of the location bar.
-  kLocationBarChildInteriorPadding,
+  LOCATION_BAR_CHILD_INTERIOR_PADDING,
 
   // The corner radius to use for children of the location bar.
-  kLocationBarChildCornerRadius,
+  LOCATION_BAR_CHILD_CORNER_RADIUS,
 
   // The size of icons within chips inside the location bar.
-  kLocationBarChipIconSize,
+  LOCATION_BAR_CHIP_ICON_SIZE,
 
   // The internal padding to use inside an indicator chip, permission request
   // chip and between chips in the location bar.
-  kLocationBarChipPadding,
+  LOCATION_BAR_CHIP_PADDING,
 
   // The vertical and horizontal padding inside the border.
-  kLocationBarElementPadding,
+  LOCATION_BAR_ELEMENT_PADDING,
 
   // The height to be occupied by the LocationBar.
-  kLocationBarHeight,
+  LOCATION_BAR_HEIGHT,
 
   // The vertical margins from the page info icon
-  kLocationBarPageInfoIconVerticalPadding,
+  LOCATION_BAR_PAGE_INFO_ICON_VERTICAL_PADDING,
 
   // The leading edge space in the omnibox from the LHS icons used in Chrome
   // with the chrome refresh flag.
-  kLocationBarLeadingDecorationEdgePadding,
+  LOCATION_BAR_LEADING_DECORATION_EDGE_PADDING,
 
   // The trailing edge space in the omnibox from the RHS icons used in Chrome
   // with the chrome refresh flag.
-  kLocationBarTrailingDecorationEdgePadding,
+  LOCATION_BAR_TRAILING_DECORATION_EDGE_PADDING,
 
   // The padding between trailing edge decorations and the inner views of the
   // omnibox.
-  kLocationBarTrailingDecorationInnerPadding,
+  LOCATION_BAR_TRAILING_DECORATION_INNER_PADDING,
 
   // The size of the icons used inside the LocationBar.
   // TODO(crbug.com/40883435): Deprecate this after the size of all location bar
-  // icons have moved to either `kLocationBarLeadingIconSize` or
-  // `kLocationBarTrailingIconSize`
-  kLocationBarIconSize,
+  // icons have moved to
+  // either `LOCATION_BAR_LEADING_ICON_SIZE` or
+  // `LOCATION_BAR_TRAILING_ICON_SIZE`
+  LOCATION_BAR_ICON_SIZE,
 
   // The size of the leading icons used inside the LocationBar.
-  kLocationBarLeadingIconSize,
+  LOCATION_BAR_LEADING_ICON_SIZE,
 
   // The size of the trailing icons used inside the LocationBar.
-  kLocationBarTrailingIconSize,
+  LOCATION_BAR_TRAILING_ICON_SIZE,
 
-  // The corner radius of the MainBackgroundRegion when tool bar height side
-  // panel is visible
-  kMainBackgroundRegionCornerRadius,
-
-  // Additional space beyond kTabStripPadding between the tab strip and the
+  // Additional space beyond TAB_STRIP_PADDING between the tab strip and the
   // new tab button.
-  kNewTabButtonLeadingMargin,
+  NEW_TAB_BUTTON_LEADING_MARGIN,
 
   // The size of icons used in PageInfo bubbles.
-  kPageInfoIconSize,
+  PAGE_INFO_ICON_SIZE,
 
   // The size of icons in star rating view.
-  kStarRatingIconSize,
+  STAR_RATING_ICON_SIZE,
 
   // Padding after the tab title.
-  kTabAfterTitlePadding,
+  TAB_AFTER_TITLE_PADDING,
 
   // Width of the alert indicator shown for a tab using media capture.
-  kTabAlertIndicatorCaptureIconWidth,
+  TAB_ALERT_INDICATOR_CAPTURE_ICON_WIDTH,
 
   // Width of the alert indicator icon displayed in the tab. The same width is
   // used for all 3 states of normal, hovered and pressed.
-  kTabAlertIndicatorIconWidth,
+  TAB_ALERT_INDICATOR_ICON_WIDTH,
 
   // Width and height of the tab close button.
-  kTabCloseButtonSize,
+  TAB_CLOSE_BUTTON_SIZE,
 
   // The height of a tab, including outer strokes.  In non-100% scales this is
   // slightly larger than the apparent height of the tab, as the top stroke is
   // drawn as a 1-px line flush with the bottom of the tab's topmost DIP.
-  kTabHeight,
+  TAB_HEIGHT,
 
   // The total tab strip height, including all interior padding.
-  kTabStripHeight,
+  TAB_STRIP_HEIGHT,
 
   // The padding value shared between the area above the tab, the bottom of the
   // detached tab, and on all sides of the controls padding.
-  kTabStripPadding,
+  TAB_STRIP_PADDING,
 
   // The height of a separator in the tabstrip.
-  kTabSeparatorHeight,
+  TAB_SEPARATOR_HEIGHT,
 
   // Padding before the tab title.
-  kTabPreTitlePadding,
+  TAB_PRE_TITLE_PADDING,
 
   // The distance between the edge of one tab to the corresponding edge or the
   // subsequent tab when tabs are stacked.
-  kTabStackDistance,
+  TAB_STACK_DISTANCE,
 
   // In refresh, tabs are drawn with an extension into the toolbar's
   // space to prevent a gap from appearing between the toolbar and the
   // bottom of tabs on some non-integral scales.
   // TODO(tbergquist): Remove this after pixel canvas or any deeper fix to
   // non-pixel-aligned drawing goes in.  See https://crbug.com/765723.
-  kTabstripToolbarOverlap,
+  TABSTRIP_TOOLBAR_OVERLAP,
 
   // The total height, including icons and insets, of buttons in the toolbar.
-  kToolbarButtonHeight,
+  TOOLBAR_BUTTON_HEIGHT,
 
   // The corner radius for a divider in the toolbar.
-  kToolbarDividerCornerRadius,
+  TOOLBAR_DIVIDER_CORNER_RADIUS,
 
   // The height for a divider in the toolbar.
-  kToolbarDividerHeight,
+  TOOLBAR_DIVIDER_HEIGHT,
 
   // The horizontal space on either side of a divider in the toolbar.
-  kToolbarDividerSpacing,
+  TOOLBAR_DIVIDER_SPACING,
 
   // The width for a divider in the toolbar.
-  kToolbarDividerWidth,
+  TOOLBAR_DIVIDER_WIDTH,
 
   // Additional horizontal padding between the elements in the toolbar.
-  kToolbarElementPadding,
+  TOOLBAR_ELEMENT_PADDING,
 
   // Default margin of the toolbar icons set by the layout manager.
-  kToolbarIconDefaultMargin,
+  TOOLBAR_ICON_DEFAULT_MARGIN,
 
   // The horizontal space between most items in the toolbar.
-  kToolbarStandardSpacing,
+  TOOLBAR_STANDARD_SPACING,
 
   // corner radius on the top of the toolbar introduced in chrome refresh 2023
-  kToolbarCornerRadius,
-
-  // The padding between the bottom of the tab strip and top of the toolbar
-  // height side panel.
-  kToolbarHeightSidePanelInset,
-
-  // The corner radius used for borders, fill, and hover targets with vertical
-  // tabs.
-  kVerticalTabCornerRadius,
-
-  // The height of an unpinned vertical tab.
-  kVerticalTabHeight,
-
-  // The height of a pinned vertical tab.
-  kVerticalTabPinnedHeight,
-
-  // The minimum possible width for a vertical tab.
-  kVerticalTabMinWidth,
-
-  // The width of the border stroke around pinned tabs in a vertical tab strip.
-  kVerticalTabPinnedBorderThickness,
-
-  // The padding between the sides/bottom of the vertical tab strip and its
-  // content when in the uncollapsed state.
-  kVerticalTabStripUncollapsedPadding,
-
-  // The padding between the sides/bottom of the vertical tab strip and its
-  // content when in the collapsed state.
-  kVerticalTabStripCollapsedPadding,
-
-  // The width of the separator in the vertical tab strip when collapsed.
-  kVerticalTabStripCollapsedSeparatorWidth,
-
-  // The icon size of top buttons in the vertical tab strip.
-  kVerticalTabStripTopButtonIconSize,
-
-  // The padding between the buttons in the top container of the vertical tab
-  // strip. When it is collapsed, this is vertical padding. When it is
-  // uncollapsed and expanded, this is horizontal padding.
-  kVerticalTabStripTopButtonPadding,
-
-  // The icon size of bottom buttons in the vertical tab strip.
-  kVerticalTabStripBottomButtonIconSize,
-
-  // The vertical or horizontal padding between two buttons (tab groups and tab
-  // search) that have flat edges in the top container of the vertical tab
-  // strip.
-  kVerticalTabStripFlatEdgeButtonPadding,
-
-  // The default height of the top container for the vertical tab strip when
-  // uncollapsed.
-  kVerticalTabStripTopButtonContainerHeight,
-
-  // The default height and width of the new tab button for the vertical tab
-  // strip.
-  kVerticalTabStripNewTabButtonSize,
-
-  // The default height and width of the tab groups and tab search buttons for
-  // the vertical tab strip.
-  kVerticalTabStripTopContainerButtonSize,
+  TOOLBAR_CORNER_RADIUS,
 
   // The size of the app menu button in a web app browser window.
-  kWebAppMenuButtonSize,
+  WEB_APP_MENU_BUTTON_SIZE,
 
   // The size of page action icons in a web app title bar.
-  kWebAppPageActionIconSize,
+  WEB_APP_PAGE_ACTION_ICON_SIZE,
 };
 
 enum LayoutInset {
@@ -249,8 +189,8 @@ enum LayoutInset {
   DOWNLOAD_ROW,
 
   // The padding used around the icon inside the LocationBar. The full width of
-  // the icon would be kLocationBarIconSize + 2 * inset.width(). The full
-  // height of the icon would be kLocationBarIconSize + 2 * inset.height().
+  // the icon would be LOCATION_BAR_ICON_SIZE + 2 * inset.width(). The full
+  // height of the icon would be LOCATION_BAR_ICON_SIZE + 2 * inset.height().
   // Icons may additionally be spaced horizontally by
   // LOCATION_BAR_ELEMENT_PADDING, but this region is not part of the icon view
   // (e.g. does not highlight on hover).
@@ -273,9 +213,6 @@ enum LayoutInset {
   // The padding around the browser app menu chip.
   BROWSER_APP_MENU_CHIP_PADDING,
 
-  // The padding around the app menu chip in a web app browser window.
-  WEB_APP_APP_MENU_CHIP_PADDING,
-
   // The padding around the profile menu chip.
   AVATAR_CHIP_PADDING,
 
@@ -287,14 +224,6 @@ enum LayoutInset {
   // maximized and the tabstrip is collapsed the toolbar will sit flush with the
   // edge of the screen.
   WEBUI_TAB_STRIP_TOOLBAR_INTERIOR_MARGIN,
-
-  // The insets for the buttons in the bottom container of the vertical tab
-  // strip when it is uncollapsed.
-  VERTICAL_TAB_STRIP_BOTTOM_BUTTON_UNCOLLAPSED,
-
-  // The insets for the buttons in the bottom container of the vertical tab
-  // strip when it is collapsed.
-  VERTICAL_TAB_STRIP_BOTTOM_BUTTON_COLLAPSED,
 };
 
 int GetLayoutConstant(LayoutConstant constant);

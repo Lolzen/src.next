@@ -13,31 +13,29 @@
 // Each download is recorded with two histograms.
 // This histogram always summarizes the type of download. See
 // InsecureDownloadSecurityStatus.
-inline constexpr char kInsecureDownloadHistogramName[] =
+const char* const kInsecureDownloadHistogramName =
     "Download.InsecureBlocking.Totals";
 // Base name (prefix) for histogram recording the file extension of the
 // download. One histogram is recorded per download. See
 // InsecureDownloadExtensions for file extensions recorded.
-inline constexpr char kInsecureDownloadExtensionHistogramBase[] =
+const char* const kInsecureDownloadExtensionHistogramBase =
     "Download.InsecureBlocking.Extensions";
 // Interfixes for histogram names.
-inline constexpr char kInsecureDownloadExtensionInitiatorUnknown[] =
+const char* const kInsecureDownloadExtensionInitiatorUnknown =
     "InitiatorUnknown";
-inline constexpr char kInsecureDownloadExtensionInitiatorSecure[] =
+const char* const kInsecureDownloadExtensionInitiatorSecure =
     "InitiatorKnownSecure";
-inline constexpr char kInsecureDownloadExtensionInitiatorInsecure[] =
+const char* const kInsecureDownloadExtensionInitiatorInsecure =
     "InitiatorKnownInsecure";
-inline constexpr char kInsecureDownloadExtensionInitiatorInferredSecure[] =
+const char* const kInsecureDownloadExtensionInitiatorInferredSecure =
     "InitiatorInferredSecure";
-inline constexpr char kInsecureDownloadExtensionInitiatorInferredInsecure[] =
+const char* const kInsecureDownloadExtensionInitiatorInferredInsecure =
     "InitiatorInferredInsecure";
-inline constexpr char kInsecureDownloadExtensionInitiatorInsecureNonUnique[] =
+const char* const kInsecureDownloadExtensionInitiatorInsecureNonUnique =
     "InitiatorInsecureNonUnique";
 // Suffixes for histogram names.
-inline constexpr char kInsecureDownloadHistogramTargetSecure[] =
-    "DownloadSecure";
-inline constexpr char kInsecureDownloadHistogramTargetInsecure[] =
-    "DownloadInsecure";
+const char* const kInsecureDownloadHistogramTargetSecure = "DownloadSecure";
+const char* const kInsecureDownloadHistogramTargetInsecure = "DownloadInsecure";
 
 // These values are logged to UMA. Entries should not be renumbered and numeric
 // values should never be reused.  Please keep in sync with

@@ -50,11 +50,12 @@ public class TraceEvent implements AutoCloseable {
     private static volatile boolean sUiThreadReady;
     private static boolean sEventNameFilteringEnabled;
 
-    @VisibleForTesting
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     static class BasicLooperMonitor implements Printer {
-        @VisibleForTesting static final String LOOPER_TASK_PREFIX = "Looper.dispatch: ";
+        @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+        static final String LOOPER_TASK_PREFIX = "Looper.dispatch: ";
 
-        @VisibleForTesting
+        @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
         static final String FILTERED_EVENT_NAME = LOOPER_TASK_PREFIX + "EVENT_NAME_FILTERED";
 
         private static final int SHORTEST_LOG_PREFIX_LENGTH = "<<<<< Finished to ".length();
@@ -98,7 +99,7 @@ public class TraceEvent implements AutoCloseable {
             mCurrentTarget = null;
         }
 
-        @VisibleForTesting
+        @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
         static String getTraceEventName(String line) {
             if (sEventNameFilteringEnabled) {
                 return FILTERED_EVENT_NAME;
@@ -319,11 +320,8 @@ public class TraceEvent implements AutoCloseable {
         // by other applications
         if (sEnabled != enabled) {
             sEnabled = enabled;
-            // UI Thread may not be set by this point.
-            if (sUiThreadReady) {
-                ThreadUtils.getUiThreadLooper()
-                        .setMessageLogging(enabled ? LooperMonitorHolder.sInstance : null);
-            }
+            ThreadUtils.getUiThreadLooper()
+                    .setMessageLogging(enabled ? LooperMonitorHolder.sInstance : null);
         }
 
         if (sEnabled) {
@@ -358,10 +356,7 @@ public class TraceEvent implements AutoCloseable {
             EarlyTraceEvent.maybeEnableInBrowserProcess();
         }
         if (EarlyTraceEvent.enabled()) {
-            // UI Thread may not be set by this point.
-            if (sUiThreadReady) {
-                ThreadUtils.getUiThreadLooper().setMessageLogging(LooperMonitorHolder.sInstance);
-            }
+            ThreadUtils.getUiThreadLooper().setMessageLogging(LooperMonitorHolder.sInstance);
         }
     }
 
@@ -374,7 +369,6 @@ public class TraceEvent implements AutoCloseable {
         sUiThreadReady = true;
         if (sEnabled) {
             ViewHierarchyDumper.updateEnabledState();
-            ThreadUtils.getUiThreadLooper().setMessageLogging(LooperMonitorHolder.sInstance);
         }
     }
 
@@ -779,13 +773,13 @@ public class TraceEvent implements AutoCloseable {
             mRes = res;
         }
 
-        private final int mId;
-        private final int mParentId;
-        private final boolean mIsShown;
-        private final boolean mIsDirty;
-        private final String mClassName;
+        private int mId;
+        private int mParentId;
+        private boolean mIsShown;
+        private boolean mIsDirty;
+        private String mClassName;
         // One can use mRes to resolve mId to a resource name.
-        private final android.content.res.Resources mRes;
+        private android.content.res.Resources mRes;
     }
 
     /**

@@ -47,15 +47,17 @@ static bool ResolveRelative(const KURL& base,
   // We use these low-level GURL functions to avoid converting back and forth
   // from UTF-8 unnecessarily.
   url::Parsed parsed;
-  StringUtf8Adaptor base_utf8(base.GetString());
+  StringUTF8Adaptor base_utf8(base.GetString());
   if (relative.Is8Bit()) {
-    StringUtf8Adaptor relative_utf8(relative);
-    return url::ResolveRelative(base_utf8.AsStringView(), base.GetParsed(),
-                                relative_utf8.AsStringView(), nullptr, buffer,
-                                &parsed);
+    StringUTF8Adaptor relative_utf8(relative);
+    return url::ResolveRelative(base_utf8.data(), base_utf8.size(),
+                                base.GetParsed(), relative_utf8.data(),
+                                relative_utf8.size(), nullptr, buffer, &parsed);
   }
-  return url::ResolveRelative(base_utf8.AsStringView(), base.GetParsed(),
-                              relative.View16(), nullptr, buffer, &parsed);
+  return url::ResolveRelative(base_utf8.data(), base_utf8.size(),
+                              base.GetParsed(),
+                              UNSAFE_TODO(relative.Characters16()),
+                              relative.length(), nullptr, buffer, &parsed);
 }
 
 LinkHash VisitedLinkHash(const KURL& base, const AtomicString& relative) {
@@ -65,7 +67,8 @@ LinkHash VisitedLinkHash(const KURL& base, const AtomicString& relative) {
   if (!ResolveRelative(base, relative.GetString(), &buffer))
     return 0;
 
-  return Platform::Current()->VisitedLinkHash(buffer.view());
+  return Platform::Current()->VisitedLinkHash(
+      std::string_view(buffer.data(), buffer.length()));
 }
 
 LinkHash PartitionedVisitedLinkFingerprint(
@@ -84,7 +87,7 @@ LinkHash PartitionedVisitedLinkFingerprint(
   if (!ResolveRelative(base_link_url, relative_link_url.GetString(), &buffer)) {
     return 0;
   }
-  std::string_view link_url = buffer.view();
+  std::string_view link_url = std::string_view(buffer.data(), buffer.length());
 
   return Platform::Current()->PartitionedVisitedLinkFingerprint(
       link_url, top_level_site, WebSecurityOrigin(frame_origin));

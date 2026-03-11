@@ -17,7 +17,6 @@
 #include "base/check_op.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
-#include "base/metrics/histogram_functions.h"
 #include "base/strings/string_util.h"
 #include "components/history/core/browser/page_usage_data.h"
 #include "components/history/core/browser/segment_scorer.h"
@@ -97,8 +96,6 @@ class SegmentVisitor {
   SegmentID cur_segment_id_;
 };
 
-using HostTitleKey = std::pair<std::string, std::u16string>;
-
 }  // namespace
 
 VisitSegmentDatabase::VisitSegmentDatabase() = default;
@@ -166,7 +163,7 @@ std::string VisitSegmentDatabase::ComputeSegmentName(const GURL& url) {
   // TODO(brettw) this should probably use the registry controlled
   // domains service.
   GURL::Replacements r;
-  std::string_view host = url.host();
+  std::string_view host = url.host_piece();
 
   // Strip various common prefixes in order to group the resulting hostnames
   // together and avoid duplicates.
@@ -317,7 +314,6 @@ VisitSegmentDatabase::QuerySegmentUsage(
             });
 
   // Phase 2: Read details (url, title, etc.) for the highest-ranked segments.
-  // Deduplicate along the way.
   sql::Statement statement2(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "SELECT urls.url, urls.title FROM urls "
       "JOIN segments ON segments.url_id = urls.id "
@@ -325,46 +321,23 @@ VisitSegmentDatabase::QuerySegmentUsage(
   if (!statement2.is_valid())
     return std::vector<std::unique_ptr<PageUsageData>>();
 
-  // Defines the length for title truncation for deduplication purposes. This
-  // value was chosen since tile titles are truncated, any difference that arise
-  // after this length is likely not visible to the user.
-  const size_t kTitleDedupLength = 10;
-
   std::vector<std::unique_ptr<PageUsageData>> results;
   DCHECK_GE(max_result_count, 0);
-  // Tracks (hostname, title) pairs already added.
-  std::set<HostTitleKey> added_host_titles;
-  // Tracks the number of duplicate tiles.
-  int duplicate_tiles = 0;
   for (std::unique_ptr<PageUsageData>& pud : segments) {
     statement2.BindInt64(0, pud->GetID());
     if (statement2.Step()) {
       GURL url(statement2.ColumnStringView(0));
       if (url_filter.is_null() || url_filter.Run(url)) {
-        std::u16string title = statement2.ColumnString16(1);
-        HostTitleKey current_key(url.GetHost(),
-                                 title.substr(0, kTitleDedupLength));
-        // If `!visual_deduplication_enabled` then it's okay to skip insert(),
-        // since `added_host_titles` won't be used anyway.
-        if (added_host_titles.insert(current_key).second) {
-          pud->SetURL(url);
-          pud->SetTitle(title);
-          results.push_back(std::move(pud));
-          if (results.size() >= static_cast<size_t>(max_result_count)) {
-            break;
-          }
-        } else {
-          duplicate_tiles++;
-        }
+        pud->SetURL(url);
+        pud->SetTitle(statement2.ColumnString16(1));
+        results.push_back(std::move(pud));
+        if (results.size() >= static_cast<size_t>(max_result_count))
+          break;
       }
     }
     statement2.Reset(true);
   }
-  if (!histogram_recorded_) {
-    base::UmaHistogramCounts100("History.MostVisitedTilesVisualDeduplication",
-                                duplicate_tiles);
-    histogram_recorded_ = true;
-  }
+
   return results;
 }
 
@@ -390,47 +363,6 @@ bool VisitSegmentDatabase::DeleteSegmentForURL(URLID url_id) {
   delete_seg.BindInt64(0, url_id);
 
   return delete_seg.Run();
-}
-
-bool VisitSegmentDatabase::MigratePresentationIndex() {
-  sql::Transaction transaction(&GetDB());
-  return transaction.Begin() &&
-      GetDB().Execute("DROP TABLE presentation") &&
-      GetDB().Execute("CREATE TABLE segments_tmp ("
-                      "id INTEGER PRIMARY KEY,"
-                      "name VARCHAR,"
-                      "url_id INTEGER NON NULL)") &&
-      GetDB().Execute("INSERT INTO segments_tmp SELECT "
-                      "id, name, url_id FROM segments") &&
-      GetDB().Execute("DROP TABLE segments") &&
-      GetDB().Execute("ALTER TABLE segments_tmp RENAME TO segments") &&
-      transaction.Commit();
-}
-
-bool VisitSegmentDatabase::MigrateVisitSegmentNames() {
-  sql::Statement select(
-      GetDB().GetUniqueStatement("SELECT id, name FROM segments"));
-  if (!select.is_valid())
-    return false;
-
-  bool success = true;
-  while (select.Step()) {
-    SegmentID id = select.ColumnInt64(0);
-    std::string_view old_name = select.ColumnStringView(1);
-    std::string new_name = ComputeSegmentName(GURL(old_name));
-    if (new_name.empty() || old_name == new_name)
-      continue;
-
-    SegmentID to_segment_id = GetSegmentNamed(new_name);
-    if (to_segment_id) {
-      // `new_name` is already in use, so merge.
-      success = success && MergeSegments(/*from_segment_id=*/id, to_segment_id);
-    } else {
-      // Trivial rename of the segment.
-      success = success && RenameSegment(id, new_name);
-    }
-  }
-  return success;
 }
 
 bool VisitSegmentDatabase::RenameSegment(SegmentID segment_id,

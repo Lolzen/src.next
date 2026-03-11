@@ -15,7 +15,8 @@ AccompaniedFragmentIterator::AccompaniedFragmentIterator(
     const LayoutObject& object)
     : FragmentDataIterator(object) {
   if (const auto* box = DynamicTo<LayoutBox>(&object)) {
-    layout_box_ = box;
+    if (box->IsLayoutNGObject())
+      ng_layout_box_ = box;
     return;
   }
 
@@ -27,8 +28,8 @@ AccompaniedFragmentIterator::AccompaniedFragmentIterator(
 
 const PhysicalBoxFragment* AccompaniedFragmentIterator::GetPhysicalBoxFragment()
     const {
-  if (layout_box_) {
-    return layout_box_->GetPhysicalFragment(idx_);
+  if (ng_layout_box_) {
+    return ng_layout_box_->GetPhysicalFragment(idx_);
   }
   return nullptr;
 }
@@ -60,19 +61,19 @@ bool AccompaniedFragmentIterator::Advance() {
     // this agrees with the NG side of things.
     if (cursor_) {
       DCHECK(!*cursor_);
-    } else if (layout_box_) {
-      DCHECK_EQ(layout_box_->PhysicalFragmentCount(), previous_idx + 1);
+    } else if (ng_layout_box_) {
+      DCHECK_EQ(ng_layout_box_->PhysicalFragmentCount(), previous_idx + 1);
     }
 #endif
-    layout_box_ = nullptr;
+    ng_layout_box_ = nullptr;
     return false;
   }
 
 #if DCHECK_IS_ON()
   // We have another FragmentData entry, so we're not done. Assert that this
   // agrees with the NG side of things.
-  if (layout_box_) {
-    DCHECK_GT(layout_box_->PhysicalFragmentCount(), idx_);
+  if (ng_layout_box_) {
+    DCHECK_GT(ng_layout_box_->PhysicalFragmentCount(), idx_);
   } else if (cursor_) {
     DCHECK(*cursor_);
   }

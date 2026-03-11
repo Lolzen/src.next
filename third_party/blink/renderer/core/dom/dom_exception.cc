@@ -278,7 +278,7 @@ String DOMException::ToStringForConsole() const {
       !unsanitized_message_.empty() ? unsanitized_message_ : sanitized_message_;
   return message_for_console.empty()
              ? String()
-             : StrCat({"Uncaught ", name(), ": ", message_for_console});
+             : WTF::StrCat({"Uncaught ", name(), ": ", message_for_console});
 }
 
 void DOMException::AddContextToMessages(v8::ExceptionContext type,

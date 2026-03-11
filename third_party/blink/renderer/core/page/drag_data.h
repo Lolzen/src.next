@@ -30,9 +30,12 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/page/drag_actions.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "ui/gfx/geometry/point_f.h"
+
+namespace WTF {
+class String;
+}  // namespace WTF
 
 namespace blink {
 
@@ -65,12 +68,13 @@ class CORE_EXPORT DragData {
       FilenameConversionPolicy filename_policy = kConvertFilenames) const;
   bool ContainsPlainText() const;
   bool ContainsCompatibleContent() const;
-  String AsURL(FilenameConversionPolicy filename_policy = kConvertFilenames,
-               String* title = nullptr) const;
-  Vector<String> AsURLs(
+  WTF::String AsURL(
+      FilenameConversionPolicy filename_policy = kConvertFilenames,
+      WTF::String* title = nullptr) const;
+  Vector<WTF::String> AsURLs(
       FilenameConversionPolicy filename_policy = kConvertFilenames) const;
-  String AsPlainText() const;
-  void AsFilePaths(Vector<String>&) const;
+  WTF::String AsPlainText() const;
+  void AsFilePaths(Vector<WTF::String>&) const;
   unsigned NumberOfFiles() const;
   DocumentFragment* AsFragment(LocalFrame*) const;
   bool CanSmartReplace() const;
@@ -78,7 +82,7 @@ class CORE_EXPORT DragData {
   bool ForceDefaultAction() const;
   int GetModifiers() const;
 
-  String DroppedFileSystemId() const;
+  WTF::String DroppedFileSystemId() const;
 
  private:
   const gfx::PointF client_position_;

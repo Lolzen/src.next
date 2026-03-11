@@ -57,13 +57,8 @@ LayoutObject* LayoutTreeBuilderForElement::NextLayoutObject() const {
   if (node_->IsFirstLetterPseudoElement()) {
     return context_.next_sibling;
   }
-  // ::scroll-marker pseudo-elements are always attached one after another.
+  // ::scroll-marker pseudo elements are always attached one after another.
   if (node_->IsScrollMarkerPseudoElement()) {
-    return nullptr;
-  }
-  // Overscroll areas are the only child within their
-  // ::-internal-overscroll-area-parent.
-  if (style_->IsInternalOverscrollPositionAuto()) {
     return nullptr;
   }
   if (style_->IsRenderedInTopLayer(*node_)) {
@@ -132,11 +127,12 @@ void LayoutTreeBuilderForElement::CreateLayoutObject() {
     return;
   }
 
-  // Make sure the LayoutObject already knows it's a descendant of a multicol
-  // container before we set the style for the first time. Otherwise code using
-  // IsInsideMulticol() in the StyleWillChange and StyleDidChange will fail.
-  new_layout_object->SetIsInsideMulticol(
-      parent_layout_object->IsInsideMulticol());
+  // Make sure the LayoutObject already knows it is going to be added to a
+  // LayoutFlowThread before we set the style for the first time. Otherwise code
+  // using IsInsideFlowThread() in the StyleWillChange and StyleDidChange will
+  // fail.
+  new_layout_object->SetIsInsideFlowThread(
+      parent_layout_object->IsInsideFlowThread());
 
   LayoutObject* next_layout_object = NextLayoutObject();
   node_->SetLayoutObject(new_layout_object);
@@ -204,10 +200,12 @@ void LayoutTreeBuilderForText::CreateLayoutObject() {
     return;
   }
 
-  // Make sure the LayoutObject already knows it's a descendant of a multicol
-  // container before we set the style for the first time. Otherwise code using
-  // IsInsideMulticol() in the StyleWillChange and StyleDidChange will fail.
-  new_layout_object->SetIsInsideMulticol(context_.parent->IsInsideMulticol());
+  // Make sure the LayoutObject already knows it is going to be added to a
+  // LayoutFlowThread before we set the style for the first time. Otherwise code
+  // using IsInsideFlowThread() in the StyleWillChange and StyleDidChange will
+  // fail.
+  new_layout_object->SetIsInsideFlowThread(
+      context_.parent->IsInsideFlowThread());
 
   node_->SetLayoutObject(new_layout_object);
   DCHECK(!new_layout_object->Style());

@@ -33,7 +33,7 @@ class CORE_EXPORT CSSPaintValue : public CSSImageGeneratorValue {
   // The |target_size| is container size with subpixel snapping when used
   // in the context of paint images.
   scoped_refptr<Image> GetImage(const ImageResourceObserver&,
-                                const Node&,
+                                const Document&,
                                 const ComputedStyle&,
                                 const gfx::SizeF& target_size);
 
@@ -61,8 +61,6 @@ class CORE_EXPORT CSSPaintValue : public CSSImageGeneratorValue {
     EnsureGenerator(document);
   }
   unsigned NumberOfGeneratorsForTesting() const { return generators_.size(); }
-
-  bool HasRandomFunctions() const;
 
   void TraceAfterDispatch(blink::Visitor*) const;
 

@@ -261,7 +261,7 @@ class AppMenuDragHelper {
         ListView listView = mAppMenu.getListView();
         assumeNonNull(listView);
 
-        ArrayList<View> itemViews = new ArrayList<>();
+        ArrayList<View> itemViews = new ArrayList<View>();
         for (int i = 0; i < listView.getChildCount(); ++i) {
             boolean hasImageButtons = false;
             if (listView.getChildAt(i) instanceof LinearLayout) {

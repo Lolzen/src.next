@@ -80,7 +80,8 @@ ALWAYS_INLINE void SpaceSplitString::Data::CreateVector(
 }
 
 void SpaceSplitString::Data::CreateVector(const AtomicString& string) {
-  VisitCharacters(string, [&](auto chars) { CreateVector(string, chars); });
+  WTF::VisitCharacters(string,
+                       [&](auto chars) { CreateVector(string, chars); });
 }
 
 bool SpaceSplitString::Data::ContainsAll(Data& other) {
@@ -160,7 +161,11 @@ AtomicString SpaceSplitString::SerializeToString() const {
   if (size == 1)
     return (*data_)[0];
   StringBuilder builder;
-  builder.AppendRange(*data_, " ");
+  builder.Append((*data_)[0]);
+  for (wtf_size_t i = 1; i < size; ++i) {
+    builder.Append(' ');
+    builder.Append((*data_)[i]);
+  }
   return builder.ToAtomicString();
 }
 

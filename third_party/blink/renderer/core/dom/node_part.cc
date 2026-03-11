@@ -5,7 +5,6 @@
 #include "third_party/blink/renderer/core/dom/node_part.h"
 
 #include "third_party/blink/renderer/core/dom/child_node_part.h"
-#include "third_party/blink/renderer/core/dom/node-inl.h"
 #include "third_party/blink/renderer/core/dom/node_cloning_data.h"
 #include "third_party/blink/renderer/core/dom/part_root.h"
 #include "third_party/blink/renderer/core/dom/tree_scope.h"
@@ -28,7 +27,9 @@ NodePart* NodePart::Create(PartRootUnion* root_union,
       *PartRoot::GetPartRootFromUnion(root_union), *node, init);
 }
 
-NodePart::NodePart(PartRoot& root, Node& node, Vector<String> metadata)
+NodePart::NodePart(PartRoot& root,
+                   Node& node,
+                   Vector<String> metadata)
     : Part(root, std::move(metadata)), node_(node) {
   CHECK(IsAcceptableNodeType(node));
   if (RuntimeEnabledFeatures::DOMPartsAPIMinimalEnabled()) {

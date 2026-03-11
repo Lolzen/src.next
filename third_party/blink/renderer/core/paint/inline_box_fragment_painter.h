@@ -255,6 +255,7 @@ class LineBoxFragmentPainter : public InlineBoxFragmentPainterBase {
         block_fragment_(block_fragment) {
     DCHECK(line_box_fragment.IsLineBox());
     DCHECK(NeedsPaint(line_box_fragment));
+    DCHECK(layout_block_flow.IsLayoutNGObject());
   }
 
   const PhysicalLineBoxFragment& LineBoxFragment() const {

@@ -85,7 +85,6 @@
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/shared_buffer.h"
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom-blink.h"
@@ -221,7 +220,6 @@ void DragController::ClearDragCaret() {
 void DragController::DragEnded() {
   drag_initiator_ = nullptr;
   did_initiate_drag_ = false;
-  drag_pointer_id_.reset();
   page_->GetDragCaret().Clear();
   // When dragging occurs, the mousedown event is triggered, causing the caret's
   // blinking state to be suspended. Therefore, it is necessary to reset the
@@ -251,9 +249,7 @@ void DragController::DragExited(DragData* drag_data, LocalFrame& local_root) {
   file_input_element_under_mouse_ = nullptr;
 }
 
-void DragController::PerformDrop(DragData* drag_data,
-                                 LocalFrame& local_root,
-                                 const Operation& browser_drag_operation) {
+void DragController::PerformDrag(DragData* drag_data, LocalFrame& local_root) {
   DCHECK(drag_data);
   document_under_mouse_ = local_root.DocumentAtPoint(
       PhysicalOffset::FromPointFRound(drag_data->ClientPosition()));
@@ -270,10 +266,6 @@ void DragController::PerformDrop(DragData* drag_data,
       // Sending an event can result in the destruction of the view and part.
       DataTransfer* data_transfer = CreateDraggingDataTransfer(
           DataTransferAccessPolicy::kReadable, drag_data);
-      if (RuntimeEnabledFeatures::PreserveDropEffectEnabled()) {
-        data_transfer->SetDestinationOperation(
-            browser_drag_operation.operation);
-      }
       data_transfer->SetSourceOperation(
           drag_data->DraggingSourceOperationMask());
       EventHandler& event_handler = local_root.GetEventHandler();
@@ -319,9 +311,6 @@ void DragController::PerformDrop(DragData* drag_data,
     }
     bool has_transient_user_activation = LocalFrame::HasTransientUserActivation(
         document_under_mouse_ ? document_under_mouse_->GetFrame() : nullptr);
-
-    const bool is_single_link = urls.size() == 1 && !drag_data->ContainsFiles();
-
     bool should_focus_tab = true;
     for (const String& url : urls) {
       ResourceRequest resource_request(url);
@@ -339,19 +328,12 @@ void DragController::PerformDrop(DragData* drag_data,
       FrameLoadRequest request(nullptr, resource_request);
 
       // Open the dropped URL in a new tab to avoid potential data-loss in the
-      // current tab. See https://crbug.com/451659. The feature
-      // kSupportOpeningDraggedLinksInSameTab explores allowing links to be
-      // opened in the same tab if the drop data indicates that should be the
-      // case.
-      if (!base::FeatureList::IsEnabled(
-              blink::features::kSupportOpeningDraggedLinksInSameTab) ||
-          !is_single_link) {
-        // First tab should be focused, the rest should be background tabs.
-        request.SetNavigationPolicy(
-            should_focus_tab
-                ? NavigationPolicy::kNavigationPolicyNewForegroundTab
-                : NavigationPolicy::kNavigationPolicyNewBackgroundTab);
-      }
+      // current tab. See https://crbug.com/451659.
+      // First tab should be focused, the rest should be background tabs.
+      request.SetNavigationPolicy(
+          should_focus_tab
+              ? NavigationPolicy::kNavigationPolicyNewForegroundTab
+              : NavigationPolicy::kNavigationPolicyNewBackgroundTab);
       local_root.Navigate(request, WebFrameLoadType::kStandard);
       should_focus_tab = false;
     }
@@ -1384,7 +1366,6 @@ bool DragController::StartDrag(LocalFrame* frame,
       drag_obj_rect, effective_drag_initiation_location, frame, state,
       hit_test_result, drag_initiation_location, mouse_dragged_point);
 
-  drag_pointer_id_ = drag_event.id;
   DoSystemDrag(drag_image.get(), drag_obj_rect,
                effective_drag_initiation_location,
                state.drag_data_transfer_.Get(), frame);

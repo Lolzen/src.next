@@ -4,10 +4,6 @@
 
 #include "chrome/browser/extensions/webstore_data_fetcher_delegate.h"
 
-#include "extensions/buildflags/buildflags.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
-
 namespace extensions {
 
 const char WebstoreDataFetcherDelegate::kAverageRatingKey[] = "average_rating";

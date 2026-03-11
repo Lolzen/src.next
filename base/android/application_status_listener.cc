@@ -10,8 +10,11 @@
 #include "base/lazy_instance.h"
 #include "base/metrics/user_metrics.h"
 #include "base/observer_list_threadsafe.h"
-#include "base/trace_event/application_state_proto_android.h"
-#include "base/trace_event/trace_event.h"
+#include "base/trace_event/base_tracing.h"
+
+#if BUILDFLAG(ENABLE_BASE_TRACING)
+#include "base/trace_event/application_state_proto_android.h"  // no-presubmit-check
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "base/tasks_jni/ApplicationStatus_jni.h"
@@ -112,7 +115,7 @@ ApplicationState ApplicationStatusListener::GetState() {
 }
 
 static void JNI_ApplicationStatus_OnApplicationStateChange(JNIEnv* env,
-                                                           int32_t new_state) {
+                                                           jint new_state) {
   ApplicationState application_state = static_cast<ApplicationState>(new_state);
   ApplicationStatusListener::NotifyApplicationStateChange(application_state);
 }
@@ -124,5 +127,3 @@ bool ApplicationStatusListener::HasVisibleActivities() {
 
 }  // namespace android
 }  // namespace base
-
-DEFINE_JNI(ApplicationStatus)

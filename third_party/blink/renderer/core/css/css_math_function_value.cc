@@ -49,14 +49,30 @@ CSSMathFunctionValue* CSSMathFunctionValue::Create(
 CSSMathFunctionValue* CSSMathFunctionValue::Create(const Length& length,
                                                    float zoom) {
   DCHECK(length.IsCalculated());
-  const auto* calc = length.GetCalculationValue().Zoom(1.0 / zoom);
+  auto calc = length.GetCalculationValue().Zoom(1.0 / zoom);
   return Create(
       CSSMathExpressionNode::Create(*calc),
       CSSPrimitiveValue::ValueRangeForLengthValueRange(calc->GetValueRange()));
 }
 
 bool CSSMathFunctionValue::MayHaveRelativeUnit() const {
-  return expression_->MayHaveRelativeUnit();
+  UnitType resolved_type = expression_->ResolvedUnitType();
+  return IsRelativeUnit(resolved_type) || resolved_type == UnitType::kUnknown;
+}
+
+double CSSMathFunctionValue::DoubleValue() const {
+#if DCHECK_IS_ON()
+  if (IsPercentage()) {
+    DCHECK(!AllowsNegativePercentageReference() ||
+           !expression_->InvolvesPercentageComparisons());
+  }
+#endif
+  return ClampToPermittedRange(expression_->DoubleValue());
+}
+
+double CSSMathFunctionValue::ComputeDegrees() const {
+  DCHECK_EQ(kCalcAngle, expression_->Category());
+  return ClampToPermittedRange(*expression_->ComputeValueInCanonicalUnit());
 }
 
 double CSSMathFunctionValue::ComputeDegrees(
@@ -92,7 +108,7 @@ int CSSMathFunctionValue::ComputeInteger(
   // percentages.
   DCHECK_EQ(kCalcNumber, expression_->Category());
   DCHECK(!expression_->HasPercentage());
-  return ClampToWithNaNTo0<int>(
+  return ClampTo<int>(
       ClampToPermittedRange(expression_->ComputeNumber(length_resolver)));
 }
 
@@ -110,7 +126,7 @@ double CSSMathFunctionValue::ComputeNumber(
   if (expression_->Category() == kCalcPercent) {
     value /= 100.0;
   }
-  return std::isnan(value) ? 0.0 : CSSValueClampingUtils::ClampDouble(value);
+  return std::isnan(value) ? 0.0 : value;
 }
 
 double CSSMathFunctionValue::ComputePercentage(
@@ -133,14 +149,6 @@ double CSSMathFunctionValue::ComputeValueInCanonicalUnit(
   DCHECK(optional_value.has_value());
   double value = ClampToPermittedRange(optional_value.value());
   return std::isnan(value) ? 0.0 : value;
-}
-
-std::optional<double> CSSMathFunctionValue::GetValueIfKnown() const {
-  std::optional<double> val = expression_->GetValueIfKnown();
-  if (val.has_value()) {
-    return ClampToPermittedRange(CSSValueClampingUtils::ClampDouble(*val));
-  }
-  return val;
 }
 
 bool CSSMathFunctionValue::AccumulateLengthArray(CSSLengthArray& length_array,
@@ -217,7 +225,7 @@ bool CSSMathFunctionValue::IsElementDependent() const {
   return expression_->IsElementDependent();
 }
 
-const CalculationValue* CSSMathFunctionValue::ToCalcValue(
+scoped_refptr<const CalculationValue> CSSMathFunctionValue::ToCalcValue(
     const CSSLengthResolver& length_resolver) const {
   DCHECK_NE(value_range_in_target_context_,
             CSSPrimitiveValue::ValueRange::kInteger);

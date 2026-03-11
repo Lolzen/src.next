@@ -11,6 +11,7 @@
 #include "base/sequence_checker.h"
 #include "chrome/browser/browser_process_platform_part_base.h"
 #include "chrome/browser/component_updater/cros_component_installer_chromeos.h"
+#include "chrome/browser/ui/browser_list_observer.h"
 #include "components/keyed_service/core/keyed_service_shutdown_notifier.h"
 
 class BrowserProcessPlatformPartTestApi;
@@ -24,7 +25,6 @@ class EssentialSearchManager;
 namespace ash {
 class AccountManagerFactory;
 class AshProxyMonitor;
-class AutoSignOutService;
 class BrowserContextFlusher;
 class ChromeSessionManager;
 class CrosSettingsHolder;
@@ -49,10 +49,6 @@ namespace policy {
 class BrowserPolicyConnectorAsh;
 class DeviceRestrictionScheduleController;
 }  // namespace policy
-
-namespace session_manager {
-class SessionManager;
-}  // namespace session_manager
 
 namespace user_manager {
 class MultiUserSignInPolicyController;
@@ -122,8 +118,8 @@ class BrowserProcessPlatformPart : public BrowserProcessPlatformPartBase {
 
   policy::BrowserPolicyConnectorAsh* browser_policy_connector_ash();
 
-  ash::ChromeSessionManager* chrome_session_manager() {
-    return chrome_session_manager_.get();
+  ash::ChromeSessionManager* session_manager() {
+    return session_manager_.get();
   }
 
   user_manager::UserManager* user_manager() { return user_manager_.get(); }
@@ -165,10 +161,6 @@ class BrowserProcessPlatformPart : public BrowserProcessPlatformPartBase {
     return in_session_password_change_manager_.get();
   }
 
-  ash::AutoSignOutService* auto_sign_out_service() {
-    return auto_sign_out_service_.get();
-  }
-
   ash::system::TimeZoneResolverManager* GetTimezoneResolverManager();
 
   // Overridden from BrowserProcessPlatformPartBase:
@@ -177,21 +169,58 @@ class BrowserProcessPlatformPart : public BrowserProcessPlatformPartBase {
   ash::system::SystemClock* GetSystemClock();
   void DestroySystemClock();
 
-  // DEPRECATED: Use ash::AccountManagerFactory::Get() instead.
-  // TODO(crbug.com/393260347): Remove this.
   ash::AccountManagerFactory* GetAccountManagerFactory();
 
   static void EnsureFactoryBuilt();
 
  private:
+  // An observer that restores urls based on the on startup setting after a new
+  // browser is added to the BrowserList.
+  class BrowserRestoreObserver : public BrowserListObserver {
+   public:
+    explicit BrowserRestoreObserver(
+        const BrowserProcessPlatformPart* browser_process_platform_part);
+
+    ~BrowserRestoreObserver() override;
+
+   protected:
+    // BrowserListObserver:
+    void OnBrowserAdded(Browser* browser) override;
+
+   private:
+    // Returns true, if the url defined in the on startup setting should be
+    // opened. Otherwise, returns false.
+    bool ShouldRestoreUrls(Browser* browser) const;
+
+    // Returns true, if the url defined in the on startup setting should be
+    // opened in a new browser. Otherwise, returns false.
+    bool ShouldOpenUrlsInNewBrowser(Browser* browser) const;
+
+    // Restores urls based on the on startup setting.
+    void RestoreUrls(Browser* browser);
+
+    // Called when a session is restored.
+    void OnSessionRestoreDone(Profile* profile, int num_tabs_restored);
+
+    const raw_ptr<const BrowserProcessPlatformPart>
+        browser_process_platform_part_;
+
+    base::CallbackListSubscription on_session_restored_callback_subscription_;
+  };
+
+  BrowserRestoreObserver browser_restore_observer_;
+
   friend class BrowserProcessPlatformPartTestApi;
+
+  // Returns true if we can restore URLs for `profile`. Restoring URLs should
+  // only be allowed for regular signed-in users.
+  bool CanRestoreUrlsForProfile(const Profile* profile) const;
 
   void CreateProfileHelper();
 
   void ShutdownPrimaryProfileServices();
 
-  std::unique_ptr<session_manager::SessionManager> session_manager_;
-  std::unique_ptr<ash::ChromeSessionManager> chrome_session_manager_;
+  std::unique_ptr<ash::ChromeSessionManager> session_manager_;
 
   bool created_profile_helper_;
   std::unique_ptr<ash::ProfileHelper> profile_helper_;
@@ -251,8 +280,6 @@ class BrowserProcessPlatformPart : public BrowserProcessPlatformPartBase {
   std::unique_ptr<ash::AshProxyMonitor> ash_proxy_monitor_;
 
   std::unique_ptr<ash::SecureDnsManager> secure_dns_manager_;
-
-  std::unique_ptr<ash::AutoSignOutService> auto_sign_out_service_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 };

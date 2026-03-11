@@ -13,9 +13,6 @@
 #include "build/chromeos_buildflags.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/unloaded_extension_reason.h"
-#include "extensions/buildflags/buildflags.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 class Profile;
 
@@ -85,7 +82,7 @@ class ChromeExtensionSystem : public ExtensionSystem {
                      InstallUpdateCallback install_update_callback) override;
   void PerformActionBasedOnOmahaAttributes(
       const std::string& extension_id,
-      const base::DictValue& attributes) override;
+      const base::Value::Dict& attributes) override;
 
  private:
   friend class ChromeExtensionSystemSharedFactory;

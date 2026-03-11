@@ -8,10 +8,8 @@
 #include <memory>
 #include <set>
 
-#include "base/auto_reset.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
-#include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
@@ -19,7 +17,6 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/sync/model/string_ordinal.h"
 #include "extensions/browser/blocklist_state.h"
-#include "extensions/browser/delayed_install_manager.h"
 #include "extensions/browser/disable_reason.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/process_manager.h"
@@ -39,6 +36,7 @@ class DevToolsAgentHost;
 }  // namespace content
 
 namespace extensions {
+class DelayedInstallManager;
 class Extension;
 class ExtensionHost;
 class ExtensionPrefs;
@@ -50,9 +48,7 @@ class RendererStartupHelper;
 // extensions for a BrowserContext. It uses the ExtensionRegistry to track
 // extension states. Other classes may query the ExtensionRegistry directly,
 // but eventually only ExtensionRegistrar will be able to make changes to it.
-class ExtensionRegistrar : public KeyedService,
-                           public ProcessManagerObserver,
-                           public DelayedInstallManager::Observer {
+class ExtensionRegistrar : public KeyedService, public ProcessManagerObserver {
  public:
   // Delegate for embedder-specific functionality like policy and permissions.
   class Delegate {
@@ -64,7 +60,7 @@ class ExtensionRegistrar : public KeyedService,
 
     virtual ~Delegate() = default;
 
-    // Called before `extension` is added. `old_extension` is the extension
+    // Called before |extension| is added. |old_extension| is the extension
     // being replaced, in the case of a reload or upgrade.
     virtual void PreAddExtension(const Extension* extension,
                                  const Extension* old_extension) = 0;
@@ -82,12 +78,12 @@ class ExtensionRegistrar : public KeyedService,
     virtual void PostDeactivateExtension(
         scoped_refptr<const Extension> extension) = 0;
 
-    // Called before `extension` is uninstalled. Performs the operations
-    // necessary before `extension` is uninstalled.
+    // Called before |extension| is uninstalled. Performs the operations
+    // necessary before |extension| is uninstalled.
     virtual void PreUninstallExtension(
         scoped_refptr<const Extension> extension) = 0;
 
-    // Called after `extension` is uninstalled. Performs the operations to
+    // Called after |extension| is uninstalled. Performs the operations to
     // clean up the extensions files, etc.
     virtual void PostUninstallExtension(
         scoped_refptr<const Extension> extension,
@@ -104,7 +100,7 @@ class ExtensionRegistrar : public KeyedService,
         const base::FilePath& path) = 0;
 
     // Informs the user that an extension was disabled after upgrading to higher
-    // permissions. If `is_remote_install` is true, the extension was disabled
+    // permissions. If |is_remote_install| is true, the extension was disabled
     // because it was installed remotely.
     virtual void ShowExtensionDisabledError(const Extension* extension,
                                             bool is_remote_install) = 0;
@@ -123,17 +119,17 @@ class ExtensionRegistrar : public KeyedService,
 
     // Informs the service that an extension's files are in place for loading.
     //
-    // `extension`                the extension
-    // `page_ordinal`             the location of the extension in the app
+    // |extension|                the extension
+    // |page_ordinal|             the location of the extension in the app
     //                            launcher
-    // `install_flags`            a bitmask of InstallFlags
-    // `ruleset_install_prefs`    Install prefs needed for the Declarative Net
+    // |install_flags|            a bitmask of InstallFlags
+    // |ruleset_install_prefs|    Install prefs needed for the Declarative Net
     //                            Request API.
     virtual void OnExtensionInstalled(
         const Extension* extension,
         const syncer::StringOrdinal& page_ordinal,
         int install_flags,
-        base::DictValue ruleset_install_prefs) = 0;
+        base::Value::Dict ruleset_install_prefs) = 0;
   };
 
   explicit ExtensionRegistrar(content::BrowserContext* browser_context);
@@ -143,7 +139,7 @@ class ExtensionRegistrar : public KeyedService,
 
   ~ExtensionRegistrar() override;
 
-  // Returns the instance for the given `browser_context`.
+  // Returns the instance for the given |browser_context|.
   static ExtensionRegistrar* Get(content::BrowserContext* browser_context);
 
   // The provided `delegate` should outlive this object. May be called multiple
@@ -164,10 +160,6 @@ class ExtensionRegistrar : public KeyedService,
   // Called when the associated Profile is going to be destroyed.
   void Shutdown() override;
 
-  // DelayedInstallManager::Observer:
-  void OnDelayedInstallFinished(
-      scoped_refptr<const Extension> extension) override;
-
   // Adds the extension to the ExtensionRegistry. The extension will be added to
   // the enabled, disabled, blocklisted or blocked set. If the extension is
   // added as enabled, it will be activated.
@@ -177,33 +169,33 @@ class ExtensionRegistrar : public KeyedService,
   // the extension is installed, e.g., to update event handlers on background
   // pages; and performs other extension install tasks before calling
   // AddExtension.
-  // `install_flags` is a bitmask of InstallFlags.
+  // |install_flags| is a bitmask of InstallFlags.
   void AddNewOrUpdatedExtension(const Extension* extension,
                                 const base::flat_set<int>& disable_reasons,
                                 int install_flags,
                                 const syncer::StringOrdinal& page_ordinal,
                                 const std::string& install_parameter,
-                                base::DictValue ruleset_install_prefs);
+                                base::Value::Dict ruleset_install_prefs);
 
   // Informs the service that an extension's files are in place for loading.
   //
-  // `extension`                the extension
-  // `page_ordinal`             the location of the extension in the app
+  // |extension|                the extension
+  // |page_ordinal|             the location of the extension in the app
   //                            launcher
-  // `install_flags`            a bitmask of InstallFlags
-  // `ruleset_install_prefs`    Install prefs needed for the Declarative Net
+  // |install_flags|            a bitmask of InstallFlags
+  // |ruleset_install_prefs|    Install prefs needed for the Declarative Net
   //                            Request API.
   void OnExtensionInstalled(const Extension* extension,
                             const syncer::StringOrdinal& page_ordinal,
                             int install_flags,
-                            base::DictValue ruleset_install_prefs = {});
+                            base::Value::Dict ruleset_install_prefs = {});
   void OnExtensionInstalled(const Extension* extension,
                             const syncer::StringOrdinal& page_ordinal) {
     OnExtensionInstalled(extension, page_ordinal,
                          static_cast<int>(kInstallFlagNone));
   }
 
-  // Removes `extension` from the extension system by deactivating it if it is
+  // Removes |extension| from the extension system by deactivating it if it is
   // enabled and removing references to it from the ExtensionRegistry's
   // enabled, disabled or terminated sets.
   // Note: Extensions will not be removed from other sets (blocklisted or
@@ -218,7 +210,7 @@ class ExtensionRegistrar : public KeyedService,
   // extensions cannot be enabled.)
   void EnableExtension(const ExtensionId& extension_id);
 
-  // Marks `extension` as disabled and deactivates it. The ExtensionRegistry
+  // Marks |extension| as disabled and deactivates it. The ExtensionRegistry
   // retains a reference to it, so it can be enabled later.
   void DisableExtension(const ExtensionId& extension_id,
                         const DisableReasonSet& disable_reasons);
@@ -271,7 +263,7 @@ class ExtensionRegistrar : public KeyedService,
   void ReloadExtensionWithQuietFailure(const ExtensionId& extension_id);
 
   // Uninstalls the specified extension. Callers should only call this method
-  // with extensions that exist. `reason` lets the caller specify why the
+  // with extensions that exist. |reason| lets the caller specify why the
   // extension is uninstalled.
   // Note: this method synchronously removes the extension from the
   // set of installed extensions stored in the ExtensionRegistry, but will
@@ -279,7 +271,7 @@ class ExtensionRegistrar : public KeyedService,
   // Returns true if an uninstall was successfully triggered; this can fail if
   // the extension cannot be uninstalled (such as a policy force-installed
   // extension).
-  // `done_callback` is synchronously invoked once the site-related data and the
+  // |done_callback| is synchronously invoked once the site-related data and the
   // files stored on disk are removed. If such a callback is not needed, pass in
   // a null callback (base::NullCallback()).
   bool UninstallExtension(
@@ -291,7 +283,7 @@ class ExtensionRegistrar : public KeyedService,
   // Uninstalls extensions that have been migrated to component extensions.
   void UninstallMigratedExtensions(base::span<const char* const> migrated_ids);
 
-  // Finishes installing `extension` and notifying the observers.
+  // Finishes installing |extension| and notifying the observers.
   void FinishInstallation(const Extension* extension);
 
   // Helper method to determine if an extension can be blocked.
@@ -341,11 +333,6 @@ class ExtensionRegistrar : public KeyedService,
   void GreylistExtensionForTest(const std::string& extension_id,
                                 const BitMapBlocklistState& state);
 
-  // Disables the automatic spin-up of lazy contexts. This should only be used
-  // in tests.
-  [[nodiscard]]
-  static base::AutoReset<bool> DisableLazyContextSpinupForTest();
-
   // Deactivates the extension, adding its id to the list of terminated
   // extensions.
   void TerminateExtension(const ExtensionId& extension_id);
@@ -375,7 +362,6 @@ class ExtensionRegistrar : public KeyedService,
 
   // Simple accessors.
   bool extensions_enabled() const { return extensions_enabled_; }
-  bool block_extensions() const { return block_extensions_; }
   const base::FilePath& install_directory() const { return install_directory_; }
   const base::FilePath& unpacked_install_directory() const {
     return unpacked_install_directory_;
@@ -394,11 +380,11 @@ class ExtensionRegistrar : public KeyedService,
   };
 
   // Adds the extension to the appropriate registry set, based on ExtensionPrefs
-  // and our `delegate_`. Activates the extension if it's added to the enabled
+  // and our |delegate_|. Activates the extension if it's added to the enabled
   // set.
   void AddNewExtension(scoped_refptr<const Extension> extension);
 
-  // Activates `extension` by marking it enabled and notifying other components
+  // Activates |extension| by marking it enabled and notifying other components
   // about it.
   void ActivateExtension(const Extension* extension, bool is_newly_added);
 
@@ -493,9 +479,6 @@ class ExtensionRegistrar : public KeyedService,
 
   base::ScopedObservation<ProcessManager, ProcessManagerObserver>
       process_manager_observation_{this};
-  base::ScopedObservation<DelayedInstallManager,
-                          DelayedInstallManager::Observer>
-      delayed_install_manager_observation_{this};
   base::WeakPtrFactory<ExtensionRegistrar> weak_factory_{this};
 };
 

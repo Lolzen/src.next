@@ -54,7 +54,8 @@ class TaskOrderObserver {
 
  public:
   base::RepeatingClosure CreateTask(int id) {
-    return BindRepeating(&TaskOrderObserver::RunTask, Unretained(this), id);
+    return WTF::BindRepeating(&TaskOrderObserver::RunTask,
+                              WTF::Unretained(this), id);
   }
   const Vector<int>& Order() const { return order_; }
 
@@ -107,8 +108,9 @@ TEST_F(ScriptedAnimationControllerTest, EnqueueWithinTask) {
   TaskOrderObserver observer;
 
   Controller().EnqueueTask(observer.CreateTask(1));
-  Controller().EnqueueTask(BindOnce(&EnqueueTask, WrapPersistent(&Controller()),
-                                    Unretained(&observer), 2));
+  Controller().EnqueueTask(WTF::BindOnce(&EnqueueTask,
+                                         WrapPersistent(&Controller()),
+                                         WTF::Unretained(&observer), 2));
   Controller().EnqueueTask(observer.CreateTask(3));
   EXPECT_EQ(0u, observer.Order().size());
 
@@ -224,13 +226,13 @@ TEST_F(ScriptedAnimationControllerTest, TestIsInRequestAnimationFrame) {
 
   bool ran_callback = false;
   Controller().RegisterFrameCallback(
-      MakeGarbageCollected<RunTaskCallback>(BindRepeating(
+      MakeGarbageCollected<RunTaskCallback>(WTF::BindRepeating(
           [](ScriptedAnimationController* controller, bool* ran_callback) {
             EXPECT_TRUE(
                 controller->GetExecutionContext()->IsInRequestAnimationFrame());
             *ran_callback = true;
           },
-          WrapPersistent(&Controller()), Unretained(&ran_callback))));
+          WrapPersistent(&Controller()), WTF::Unretained(&ran_callback))));
 
   PageAnimator::ServiceScriptedAnimations(base::TimeTicks(),
                                           {{Controller(), false}});

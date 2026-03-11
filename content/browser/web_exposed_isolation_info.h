@@ -85,6 +85,7 @@ class CONTENT_EXPORT WebExposedIsolationInfo {
   const url::Origin& origin() const;
 
   bool operator==(const WebExposedIsolationInfo& b) const;
+  bool operator!=(const WebExposedIsolationInfo& b) const;
 
   // Non-isolated < Isolated < Isolated Application.
   //

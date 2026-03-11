@@ -7,7 +7,6 @@
 #include <optional>
 
 #include "base/test/trace_event_analyzer.h"
-#include "base/test/trace_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/css/css_style_rule.h"
 #include "third_party/blink/renderer/core/css/css_test_helpers.h"
@@ -43,10 +42,8 @@ static RuleSet* RuleSetFromSingleRule(Document& document, const String& text) {
   RuleSet* rule_set = MakeGarbageCollected<RuleSet>();
   MediaQueryEvaluator* medium =
       MakeGarbageCollected<MediaQueryEvaluator>(document.GetFrame());
-  RuleSet::ApplyMixinsStack apply_mixins_stack;
   rule_set->AddStyleRule(style_rule, /*parent_rule=*/nullptr, *medium,
-                         /*mixins=*/{}, kRuleHasNoSpecialState,
-                         apply_mixins_stack);
+                         kRuleHasNoSpecialState, /*within_mixin=*/false);
   rule_set->CompactRulesIfNeeded();
   return rule_set;
 }
@@ -273,11 +270,11 @@ TEST_F(ElementRuleCollectorTest, LinkMatchTypeHostContext) {
   ShadowRoot& unvisited_root =
       unvisited_host->AttachShadowRootForTesting(ShadowRootMode::kOpen);
 
-  visited_root.SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  visited_root.setInnerHTML(R"HTML(
     <style id=style></style>
     <div id=div></div>
   )HTML");
-  unvisited_root.SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  unvisited_root.setInnerHTML(R"HTML(
     <style id=style></style>
     <div id=div></div>
   )HTML");
@@ -357,13 +354,12 @@ TEST_F(ElementRuleCollectorTest, MatchesNonUniversalHighlights) {
     }
     MediaQueryEvaluator* medium =
         MakeGarbageCollected<MediaQueryEvaluator>(GetDocument().GetFrame());
-    RuleSet& rules = sheet->EnsureRuleSet(*medium, /*mixins=*/{});
+    RuleSet& rules = sheet->EnsureRuleSet(*medium);
     auto* rule = To<StyleRule>(CSSParser::ParseRule(
         sheet->ParserContext(), sheet, CSSNestingType::kNone,
         /*parent_rule_for_nesting=*/nullptr, selector + " { color: green }"));
-    RuleSet::ApplyMixinsStack apply_mixins_stack;
-    rules.AddStyleRule(rule, /*parent_rule=*/nullptr, *medium, /*mixins=*/{},
-                       kRuleHasNoSpecialState, apply_mixins_stack);
+    rules.AddStyleRule(rule, /*parent_rule=*/nullptr, *medium,
+                       kRuleHasNoSpecialState, /*within_mixin=*/false);
 
     MatchResult result;
     ElementResolveContext context{element};
@@ -572,14 +568,14 @@ TEST_F(ElementRuleCollectorTest, FindStyleRuleWithNesting) {
 
   RuleIndexList* foo_css_rules = GetMatchedCSSRuleList(foo, rule_set);
   ASSERT_EQ(2u, foo_css_rules->size());
-  CSSRule* foo_css_rule_1 = foo_css_rules->at(0).rule.Get();
+  CSSRule* foo_css_rule_1 = foo_css_rules->at(0).first;
   EXPECT_EQ("#foo", DynamicTo<CSSStyleRule>(foo_css_rule_1)->selectorText());
-  CSSRule* foo_css_rule_2 = foo_css_rules->at(1).rule.Get();
+  CSSRule* foo_css_rule_2 = foo_css_rules->at(1).first;
   EXPECT_EQ("&.a", DynamicTo<CSSStyleRule>(foo_css_rule_2)->selectorText());
 
   RuleIndexList* bar_css_rules = GetMatchedCSSRuleList(bar, rule_set);
   ASSERT_EQ(1u, bar_css_rules->size());
-  CSSRule* bar_css_rule_1 = bar_css_rules->at(0).rule.Get();
+  CSSRule* bar_css_rule_1 = bar_css_rules->at(0).first;
   EXPECT_EQ("& > .b", DynamicTo<CSSStyleRule>(bar_css_rule_1)->selectorText());
 }
 
@@ -735,8 +731,8 @@ CORE_EXPORT const CSSStyleSheet* FindStyleSheet(
     const Document& document,
     const StyleRule* rule);
 
-TEST_F(ElementRuleCollectorTest, FindStyleSheet) {
-  base::test::TracingEnvironment tracing_environment;
+TEST_F(ElementRuleCollectorTest, FindStyleSheetWithCacheEnabled) {
+  ScopedUseStyleRuleMapForSelectorStatsForTest scoped_feature_for_test(true);
   trace_analyzer::Start(
       TRACE_DISABLED_BY_DEFAULT("devtools.timeline.invalidationTracking"));
   InvalidationSetToSelectorMap::StartOrStopTrackingIfNeeded(
@@ -778,52 +774,37 @@ TEST_F(ElementRuleCollectorTest, FindStyleSheet) {
   EXPECT_FALSE(InvalidationSetToSelectorMap::IsTracking());
 }
 
-// https://crbug.com/416699692
-TEST_F(ElementRuleCollectorTest, TraceRuleIndexList) {
+TEST_F(ElementRuleCollectorTest, FindStyleSheetWithCacheDisabled) {
+  ScopedUseStyleRuleMapForSelectorStatsForTest scoped_feature_for_test(false);
+
   SetBodyInnerHTML(R"HTML(
-    <style id=style>
-      #e {
-        color: green;
-      }
+    <style id=target>
+      .a .b { color: red; }
     </style>
-    <thing id=e></thing>
   )HTML");
+
+  const CSSStyleSheet* author_sheet =
+      To<HTMLStyleElement>(GetElementById("target"))->sheet();
+  const StyleRule* author_rule =
+      To<StyleRule>(author_sheet->Contents()->ChildRules()[0].Get());
+  EXPECT_EQ(FindStyleSheet(&GetDocument(), GetDocument(), author_rule),
+            author_sheet);
+
+  StyleSheetContents* user_contents = MakeGarbageCollected<StyleSheetContents>(
+      MakeGarbageCollected<CSSParserContext>(GetDocument()));
+  user_contents->ParseString(".c .d { color: green; }");
+  StyleSheetKey user_key("user");
+  GetDocument().GetStyleEngine().InjectSheet(user_key, user_contents,
+                                             WebCssOrigin::kUser);
   UpdateAllLifecyclePhasesForTest();
+  const StyleRule* user_rule =
+      To<StyleRule>(user_contents->ChildRules()[0].Get());
+  EXPECT_EQ(FindStyleSheet(nullptr, GetDocument(), user_rule)->Contents(),
+            user_contents);
 
-  Persistent<RuleIndexList> rule_index_list;
-
-  // All of this stuff should go out of scope, except `rule_index_list`.
-  {
-    Element* sheet_element =
-        GetDocument().getElementById(AtomicString("style"));
-    ASSERT_TRUE(sheet_element);
-    CSSStyleSheet* sheet = To<HTMLStyleElement>(sheet_element)->sheet();
-    RuleSet* rule_set = &sheet->Contents()->GetRuleSet();
-    ASSERT_TRUE(rule_set);
-    Element* e = GetDocument().getElementById(AtomicString("e"));
-    ASSERT_TRUE(e);
-    rule_index_list = GetMatchedCSSRuleList(e, rule_set);
-  }
-
-  {
-    ASSERT_TRUE(rule_index_list);
-    ASSERT_EQ(1u, rule_index_list->size());
-    CSSRule* css_rule = rule_index_list->at(0).rule.Get();
-    ASSERT_TRUE(IsA<CSSStyleRule>(css_rule));
-    EXPECT_EQ("#e", DynamicTo<CSSStyleRule>(css_rule)->selectorText());
-  }
-
-  ThreadState::Current()->CollectAllGarbageForTesting();
-
-  // After collecting garbage, the objects reachable from `rule_index_list`
-  // must still be valid. (crbug.com/416699692)
-  {
-    ASSERT_TRUE(rule_index_list);
-    ASSERT_EQ(1u, rule_index_list->size());
-    CSSRule* css_rule = rule_index_list->at(0).rule.Get();
-    ASSERT_TRUE(IsA<CSSStyleRule>(css_rule));
-    EXPECT_EQ("#e", DynamicTo<CSSStyleRule>(css_rule)->selectorText());
-  }
+  const StyleRule* rule_not_in_sheet = To<StyleRule>(
+      css_test_helpers::ParseRule(GetDocument(), ".e .f { color: blue; }"));
+  EXPECT_EQ(FindStyleSheet(nullptr, GetDocument(), rule_not_in_sheet), nullptr);
 }
 
 }  // namespace blink

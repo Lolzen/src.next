@@ -51,6 +51,12 @@ bool ParseOptionsUrl(Extension* extension,
     return true;
   }
 
+  // Otherwise the options URL should be inside the extension.
+  if (GURL(url_string).is_valid()) {
+    *error = errors::kInvalidOptionsPageExpectUrlInPackage;
+    return false;
+  }
+
   GURL resource_url = extension->GetResourceURL(url_string);
   if (!resource_url.is_valid()) {
     *error = ErrorUtils::FormatErrorMessageUTF16(errors::kInvalidOptionsPage,
@@ -98,7 +104,7 @@ bool OptionsPageInfo::ShouldOpenInTab(const Extension* extension) {
 
 std::unique_ptr<OptionsPageInfo> OptionsPageInfo::Create(
     Extension* extension,
-    const base::DictValue* options_ui_dict,
+    const base::Value::Dict* options_ui_dict,
     const std::string& options_page_string,
     std::vector<InstallWarning>* install_warnings,
     std::u16string* error) {
@@ -168,7 +174,7 @@ bool OptionsPageHandler::Parse(Extension* extension, std::u16string* error) {
     options_page_string = temp->GetString();
   }
 
-  const base::DictValue* options_ui_dict =
+  const base::Value::Dict* options_ui_dict =
       manifest->FindDictPath(keys::kOptionsUI);
 
   std::unique_ptr<OptionsPageInfo> info =
@@ -183,19 +189,19 @@ bool OptionsPageHandler::Parse(Extension* extension, std::u16string* error) {
   return true;
 }
 
-bool OptionsPageHandler::Validate(const Extension& extension,
+bool OptionsPageHandler::Validate(const Extension* extension,
                                   std::string* error,
                                   std::vector<InstallWarning>* warnings) const {
   // Validate path to the options page.  Don't check the URL for hosted apps,
   // because they are expected to refer to an external URL.
-  if (!OptionsPageInfo::HasOptionsPage(&extension) ||
-      extension.is_hosted_app()) {
+  if (!OptionsPageInfo::HasOptionsPage(extension) ||
+      extension->is_hosted_app()) {
     return true;
   }
 
   base::FilePath options_path = file_util::ExtensionURLToRelativeFilePath(
-      OptionsPageInfo::GetOptionsPage(&extension));
-  base::FilePath path = extension.GetResource(options_path).GetFilePath();
+      OptionsPageInfo::GetOptionsPage(extension));
+  base::FilePath path = extension->GetResource(options_path).GetFilePath();
   if (path.empty() || !base::PathExists(path)) {
     *error = l10n_util::GetStringFUTF8(IDS_EXTENSION_LOAD_OPTIONS_PAGE_FAILED,
                                        options_path.LossyDisplayName());

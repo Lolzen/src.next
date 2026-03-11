@@ -96,7 +96,8 @@ public class SmartSelectionClient implements SelectionClient, UserData {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             mSmartSelectionEventProcessor = SmartSelectionEventProcessor.create(webContents);
         }
-        mNativeSmartSelectionClient = SmartSelectionClientJni.get().init(this, webContents);
+        mNativeSmartSelectionClient =
+                SmartSelectionClientJni.get().init(SmartSelectionClient.this, webContents);
     }
 
     @Initializer
@@ -133,7 +134,8 @@ public class SmartSelectionClient implements SelectionClient, UserData {
     @Override
     public void cancelAllRequests() {
         if (mNativeSmartSelectionClient != 0) {
-            SmartSelectionClientJni.get().cancelAllRequests(mNativeSmartSelectionClient);
+            SmartSelectionClientJni.get()
+                    .cancelAllRequests(mNativeSmartSelectionClient, SmartSelectionClient.this);
         }
 
         mProvider.cancelAllRequests();
@@ -166,7 +168,11 @@ public class SmartSelectionClient implements SelectionClient, UserData {
         }
 
         SmartSelectionClientJni.get()
-                .requestSurroundingText(mNativeSmartSelectionClient, NUM_EXTRA_CHARS, callbackData);
+                .requestSurroundingText(
+                        mNativeSmartSelectionClient,
+                        SmartSelectionClient.this,
+                        NUM_EXTRA_CHARS,
+                        callbackData);
     }
 
     @Override
@@ -221,11 +227,14 @@ public class SmartSelectionClient implements SelectionClient, UserData {
 
     @NativeMethods
     interface Natives {
-        long init(SmartSelectionClient self, WebContents webContents);
+        long init(SmartSelectionClient caller, WebContents webContents);
 
         void requestSurroundingText(
-                long nativeSmartSelectionClient, int numExtraCharacters, int callbackData);
+                long nativeSmartSelectionClient,
+                SmartSelectionClient caller,
+                int numExtraCharacters,
+                int callbackData);
 
-        void cancelAllRequests(long nativeSmartSelectionClient);
+        void cancelAllRequests(long nativeSmartSelectionClient, SmartSelectionClient caller);
     }
 }

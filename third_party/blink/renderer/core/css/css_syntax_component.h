@@ -7,7 +7,6 @@
 
 #include "third_party/blink/renderer/core/css/css_value.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -108,7 +107,7 @@ class CSSSyntaxComponent {
   String ToString() const {
     String result =
         (type_ == CSSSyntaxType::kIdent) ? string_ : blink::ToString(type_);
-    return StrCat({result, blink::ToString(repeat_)});
+    return result + blink::ToString(repeat_);
   }
 
  private:

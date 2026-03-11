@@ -19,7 +19,7 @@ class Origin;
 
 namespace extensions {
 
-// Determine whether or not a source came from an extension. `source` can link
+// Determine whether or not a source came from an extension. |source| can link
 // to a page or a script, and can be external (e.g., "http://www.google.com"),
 // extension-related (e.g., "chrome-extension://<extension_id>/background.js"),
 // or internal (e.g., "event_bindings" or "schemaUtils").
@@ -44,24 +44,6 @@ extern const char kAppMenuUtmSource[];
 extern const char kExtensionsMenuUtmSource[];
 // From the link in the sidebar in the chrome://extensions page.
 extern const char kExtensionsSidebarUtmSource[];
-// From the Extensions Zero State Promo custom action IPH.
-extern const char kCustomActionIphUtmSource[];
-// From the Extensions Zero State Promo, custom UI IPH, chips variant,
-// version 1.
-extern const char kCustomUiChipIphV1UtmSource[];
-// From the Extensions Zero State Promo, custom UI IPH, chips variant,
-// version 2.
-extern const char kCustomUiChipIphV2UtmSource[];
-// From the Extensions Zero State Promo, custom UI IPH, text link variant.
-extern const char kCustomUiChipIphV3UtmSource[];
-// From the Extensions Zero State Promo, custom UI IPH, text link variant.
-extern const char kCustomUiPlainLinkIphUtmSource[];
-// From the New Tab Page browser feature promo, single-promo variant.
-extern const char kNtpPromo1pUtmSource[];
-// From the New Tab Page browser feature promo, two-promo variant.
-extern const char kNtpPromo2pUtmSource[];
-// From the New Tab Page browser feature promo, setup-list variant.
-extern const char kNtpPromoSlUtmSource[];
 
 // Returns the URL prefix for the extension/apps gallery. Can be set via the
 // --apps-gallery-url switch. The URL returned will not contain a trailing
@@ -88,10 +70,6 @@ std::string GetWebstoreItemDetailURLPrefix();
 // etc.) about an extension from the webstore using the new itemSnippets API.
 GURL GetWebstoreItemSnippetURL(const extensions::ExtensionId& extension_id);
 
-// Returns the URL used to get the block status of queried extensions from the
-// webstore.
-GURL GetWebstoreBlockStatusURL();
-
 // Sets the itemSnippets API URL to `test_url`.
 base::AutoReset<const GURL*> SetItemSnippetURLForTesting(const GURL* test_url);
 
@@ -103,8 +81,8 @@ GURL GetDefaultWebstoreUpdateUrl();
 // have been overridden by a command line flag for testing purposes.
 GURL GetWebstoreUpdateUrl();
 
-// Returns the url to visit to report abuse for the given `extension_id`
-// and `referrer_id`.
+// Returns the url to visit to report abuse for the given |extension_id|
+// and |referrer_id|.
 GURL GetWebstoreReportAbuseUrl(const extensions::ExtensionId& extension_id,
                                const std::string& referrer_id);
 

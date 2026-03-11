@@ -60,12 +60,12 @@ TEST_P(ExtensionActionManagerTest, TestPopulateMissingValues_Icons) {
   // replaced because "128" can always be used in its place.
   scoped_refptr<const Extension> extension =
       ExtensionBuilder("Test Extension")
-          .SetManifestKey("icons", base::DictValue()
+          .SetManifestKey("icons", base::Value::Dict()
                                        .Set("48", "icon48.png")
                                        .Set("128", "icon128.png"))
           .SetManifestVersion(GetManifestVersionForActionType(GetParam()))
           .SetManifestKey(ActionInfo::GetManifestKeyForActionType(GetParam()),
-                          base::DictValue())
+                          base::Value::Dict())
           .Build();
 
   ASSERT_TRUE(extension);
@@ -86,7 +86,7 @@ TEST_P(ExtensionActionManagerTest, TestPopulateMissingValues_Title) {
       ExtensionBuilder("Test Extension")
           .SetManifestVersion(GetManifestVersionForActionType(GetParam()))
           .SetManifestKey(ActionInfo::GetManifestKeyForActionType(GetParam()),
-                          base::DictValue())
+                          base::Value::Dict())
           .Build();
 
   ASSERT_TRUE(extension);
@@ -105,11 +105,11 @@ TEST_P(ExtensionActionManagerTest, TestDontOverrideIfDefaultsProvided) {
   scoped_refptr<const Extension> extension =
       ExtensionBuilder("Test Extension")
           .SetManifestVersion(GetManifestVersionForActionType(GetParam()))
-          .SetManifestKey("icons", base::DictValue().Set("24", "icon24.png"))
+          .SetManifestKey("icons", base::Value::Dict().Set("24", "icon24.png"))
           .SetManifestKey(ActionInfo::GetManifestKeyForActionType(GetParam()),
-                          base::DictValue()
+                          base::Value::Dict()
                               .Set("default_icon",
-                                   base::DictValue().Set("19", "icon19.png"))
+                                   base::Value::Dict().Set("19", "icon19.png"))
                               .Set("default_title", "Action!"))
           .Build();
 

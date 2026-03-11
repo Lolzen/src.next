@@ -75,18 +75,43 @@ bool Screen::AreWebExposedScreenPropertiesEqual(
     return false;
   }
 
+  if (RuntimeEnabledFeatures::CanvasHDREnabled()) {
+    // (red|green|blue)Primary(X|Y) and whitePoint(X|Y).
+    const auto& prev_dcs = prev.display_color_spaces;
+    const auto& current_dcs = current.display_color_spaces;
+    if (prev_dcs.GetPrimaries() != current_dcs.GetPrimaries()) {
+      return false;
+    }
+
+    // highDynamicRangeHeadroom.
+    if (prev_dcs.GetHDRMaxLuminanceRelative() !=
+        current_dcs.GetHDRMaxLuminanceRelative()) {
+      return false;
+    }
+  }
+
   return true;
 }
 
 int Screen::height() const {
   if (!DomWindow())
     return 0;
+
+  if (ShouldReduceScreenSize()) {
+    return DomWindow()->innerHeight();
+  }
+
   return GetRect(/*available=*/false).height();
 }
 
 int Screen::width() const {
   if (!DomWindow())
     return 0;
+
+  if (ShouldReduceScreenSize()) {
+    return DomWindow()->innerWidth();
+  }
+
   return GetRect(/*available=*/false).width();
 }
 
@@ -97,7 +122,7 @@ unsigned Screen::colorDepth() const {
   // https://drafts.csswg.org/cssom-view/#dom-screen-colordepth
   unsigned unknown_color_depth = 24u;
 
-  if (!DomWindow()) {
+  if (!DomWindow() || ShouldReduceScreenSize()) {
     return unknown_color_depth;
   }
   return GetScreenInfo().depth == 0
@@ -112,24 +137,44 @@ unsigned Screen::pixelDepth() const {
 int Screen::availLeft() const {
   if (!DomWindow())
     return 0;
+
+  if (ShouldReduceScreenSize()) {
+    return 0;
+  }
+
   return GetRect(/*available=*/true).x();
 }
 
 int Screen::availTop() const {
   if (!DomWindow())
     return 0;
+
+  if (ShouldReduceScreenSize()) {
+    return 0;
+  }
+
   return GetRect(/*available=*/true).y();
 }
 
 int Screen::availHeight() const {
   if (!DomWindow())
     return 0;
+
+  if (ShouldReduceScreenSize()) {
+    return DomWindow()->innerHeight();
+  }
+
   return GetRect(/*available=*/true).height();
 }
 
 int Screen::availWidth() const {
   if (!DomWindow())
     return 0;
+
+  if (ShouldReduceScreenSize()) {
+    return DomWindow()->innerWidth();
+  }
+
   return GetRect(/*available=*/true).width();
 }
 
@@ -139,7 +184,7 @@ void Screen::Trace(Visitor* visitor) const {
   Supplementable<Screen>::Trace(visitor);
 }
 
-const AtomicString& Screen::InterfaceName() const {
+const WTF::AtomicString& Screen::InterfaceName() const {
   return event_target_names::kScreen;
 }
 
@@ -147,8 +192,14 @@ ExecutionContext* Screen::GetExecutionContext() const {
   return ExecutionContextClient::GetExecutionContext();
 }
 
+bool Screen::ShouldReduceScreenSize() const {
+  // TODO(408932088): Take the current state of the window management permission
+  // (`mojom::blink::PermissionName::WINDOW_MANAGEMENT`) into account here.
+  return RuntimeEnabledFeatures::ReduceScreenSizeEnabled();
+}
+
 bool Screen::isExtended() const {
-  if (!DomWindow()) {
+  if (!DomWindow() || ShouldReduceScreenSize()) {
     return false;
   }
   auto* context = GetExecutionContext();

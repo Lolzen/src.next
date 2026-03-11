@@ -141,8 +141,7 @@ TEST_P(PaintControllerPaintTest, FrameScrollingContents) {
           view_scroll_hit_test, gfx::Rect(0, 0, 800, 600)));
 
   GetDocument().View()->LayoutViewport()->SetScrollOffset(
-      ScrollOffset(0, 5000), mojom::blink::ScrollType::kProgrammatic,
-      cc::ScrollSourceType::kNone);
+      ScrollOffset(0, 5000), mojom::blink::ScrollType::kProgrammatic);
   UpdateAllLifecyclePhasesForTest();
 
   // html and div1 are out of the cull rect.
@@ -217,8 +216,7 @@ TEST_P(PaintControllerPaintTest, BlockScrollingNonLayeredContents) {
               container.FirstFragment().ContentsProperties())));
 
   container.GetScrollableArea()->SetScrollOffset(
-      ScrollOffset(4000, 4000), mojom::blink::ScrollType::kProgrammatic,
-      cc::ScrollSourceType::kNone);
+      ScrollOffset(4000, 4000), mojom::blink::ScrollType::kProgrammatic);
   UpdateAllLifecyclePhasesForTest();
 
   EXPECT_EQ(gfx::Rect(2000, 2000, 4400, 4400),

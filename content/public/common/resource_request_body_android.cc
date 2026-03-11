@@ -17,13 +17,13 @@
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "content/public/android/public_common_jni/ResourceRequestBody_jni.h"
 
-using base::android::JavaRef;
+using base::android::JavaParamRef;
 
 namespace content {
 
 namespace {
 
-static base::android::ScopedJavaLocalRef<jbyteArray>
+base::android::ScopedJavaLocalRef<jbyteArray>
 JNI_ResourceRequestBody_ConvertResourceRequestBodyToJavaArray(
     JNIEnv* env,
     const network::ResourceRequestBody& body) {
@@ -33,10 +33,10 @@ JNI_ResourceRequestBody_ConvertResourceRequestBodyToJavaArray(
 
 }  // namespace
 
-static base::android::ScopedJavaLocalRef<jbyteArray>
+base::android::ScopedJavaLocalRef<jbyteArray>
 JNI_ResourceRequestBody_CreateResourceRequestBodyFromBytes(
     JNIEnv* env,
-    const JavaRef<jbyteArray>& j_post_data) {
+    const JavaParamRef<jbyteArray>& j_post_data) {
   base::android::ScopedJavaLocalRef<jbyteArray> result;
   if (!j_post_data)
     return result;
@@ -68,7 +68,7 @@ ConvertResourceRequestBodyToJavaObject(
 scoped_refptr<network::ResourceRequestBody>
 ExtractResourceRequestBodyFromJavaObject(
     JNIEnv* env,
-    const base::android::JavaRef<jobject>& j_body) {
+    const base::android::JavaParamRef<jobject>& j_body) {
   if (!j_body)
     return nullptr;
 
@@ -84,5 +84,3 @@ ExtractResourceRequestBodyFromJavaObject(
 }
 
 }  // namespace content
-
-DEFINE_JNI(ResourceRequestBody)

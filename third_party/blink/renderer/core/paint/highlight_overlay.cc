@@ -133,6 +133,10 @@ bool HighlightLayer::operator==(const HighlightLayer& other) const {
   return type == other.type && name == other.name;
 }
 
+bool HighlightLayer::operator!=(const HighlightLayer& other) const {
+  return !operator==(other);
+}
+
 int8_t HighlightLayer::ComparePaintOrder(
     const HighlightLayer& other,
     const HighlightRegistry* registry) const {
@@ -160,6 +164,10 @@ HighlightRange::HighlightRange(unsigned from, unsigned to)
 
 bool HighlightRange::operator==(const HighlightRange& other) const {
   return from == other.from && to == other.to;
+}
+
+bool HighlightRange::operator!=(const HighlightRange& other) const {
+  return !operator==(other);
 }
 
 String HighlightRange::ToString() const {
@@ -223,6 +231,10 @@ bool HighlightEdge::operator==(const HighlightEdge& other) const {
          layer_type == other.layer_type && layer_index == other.layer_index;
 }
 
+bool HighlightEdge::operator!=(const HighlightEdge& other) const {
+  return !operator==(other);
+}
+
 HighlightDecoration::HighlightDecoration(HighlightLayerType type,
                                          uint16_t layer_index,
                                          HighlightRange range,
@@ -247,6 +259,10 @@ bool HighlightDecoration::operator==(const HighlightDecoration& other) const {
          range == other.range;
 }
 
+bool HighlightDecoration::operator!=(const HighlightDecoration& other) const {
+  return !operator==(other);
+}
+
 String HighlightBackground::ToString() const {
   StringBuilder result{};
   result.AppendNumber(layer_index);
@@ -262,6 +278,10 @@ bool HighlightBackground::operator==(const HighlightBackground& other) const {
          color == other.color;
 }
 
+bool HighlightBackground::operator!=(const HighlightBackground& other) const {
+  return !operator==(other);
+}
+
 String HighlightTextShadow::ToString() const {
   StringBuilder result{};
   result.AppendNumber(layer_index);
@@ -275,6 +295,10 @@ String HighlightTextShadow::ToString() const {
 bool HighlightTextShadow::operator==(const HighlightTextShadow& other) const {
   return type == other.type && layer_index == other.layer_index &&
          current_color == other.current_color;
+}
+
+bool HighlightTextShadow::operator!=(const HighlightTextShadow& other) const {
+  return !operator==(other);
 }
 
 HighlightPart::HighlightPart(HighlightLayerType type,
@@ -351,6 +375,10 @@ bool HighlightPart::operator==(const HighlightPart& other) const {
   return type == other.type && layer_index == other.layer_index &&
          range == other.range && decorations == other.decorations &&
          backgrounds == other.backgrounds && text_shadows == other.text_shadows;
+}
+
+bool HighlightPart::operator!=(const HighlightPart& other) const {
+  return !operator==(other);
 }
 
 HeapVector<HighlightLayer> HighlightOverlay::ComputeLayers(
@@ -433,7 +461,7 @@ HeapVector<HighlightLayer> HighlightOverlay::ComputeLayers(
         layers[i].type == HighlightLayerType::kSearchTextActiveMatch
             ? originating_style.HighlightData().SearchTextCurrent()
             : HighlightStyleUtils::HighlightPseudoStyle(
-                  originating_style, layers[i].PseudoId(),
+                  node, originating_style, layers[i].PseudoId(),
                   layers[i].PseudoArgument());
     layers[i].text_style = HighlightStyleUtils::HighlightPaintingStyle(
         document, originating_style, layers[i].style, node,
@@ -451,7 +479,6 @@ HeapVector<HighlightLayer> HighlightOverlay::ComputeLayers(
 
 Vector<HighlightEdge> HighlightOverlay::ComputeEdges(
     const Node* node,
-    const LayoutObject* layout_object,
     bool is_generated_text_fragment,
     std::optional<TextOffsetRange> dom_offsets,
     const HeapVector<HighlightLayer>& layers,
@@ -496,10 +523,8 @@ Vector<HighlightEdge> HighlightOverlay::ComputeEdges(
            target.empty() && search.empty())
         << "no marker can ever apply to fragment items with generated text";
   } else {
-    DCHECK(layout_object);
     DCHECK(dom_offsets);
-    MarkerRangeMappingContext mapping_context(*text_node, *layout_object,
-                                              *dom_offsets);
+    MarkerRangeMappingContext mapping_context(*text_node, *dom_offsets);
     for (const auto& marker : custom) {
       std::optional<TextOffsetRange> marker_offsets =
           mapping_context.GetTextContentOffsets(*marker);

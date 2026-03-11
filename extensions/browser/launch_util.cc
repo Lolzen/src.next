@@ -21,43 +21,39 @@ constexpr char kPrefLaunchType[] = "launchType";
 LaunchType GetLaunchType(const ExtensionPrefs* prefs,
                          const Extension* extension) {
   if (!extension) {
-    return LaunchType::kInvalid;
+    return LAUNCH_TYPE_INVALID;
   }
-  LaunchType result = LaunchType::kDefault;
+  LaunchType result = LAUNCH_TYPE_DEFAULT;
 
-  LaunchType value = GetLaunchTypePrefValue(prefs, extension->id());
-  if (value != LaunchType::kInvalid) {
-    result = value;
+  int value = GetLaunchTypePrefValue(prefs, extension->id());
+  if (value >= LAUNCH_TYPE_FIRST && value < NUM_LAUNCH_TYPES) {
+    result = static_cast<LaunchType>(value);
   }
 
   // Force hosted apps that are not locally installed to open in tabs.
   if (extension->is_hosted_app() &&
       !BookmarkAppIsLocallyInstalled(prefs, extension)) {
-    result = LaunchType::kRegular;
-  } else if (result == LaunchType::kPinned) {
-    result = LaunchType::kRegular;
-  } else if (result == LaunchType::kFullscreen) {
-    result = LaunchType::kWindow;
+    result = LAUNCH_TYPE_REGULAR;
+  } else if (result == LAUNCH_TYPE_PINNED) {
+    result = LAUNCH_TYPE_REGULAR;
+  } else if (result == LAUNCH_TYPE_FULLSCREEN) {
+    result = LAUNCH_TYPE_WINDOW;
   }
   return result;
 }
 
 LaunchType GetLaunchTypePrefValue(const ExtensionPrefs* prefs,
                                   const std::string& extension_id) {
-  int value;
-  if (prefs->ReadPrefAsInteger(extension_id, kPrefLaunchType, &value) &&
-      value >= static_cast<int>(LaunchType::kFirst) &&
-      value < static_cast<int>(LaunchType::kNumLaunchTypes)) {
-    return static_cast<LaunchType>(value);
-  }
-  return LaunchType::kInvalid;
+  int value = LAUNCH_TYPE_INVALID;
+  return prefs->ReadPrefAsInteger(extension_id, kPrefLaunchType, &value)
+             ? static_cast<LaunchType>(value)
+             : LAUNCH_TYPE_INVALID;
 }
 
 void SetLaunchTypePrefValue(content::BrowserContext* context,
                             const std::string& extension_id,
                             LaunchType launch_type) {
-  DCHECK(launch_type >= LaunchType::kFirst &&
-         launch_type < LaunchType::kNumLaunchTypes);
+  DCHECK(launch_type >= LAUNCH_TYPE_FIRST && launch_type < NUM_LAUNCH_TYPES);
 
   ExtensionPrefs::Get(context)->UpdateExtensionPref(
       extension_id, kPrefLaunchType,
@@ -67,7 +63,7 @@ void SetLaunchTypePrefValue(content::BrowserContext* context,
 bool LaunchesInWindow(content::BrowserContext* context,
                       const Extension* extension) {
   return GetLaunchType(ExtensionPrefs::Get(context), extension) ==
-         LaunchType::kWindow;
+         LAUNCH_TYPE_WINDOW;
 }
 
 }  // namespace extensions

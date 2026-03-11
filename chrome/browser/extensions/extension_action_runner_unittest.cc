@@ -13,6 +13,9 @@
 #include "base/memory/raw_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
+#include "chrome/browser/extensions/permissions/active_tab_permission_granter.h"
+#include "chrome/browser/extensions/permissions/permissions_updater.h"
+#include "chrome/browser/extensions/permissions/scripting_permissions_modifier.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
@@ -23,10 +26,6 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/navigation_simulator.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/browser/permissions/active_tab_permission_granter.h"
-#include "extensions/browser/permissions/permissions_updater.h"
-#include "extensions/browser/permissions/scripting_permissions_modifier.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/extension_features.h"
@@ -35,8 +34,6 @@
 #include "extensions/common/mojom/injection_type.mojom-shared.h"
 #include "extensions/common/mojom/run_location.mojom-shared.h"
 #include "extensions/common/user_script.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -109,13 +106,13 @@ const Extension* ExtensionActionRunnerUnitTest::AddExtension() {
   const ExtensionId kId = crx_file::id_util::GenerateId("all_hosts_extension");
   extension_ =
       ExtensionBuilder()
-          .SetManifest(base::DictValue()
+          .SetManifest(base::Value::Dict()
                            .Set("name", "all_hosts_extension")
                            .Set("description", "an extension")
                            .Set("manifest_version", 2)
                            .Set("version", "1.0.0")
-                           .Set("permissions",
-                                base::ListValue().Append(kAllHostsPermission)))
+                           .Set("permissions", base::Value::List().Append(
+                                                   kAllHostsPermission)))
           .SetLocation(mojom::ManifestLocation::kInternal)
           .SetID(kId)
           .Build();
@@ -205,7 +202,8 @@ void ExtensionActionRunnerUnitTest::TearDown() {
 // is allowed to run.
 TEST_F(ExtensionActionRunnerUnitTest, GrantTabPermissions) {
   ActiveTabPermissionGranter* active_tab_permission_granter =
-      ActiveTabPermissionGranter::FromWebContents(web_contents());
+      TabHelper::FromWebContents(web_contents())
+          ->active_tab_permission_granter();
   ASSERT_TRUE(active_tab_permission_granter);
 
   const Extension* extension = AddExtension();
@@ -257,7 +255,7 @@ TEST_F(ExtensionActionRunnerUnitTest, RequestPermissionAndExecute) {
   EXPECT_FALSE(RequiresUserConsent(extension));
 
   // Reloading and same-origin navigations shouldn't clear those permissions,
-  // and we shouldn't require user consent again.
+  // and we shouldn't require user constent again.
   content::NavigationSimulator::Reload(web_contents());
   EXPECT_FALSE(RequiresUserConsent(extension));
   NavigateAndCommit(GURL("https://www.google.com/foo"));
@@ -340,7 +338,8 @@ TEST_F(ExtensionActionRunnerUnitTest, ActiveScriptsUseActiveTabPermissions) {
   NavigateAndCommit(GURL("https://www.google.com"));
 
   ActiveTabPermissionGranter* active_tab_permission_granter =
-      ActiveTabPermissionGranter::FromWebContents(web_contents());
+      TabHelper::FromWebContents(web_contents())
+          ->active_tab_permission_granter();
   ASSERT_TRUE(active_tab_permission_granter);
   // Grant the extension active tab permissions. This normally happens, e.g.,
   // if the user clicks on a browser action.
@@ -363,7 +362,7 @@ TEST_F(ExtensionActionRunnerUnitTest, ActiveScriptsUseActiveTabPermissions) {
   NavigateAndCommit(GURL("https://yahoo.com"));
   EXPECT_TRUE(RequiresUserConsent(extension));
 
-  // Back to the original origin should also re-require consent.
+  // Back to the original origin should also re-require constent.
   NavigateAndCommit(GURL("https://www.google.com"));
   EXPECT_TRUE(RequiresUserConsent(extension));
 

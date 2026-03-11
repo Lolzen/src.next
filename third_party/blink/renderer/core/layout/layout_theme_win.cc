@@ -8,7 +8,6 @@
 
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/web_test_support.h"
-#include "ui/color/color_provider.h"
 
 namespace blink {
 

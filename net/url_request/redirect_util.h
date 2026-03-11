@@ -7,7 +7,6 @@
 
 #include <optional>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "base/memory/scoped_refptr.h"
@@ -39,7 +38,7 @@ class RedirectUtil {
   // cleared during the redirect.
   NET_EXPORT static void UpdateHttpRequest(
       const GURL& original_url,
-      std::string_view original_method,
+      const std::string& original_method,
       const RedirectInfo& redirect_info,
       const std::optional<std::vector<std::string>>& removed_headers,
       const std::optional<net::HttpRequestHeaders>& modified_headers,

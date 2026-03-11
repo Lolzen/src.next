@@ -7,7 +7,6 @@ package org.chromium.chrome.browser.omnibox;
 import android.net.Uri;
 import android.text.Spanned;
 import android.text.TextUtils;
-import android.util.Range;
 
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
@@ -22,20 +21,9 @@ import java.util.Set;
 /** Encapsulates all data that is necessary for the URL bar to display its contents. */
 @NullMarked
 public class UrlBarData {
-    /** The selection range that selects no text, and places the cursor at the end of input. */
-    public static final Range<Integer> SELECT_ALL = Range.create(0, Integer.MAX_VALUE);
-
-    /** The selection range encapsulating all the text. */
-    public static final Range<Integer> SELECT_END =
-            Range.create(Integer.MAX_VALUE, Integer.MAX_VALUE);
-
     /** The URL schemes that don't need to be displayed complete with path. */
     public static final Set<String> SCHEMES_TO_SPLIT =
-            Set.of(
-                    UrlConstants.BLOB_SCHEME,
-                    UrlConstants.DISTILLER_SCHEME,
-                    UrlConstants.HTTP_SCHEME,
-                    UrlConstants.HTTPS_SCHEME);
+            Set.of(UrlConstants.HTTP_SCHEME, UrlConstants.HTTPS_SCHEME, UrlConstants.BLOB_SCHEME);
 
     /**
      * URI schemes that ContentView can handle.
@@ -48,15 +36,14 @@ public class UrlBarData {
     private static final Set<String> ACCEPTED_SCHEMES =
             Set.of(
                     ContentUrlConstants.ABOUT_SCHEME,
-                    UrlConstants.CHROME_SCHEME,
                     UrlConstants.DATA_SCHEME,
-                    UrlConstants.DISTILLER_SCHEME,
                     UrlConstants.FILE_SCHEME,
                     UrlConstants.FTP_SCHEME,
                     UrlConstants.HTTP_SCHEME,
                     UrlConstants.HTTPS_SCHEME,
                     UrlConstants.INLINE_SCHEME,
-                    UrlConstants.JAVASCRIPT_SCHEME);
+                    UrlConstants.JAVASCRIPT_SCHEME,
+                    UrlConstants.CHROME_SCHEME);
 
     /** Represents an empty URL bar. */
     public static final UrlBarData EMPTY = create(null, "", 0, 0, null);

@@ -9,7 +9,6 @@
 
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
 #include "third_party/blink/renderer/core/css/css_syntax_definition.h"
-#include "third_party/blink/renderer/core/css/parser/css_parser_local_context.h"
 
 namespace blink {
 
@@ -18,15 +17,10 @@ class CORE_EXPORT CSSAttrType {
 
  public:
   static std::optional<CSSAttrType> Consume(CSSParserTokenStream&);
-  const CSSValue* Parse(StringView,
-                        const CSSParserContext&,
-                        CSSParserLocalContext&) const;
+  const CSSValue* Parse(StringView, const CSSParserContext&) const;
   static CSSAttrType GetDefaultValue();
   bool IsSyntax() const { return syntax_.has_value(); }
   bool IsString() const { return is_string_; }
-  bool IsNumber() const {
-    return dimension_unit_ == CSSPrimitiveValue::UnitType::kNumber;
-  }
   bool IsDimensionUnit() const { return dimension_unit_.has_value(); }
 
  private:

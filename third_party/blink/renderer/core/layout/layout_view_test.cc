@@ -62,7 +62,7 @@ TEST_F(LayoutViewTest, DisplayNoneFrame) {
   EXPECT_FALSE(view->CanHaveChildren());
   EXPECT_FALSE(frame_doc->documentElement()->GetComputedStyle());
 
-  frame_doc->body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  frame_doc->body()->setInnerHTML(R"HTML(
     <div id="div"></div>
   )HTML");
 
@@ -241,9 +241,7 @@ TEST_P(LayoutViewHitTestTest, BlockInInlineBelowBottom) {
 // See editing/pasteboard/drag-drop-list.html
 TEST_P(LayoutViewHitTestTest, BlockInInlineWithListItem) {
   LoadAhem();
-  InsertStyleElement(
-      "body { margin: 0px; font: 10px/15px Ahem; }"
-      "li { list-style-position : inside; }");
+  InsertStyleElement("body { margin: 0px; font: 10px/15px Ahem; }");
   SetBodyInnerHTML("<li id=target><span><div id=inner>abc</div></span>");
   const auto& target = *GetElementById("target");
   const auto& span = *target.firstChild();
@@ -1165,7 +1163,7 @@ TEST_P(LayoutViewHitTestTest, ScrolledBlockChildren) {
       "</div>");
 
   Element& sample = *GetElementById("sample");
-  sample.scrollToForTesting(0, 45);
+  sample.scrollTo(0, 45);
 
   const auto& text_4 = *To<Text>(GetElementById("four")->firstChild());
   const auto& text_5 = *To<Text>(GetElementById("five")->firstChild());
@@ -1205,7 +1203,7 @@ TEST_P(LayoutViewHitTestTest, ScrolledInlineChildren) {
   SetBodyInnerHTML("<div id=sample>012345678</div>");
 
   Element& sample = *GetElementById("sample");
-  sample.scrollToForTesting(20, 0);
+  sample.scrollTo(20, 0);
 
   const auto& text = *To<Text>(sample.firstChild());
 

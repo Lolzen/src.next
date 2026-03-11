@@ -6,13 +6,10 @@ package org.chromium.content.browser;
 
 import android.os.Bundle;
 
-import org.chromium.base.AconfigFlaggedApiDelegate;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.library_loader.LibraryProcessType;
-import org.chromium.build.BuildConfig;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
-import org.chromium.content_public.browser.ContentFeatureList;
 
 /** Implementation of the interface {@link ChildProcessCreationParams}. */
 @NullMarked
@@ -23,8 +20,6 @@ public class ChildProcessCreationParamsImpl {
             "org.chromium.content.app.PrivilegedProcessService";
     private static final String SANDBOXED_SERVICES_NAME =
             "org.chromium.content.app.SandboxedProcessService";
-    private static final String NATIVE_SANDBOXED_SERVICES_NAME =
-            "org.chromium.content.app.NativeOnlySandboxedProcessService";
 
     // Members should all be immutable to avoid worrying about thread safety.
     private static @Nullable String sPackageNameForPrivilegedService;
@@ -35,6 +30,8 @@ public class ChildProcessCreationParamsImpl {
     // Use only the explicit WebContents.setImportance signal, and ignore other implicit
     // signals in content.
     private static boolean sIgnoreVisibilityForImportance;
+    private static @Nullable String sPrivilegedServicesName;
+    private static @Nullable String sSandboxedServicesName;
 
     private static boolean sInitialized;
 
@@ -43,14 +40,20 @@ public class ChildProcessCreationParamsImpl {
     /** Set params. This should be called once on start up. */
     public static void set(
             String privilegedPackageName,
+            String privilegedServicesName,
             String sandboxedPackageName,
+            String sandboxedServicesName,
             boolean isExternalSandboxedService,
             int libraryProcessType,
             boolean bindToCallerCheck,
             boolean ignoreVisibilityForImportance) {
         assert !sInitialized;
         sPackageNameForPrivilegedService = privilegedPackageName;
+        sPrivilegedServicesName =
+                privilegedServicesName == null ? PRIVILEGED_SERVICES_NAME : privilegedServicesName;
         sPackageNameForSandboxedService = sandboxedPackageName;
+        sSandboxedServicesName =
+                sandboxedServicesName == null ? SANDBOXED_SERVICES_NAME : sandboxedServicesName;
         sIsSandboxedServiceExternal = isExternalSandboxedService;
         sLibraryProcessType = libraryProcessType;
         sBindToCallerCheck = bindToCallerCheck;
@@ -60,10 +63,6 @@ public class ChildProcessCreationParamsImpl {
 
     public static void addIntentExtras(Bundle extras) {
         if (sInitialized) extras.putInt(EXTRA_LIBRARY_PROCESS_TYPE, sLibraryProcessType);
-    }
-
-    public static int getLibraryProcessType() {
-        return sInitialized ? sLibraryProcessType : LibraryProcessType.PROCESS_CHILD;
     }
 
     public static String getPackageNameForPrivilegedService() {
@@ -95,30 +94,10 @@ public class ChildProcessCreationParamsImpl {
     }
 
     public static String getPrivilegedServicesName() {
-        return PRIVILEGED_SERVICES_NAME;
+        return sPrivilegedServicesName != null ? sPrivilegedServicesName : PRIVILEGED_SERVICES_NAME;
     }
 
     public static String getSandboxedServicesName() {
-        AconfigFlaggedApiDelegate delegate = AconfigFlaggedApiDelegate.getInstance();
-        if (delegate != null && delegate.areNativeOnlyServicesEnabled()) {
-            if (BuildConfig.JAVALESS_RENDERERS_AVAILABLE
-                    // Incremental install disables isolated processes, which are required for
-                    // javaless renderers.
-                    && !BuildConfig.IS_INCREMENTAL_INSTALL
-                    && ContentFeatureList.sJavalessRenderers.isEnabled()) {
-                return NATIVE_SANDBOXED_SERVICES_NAME;
-            }
-        }
-        return SANDBOXED_SERVICES_NAME;
-    }
-
-    public static @Nullable String getBackupSandboxedServicesName() {
-        // We only have a backup for javaless services, and only temporarily while native services
-        // are stabilizing. We should get rid of this once UMA stats show a low incidence of
-        // Android.ChildProcessConnection.FallbackService.
-        if (getSandboxedServicesName().equals(SANDBOXED_SERVICES_NAME)) {
-            return null;
-        }
-        return SANDBOXED_SERVICES_NAME;
+        return sSandboxedServicesName != null ? sSandboxedServicesName : SANDBOXED_SERVICES_NAME;
     }
 }

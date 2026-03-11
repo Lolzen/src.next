@@ -17,7 +17,6 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
-#include "third_party/perfetto/include/perfetto/tracing/track.h"
 
 namespace blink {
 
@@ -145,7 +144,7 @@ std::optional<base::TimeDelta> InteractiveDetector::GetFirstInputDelay() const {
   return page_event_times_.first_input_delay;
 }
 
-Vector<std::optional<base::TimeDelta>>
+WTF::Vector<std::optional<base::TimeDelta>>
 InteractiveDetector::GetFirstInputDelaysAfterBackForwardCacheRestore() const {
   return page_event_times_.first_input_delays_after_back_forward_cache_restore;
 }
@@ -254,26 +253,28 @@ void InteractiveDetector::HandleForInputDelay(
 
     if (delay > kFirstInputDelayTraceEventThreshold) {
       // Emit a trace event to highlight long first input delays.
-      TRACE_EVENT_BEGIN("latency", "Long First Input Delay",
-                        perfetto::NamedTrack("Long First Input Delay",
-                                             g_num_long_input_events),
-                        event_timestamp);
-      TRACE_EVENT_END("latency",
-                      perfetto::NamedTrack("Long First Input Delay",
-                                           g_num_long_input_events),
-                      event_timestamp + delay);
+      TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP0(
+          "latency", "Long First Input Delay",
+          TRACE_ID_WITH_SCOPE("Long First Input Delay",
+                              g_num_long_input_events),
+          event_timestamp);
+      TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
+          "latency", "Long First Input Delay",
+          TRACE_ID_WITH_SCOPE("Long First Input Delay",
+                              g_num_long_input_events),
+          event_timestamp + delay);
       g_num_long_input_events++;
     }
   } else if (delay > kInputDelayTraceEventThreshold) {
     // Emit a trace event to highlight long input delays from second input and
     // onwards.
-    TRACE_EVENT_BEGIN(
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP0(
         "latency", "Long Input Delay",
-        perfetto::NamedTrack("Long Input Delay", g_num_long_input_events),
+        TRACE_ID_WITH_SCOPE("Long Input Delay", g_num_long_input_events),
         event_timestamp);
-    TRACE_EVENT_END(
-        "latency",
-        perfetto::NamedTrack("Long Input Delay", g_num_long_input_events),
+    TRACE_EVENT_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
+        "latency", "Long Input Delay",
+        TRACE_ID_WITH_SCOPE("Long Input Delay", g_num_long_input_events),
         event_timestamp + delay);
     // Apply metadata on stack samples.
     base::ApplyMetadataToPastSamples(

@@ -157,25 +157,6 @@ bool IsPubliclyRoutableIPv6(const IPAddressBytes& ip_address) {
   return false;
 }
 
-bool ParseCIDRBlockCheckPrefix(const IPAddress& ip_address,
-                               std::string_view number_of_bits_literal,
-                               size_t* prefix_length_in_bits) {
-  // Parse the prefix length.
-  uint32_t number_of_bits;
-  if (!ParseUint32(number_of_bits_literal, ParseIntFormat::NON_NEGATIVE,
-                   &number_of_bits)) {
-    return false;
-  }
-
-  // Make sure the prefix length is in a valid range.
-  if (number_of_bits > ip_address.size() * 8) {
-    return false;
-  }
-
-  *prefix_length_in_bits = number_of_bits;
-  return true;
-}
-
 }  // namespace
 
 bool IPAddressBytes::operator<(const IPAddressBytes& other) const {
@@ -190,6 +171,10 @@ bool IPAddressBytes::operator<(const IPAddressBytes& other) const {
 
 bool IPAddressBytes::operator==(const IPAddressBytes& other) const {
   return std::ranges::equal(*this, other);
+}
+
+bool IPAddressBytes::operator!=(const IPAddressBytes& other) const {
+  return !(*this == other);
 }
 
 void IPAddressBytes::Append(base::span<const uint8_t> data) {
@@ -353,9 +338,9 @@ std::string IPAddress::ToString() const {
   url::StdStringCanonOutput output(&str);
 
   if (IsIPv4()) {
-    url::AppendIPv4Address(ip_address_.span(), &output);
+    url::AppendIPv4Address(ip_address_.span().data(), &output);
   } else if (IsIPv6()) {
-    url::AppendIPv6Address(ip_address_.span(), &output);
+    url::AppendIPv6Address(ip_address_.span().data(), &output);
   }
 
   output.Complete();
@@ -432,43 +417,28 @@ bool ParseCIDRBlock(std::string_view cidr_literal,
   // We expect CIDR notation to match one of these two templates:
   //   <IPv4-literal> "/" <number of bits>
   //   <IPv6-literal> "/" <number of bits>
+
   std::vector<std::string_view> parts = base::SplitStringPiece(
       cidr_literal, "/", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
-  if (parts.size() != 2) {
+  if (parts.size() != 2)
     return false;
-  }
 
   // Parse the IP address.
-  if (!ip_address->AssignFromIPLiteral(parts[0])) {
+  if (!ip_address->AssignFromIPLiteral(parts[0]))
+    return false;
+
+  // Parse the prefix length.
+  uint32_t number_of_bits;
+  if (!ParseUint32(parts[1], ParseIntFormat::NON_NEGATIVE, &number_of_bits)) {
     return false;
   }
 
-  return ParseCIDRBlockCheckPrefix(*ip_address, parts[1],
-                                   prefix_length_in_bits);
-}
+  // Make sure the prefix length is in a valid range.
+  if (number_of_bits > ip_address->size() * 8)
+    return false;
 
-std::optional<IPAddress> ParseCIDRBlockNonStandardURLFormat(
-    std::string_view cidr_literal,
-    size_t* prefix_length_in_bits) {
-  // We expect CIDR notation to match one of these two templates:
-  //   <IPv4-literal> "/" <number of bits>
-  //   [<IPv6-literal>] "/" <number of bits>
-  std::vector<std::string_view> parts = base::SplitStringPiece(
-      cidr_literal, "/", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
-  if (parts.size() != 2) {
-    return std::nullopt;
-  }
-
-  IPAddress ip_address;
-  if (!ParseURLHostnameToAddress(parts[0], &ip_address)) {
-    return std::nullopt;
-  }
-
-  if (ParseCIDRBlockCheckPrefix(ip_address, parts[1], prefix_length_in_bits)) {
-    return ip_address;
-  } else {
-    return std::nullopt;
-  }
+  *prefix_length_in_bits = number_of_bits;
+  return true;
 }
 
 bool ParseURLHostnameToAddress(std::string_view hostname,

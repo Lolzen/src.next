@@ -5,8 +5,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_PAGE_CONTAINER_LAYOUT_ALGORITHM_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_PAGE_CONTAINER_LAYOUT_ALGORITHM_H_
 
-#include <array>
-
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/counters_attachment_context.h"
 #include "third_party/blink/renderer/core/layout/block_node.h"
@@ -127,8 +125,7 @@ class CORE_EXPORT PageContainerLayoutAlgorithm
   };
 
   void LayoutPageBorderBox(LogicalSize containing_block_size,
-                           LogicalOffset target_offset,
-                           LayoutUnit safe_printable_inset_in_document_coords);
+                           LogicalOffset target_offset);
 
   void LayoutAllMarginBoxes(const BoxStrut& logical_margins);
 
@@ -143,8 +140,6 @@ class CORE_EXPORT PageContainerLayoutAlgorithm
   };
   typedef int EdgeAdjacency;
   bool IsAtTopEdge(EdgeAdjacency mask) const { return mask & TopEdge; }
-  bool IsAtRightEdge(EdgeAdjacency mask) const { return mask & RightEdge; }
-  bool IsAtBottomEdge(EdgeAdjacency mask) const { return mask & BottomEdge; }
   bool IsAtLeftEdge(EdgeAdjacency mask) const { return mask & LeftEdge; }
   bool IsAtHorizontalEdge(EdgeAdjacency mask) const {
     return mask & (LeftEdge | RightEdge);
@@ -228,10 +223,6 @@ class CORE_EXPORT PageContainerLayoutAlgorithm
                                   PhysicalSize child_size,
                                   PhysicalSize available_size,
                                   EdgeAdjacency) const;
-
-  void PrepareMarginBoxSpaceBuilder(LogicalSize available_size,
-                                    EdgeAdjacency,
-                                    ConstraintSpaceBuilder*);
 
   // The current page being laid out.
   wtf_size_t page_index_;

@@ -73,7 +73,7 @@ UnacceleratedStaticBitmapImage::~UnacceleratedStaticBitmapImage() {
   }
 }
 
-bool UnacceleratedStaticBitmapImage::IsOpaque() {
+bool UnacceleratedStaticBitmapImage::CurrentFrameKnownToBeOpaque() {
   return paint_image_.IsOpaque();
 }
 
@@ -107,7 +107,7 @@ void UnacceleratedStaticBitmapImage::Transfer() {
 }
 
 bool UnacceleratedStaticBitmapImage::CopyToResourceProvider(
-    CanvasNon2DResourceProviderSharedImage* resource_provider,
+    CanvasResourceProvider* resource_provider,
     const gfx::Rect& copy_rect) {
   DCHECK(resource_provider);
 
@@ -142,8 +142,9 @@ bool UnacceleratedStaticBitmapImage::CopyToResourceProvider(
     base::span<uint8_t> dest_data(dest_pixels);
     for (size_t dst_y = 0; dst_y < dest_height;
          ++dst_y, src_offset += source_row_bytes) {
-      dest_data.take_first(dest_row_bytes)
-          .copy_from(pixels.subspan(src_offset, dest_row_bytes));
+      auto [dest_line, rest] = dest_data.split_at(dest_row_bytes);
+      dest_line.copy_from(pixels.subspan(src_offset, dest_row_bytes));
+      dest_data = rest;
     }
     pixels = dest_pixels;
   }

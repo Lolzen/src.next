@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "base/logging.h"
 
 #include <sstream>
@@ -9,12 +14,10 @@
 #include <string_view>
 
 #include "base/command_line.h"
-#include "base/compiler_specific.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
-#include "base/logging/logging_settings.h"
 #include "base/no_destructor.h"
 #include "base/process/process.h"
 #include "base/run_loop.h"
@@ -80,15 +83,14 @@ class LoggingTest : public testing::Test {
 
 class MockLogSource {
  public:
-  MOCK_METHOD(const char*, Log, ());
+  MOCK_METHOD0(Log, const char*());
 };
 
 class MockLogAssertHandler {
  public:
-  MOCK_METHOD(
-      void,
+  MOCK_METHOD4(
       HandleLogAssert,
-      (const char*, int, const std::string_view, const std::string_view));
+      void(const char*, int, const std::string_view, const std::string_view));
 };
 
 TEST_F(LoggingTest, BasicLogging) {
@@ -360,7 +362,7 @@ TEST_F(LoggingTest, DuplicateLogFile) {
   FILE* log_file_dup = DuplicateLogFILE();
   CHECK(log_file_dup);
   CloseLogFile();
-  UNSAFE_TODO(fprintf(log_file_dup, "%s\n", kErrorLogMessage2));
+  fprintf(log_file_dup, "%s\n", kErrorLogMessage2);
   fflush(log_file_dup);
 
   // Check the messages were written to the log file.
@@ -573,7 +575,7 @@ TEST_F(LoggingTest, CheckCausesDistinctBreakpoints) {
   ASSERT_NE(child_crash_addr_2, child_crash_addr_3);
 #endif  // defined(OFFICIAL_BUILD)
 }
-#elif BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_IOS) && \
+#elif BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL) && !BUILDFLAG(IS_IOS) && \
     (defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM_FAMILY))
 
 int g_child_crash_pipe;

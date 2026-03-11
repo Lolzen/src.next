@@ -14,17 +14,16 @@
 
 namespace blink {
 
-constexpr const char* kUniversalStr[] = {"*", "* ", "*\r\n", "*\f",
-                                         "*\n\t\r\f"};
+const char* kUniversalStr[] = {"*", "* ", "*\r\n", "*\f", "*\n\t\r\f"};
 
-constexpr const char* kValidSyntaxStr[] = {"<number>+",
-                                           "<length> | <percentage>#",
-                                           "ident | <angle>+ | ident#",
-                                           "<time> | time",
-                                           "<angle>",
-                                           "<number>",
-                                           "ident"};
-constexpr const char* kInvalidSyntaxStr[] = {
+const char* kValidSyntaxStr[] = {"<number>+",
+                                 "<length> | <percentage>#",
+                                 "ident | <angle>+ | ident#",
+                                 "<time> | time",
+                                 "<angle>",
+                                 "<number>",
+                                 "ident"};
+const char* kInvalidSyntaxStr[] = {
     "",  "<transform-list>+", "[abc]", ")",        "<abc>", "<abc",
     "+", "< number>",         "! ",    "<number >"};
 
@@ -251,7 +250,7 @@ TEST_P(SyntaxStreamAndSyntaxStringComparisonTest, TestEquality) {
 
 namespace {
 
-constexpr const char* kValidComponentData[] = {
+const char* kValidComponentData[] = {
     // clang-format off
     "auto",
     "<angle>",
@@ -297,7 +296,7 @@ TEST_P(ValidComponentTest, All) {
 
 namespace {
 
-constexpr const char* kInvalidComponentData[] = {
+const char* kInvalidComponentData[] = {
     // clang-format off
     "*",
     "<angle>++",

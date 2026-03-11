@@ -92,21 +92,9 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
                       WebScopedVirtualTimePauser&,
                       ResourceType) override;
 
-  void FillInitiatorInfo(FetchInitiatorInfo& initiator_info) override;
-
   void AddResourceTiming(mojom::blink::ResourceTimingInfoPtr,
                          const AtomicString& initiator_type) override;
   bool AllowImage() const override;
-
-  void CheckGuardrailsPolicyForAssetSize(GuardrailPolicyAssetType asset_type,
-                                         size_t bytes,
-                                         const KURL& url) override;
-
-  void CheckGuardrailsPolicyForRequest(
-      ResourceType resource_type,
-      mojom::blink::RequestContextType request_context,
-      const ResourceResponse& response,
-      const KURL& url) override;
 
   void ModifyRequestForMixedContentUpgrade(ResourceRequest&) override;
 
@@ -122,7 +110,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
       ResourceRequest&,
       const ResourceLoaderOptions&) override;
 
-  bool StartSpeculativeImageDecode(Resource* resource) override;
+  bool StartSpeculativeImageDecode(Resource* resource,
+                                   base::OnceClosure callback) override;
 
   bool IsPrerendering() const override;
 
@@ -144,9 +133,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
       const ResourceRequestHead& resource_request,
       base::optional_ref<const KURL> alias_url,
       ResourceType type,
-      const FetchInitiatorInfo& initiator_info,
-      bool scan_stack_for_ads,
-      subresource_filter::ScopedRule* out_rule) override;
+      const FetchInitiatorInfo& initiator_info) override;
 
   // LoadingBehaviorObserver overrides:
   void DidObserveLoadingBehavior(LoadingBehaviorFlag) override;
@@ -219,8 +206,6 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
   void AddCSPHashReport(
       const String& url,
       const HashMap<HashAlgorithm, String>& integrity_hashes) override;
-  String GetSVGCacheIdentifier() const override;
-
   const ClientHintsPreferences GetClientHintsPreferences() const;
   float GetDevicePixelRatio() const;
   String GetReducedAcceptLanguage() const;

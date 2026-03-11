@@ -65,11 +65,8 @@ enum DisableReason {
   // never actually write this to prefs. This is used to indicate (at runtime)
   // that unknown reasons are present in the prefs.
   DISABLE_UNKNOWN = 1 << 25,
-  // Disabled because the extension failed cloud policy-related checks. See also
-  // ExtensionInstallCloudPolicyChecksEnabled policy.
-  DISABLE_BLOCKED_BY_CLOUD_POLICY_CHECK = 1 << 26,
   // This should always be the last value.
-  DISABLE_REASON_LAST = 1LL << 27,
+  DISABLE_REASON_LAST = 1LL << 26,
 };
 
 static_assert(DISABLE_REASON_LAST - 1 <= std::numeric_limits<int>::max(),

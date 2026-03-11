@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/apps/app_service/app_launch_params.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/apps/app_service/browser_app_launcher.h"
+#include "chrome/browser/extensions/chrome_extension_test_notification_observer.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_browsertest_platform_delegate.h"
 #include "chrome/browser/profiles/profile.h"
@@ -12,7 +14,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/services/app_service/public/cpp/app_launch_params.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/test/browser_test_utils.h"
 
@@ -64,6 +65,20 @@ const Extension* ExtensionBrowserTestPlatformDelegate::LoadAndLaunchApp(
   app_loaded_observer.Wait();
 
   return app;
+}
+
+bool ExtensionBrowserTestPlatformDelegate::WaitForPageActionVisibilityChangeTo(
+    int count) {
+  // Note: It's okay if the visibility is already at `count` (i.e., that we're
+  // constructing this observer "late"); the observer handles that case
+  // gracefully.
+  std::unique_ptr<ChromeExtensionTestNotificationObserver> observer =
+      parent_->browser()
+          ? std::make_unique<ChromeExtensionTestNotificationObserver>(
+                parent_->browser())
+          : std::make_unique<ChromeExtensionTestNotificationObserver>(
+                GetProfile());
+  return observer->WaitForPageActionVisibilityChangeTo(count);
 }
 
 }  // namespace extensions

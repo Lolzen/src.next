@@ -23,12 +23,13 @@ CSSFontFeatureValuesRule::~CSSFontFeatureValuesRule() = default;
 void CSSFontFeatureValuesRule::setFontFamily(const String& font_family) {
   CSSStyleSheet::RuleMutationScope mutation_scope(this);
 
-  Vector<StringView> families = StringView(font_family).SplitSkippingEmpty(',');
+  Vector<String> families;
+  font_family.Split(",", families);
 
   Vector<AtomicString> filtered_families;
-  filtered_families.ReserveInitialCapacity(families.size());
-  for (const auto& family : families) {
-    StringView stripped = family.StripWhiteSpace();
+
+  for (auto family : families) {
+    String stripped = family.StripWhiteSpace();
     if (!stripped.empty()) {
       filtered_families.push_back(AtomicString(stripped));
     }
@@ -120,11 +121,6 @@ void CSSFontFeatureValuesRule::Reattach(StyleRuleBase* rule) {
 void CSSFontFeatureValuesRule::Trace(blink::Visitor* visitor) const {
   visitor->Trace(font_feature_values_rule_);
   CSSRule::Trace(visitor);
-}
-
-const StyleRuleFontFeatureValues*
-CSSFontFeatureValuesRule::FontFeatureValues() {
-  return font_feature_values_rule_.Get();
 }
 
 }  // namespace blink

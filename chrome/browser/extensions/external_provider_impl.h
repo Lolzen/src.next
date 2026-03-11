@@ -35,11 +35,11 @@ namespace extensions {
 // their entire life on the UI thread.
 class ExternalProviderImpl : public ExternalProviderInterface {
  public:
-  // The constructed provider will provide the extensions loaded from `loader`
-  // to `service`, that will deal with the installation. The location
+  // The constructed provider will provide the extensions loaded from |loader|
+  // to |service|, that will deal with the installation. The location
   // attributes of the provided extensions are also specified here:
-  // `crx_location`: extensions originating from crx files
-  // `download_location`: extensions originating from update URLs
+  // |crx_location|: extensions originating from crx files
+  // |download_location|: extensions originating from update URLs
   // If either of the origins is not supported by this provider, then it should
   // be initialized as mojom::ManifestLocation::kInvalidLocation.
   ExternalProviderImpl(VisitorInterface* service,
@@ -74,8 +74,8 @@ class ExternalProviderImpl : public ExternalProviderInterface {
 
   bool IsReady() const override;
   void TriggerOnExternalExtensionFound() override;
-  void SetPrefs(base::DictValue prefs) override;
-  void UpdatePrefs(base::DictValue prefs) override;
+  void SetPrefs(base::Value::Dict prefs) override;
+  void UpdatePrefs(base::Value::Dict prefs) override;
 
   static const char kExternalCrx[];
   static const char kExternalVersion[];
@@ -102,12 +102,12 @@ class ExternalProviderImpl : public ExternalProviderInterface {
   void set_allow_updates(bool allow_updates) { allow_updates_ = allow_updates; }
 
  private:
-  bool HandleMinProfileVersion(const base::DictValue& extension,
+  bool HandleMinProfileVersion(const base::Value::Dict& extension,
                                const std::string& extension_id,
                                std::set<std::string>* unsupported_extensions);
 
   bool HandleDoNotInstallForEnterprise(
-      const base::DictValue& extension,
+      const base::Value::Dict& extension,
       const std::string& extension_id,
       std::set<std::string>* unsupported_extensions);
 
@@ -133,18 +133,18 @@ class ExternalProviderImpl : public ExternalProviderInterface {
   raw_ptr<VisitorInterface> service_;  // weak
 
   // Dict of the external extensions that are provided by this provider.
-  std::optional<base::DictValue> prefs_;
+  std::optional<base::Value::Dict> prefs_;
 
   // Indicates that the extensions provided by this provider are loaded
   // entirely.
   bool ready_ = false;
 
   // The loader that loads the list of external extensions and reports them
-  // via `SetPrefs`.
+  // via |SetPrefs|.
   scoped_refptr<ExternalLoader> loader_;
 
   // The profile that will be used to install external extensions.
-  const raw_ptr<Profile> profile_;
+  const raw_ptr<Profile, DanglingUntriaged> profile_;
 
   // Creation flags to use for the extension.  These flags will be used
   // when calling Extension::Create() by the crx installer.

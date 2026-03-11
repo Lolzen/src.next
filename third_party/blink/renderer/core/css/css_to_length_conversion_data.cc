@@ -57,8 +57,7 @@ std::optional<double> FindSizeForContainerAxis(
   const TreeScope* tree_scope = nullptr;
   if (container_name) {
     selector = ContainerSelector(container_name->GetName(), requested_axis,
-                                 kLogicalAxesNone, /*scroll_state=*/false,
-                                 /*anchored_query=*/false);
+                                 kLogicalAxesNone, /* scroll_state */ false);
     tree_scope = container_name->GetTreeScope();
   } else {
     selector = ContainerSelector(requested_axis);
@@ -307,7 +306,7 @@ std::optional<double> CSSToLengthConversionData::ContainerSizes::FindNamedSize(
 
 CSSToLengthConversionData::AnchorData::AnchorData(
     AnchorEvaluator* evaluator,
-    const StylePositionAnchor& position_anchor,
+    const ScopedCSSName* position_anchor,
     const std::optional<PositionAreaOffsets>& position_area_offsets)
     : evaluator_(evaluator),
       position_anchor_(position_anchor),
@@ -577,10 +576,6 @@ void CSSToLengthConversionData::ReferenceAnchor() const {
 
 void CSSToLengthConversionData::ReferenceSibling() const {
   SetFlag(Flag::kSiblingRelative);
-}
-
-void CSSToLengthConversionData::ReferenceElementDependentRandom() const {
-  SetFlag(Flag::kElementDependentRandom);
 }
 
 }  // namespace blink

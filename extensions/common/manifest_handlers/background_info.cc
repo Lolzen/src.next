@@ -36,6 +36,10 @@ namespace errors = manifest_errors;
 
 namespace {
 
+BASE_FEATURE(kValidateBackgroundScriptMimeType,
+             "ValidateBackgroundScriptMimeType",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 const char kBackground[] = "background";
 
 static base::LazyInstance<BackgroundInfo>::DestructorAtExit
@@ -69,11 +73,11 @@ GURL BackgroundInfo::GetBackgroundURL(const Extension* extension) {
 }
 
 // static
-const GURL& BackgroundInfo::GetBackgroundServiceWorkerScriptURL(
+const std::string& BackgroundInfo::GetBackgroundServiceWorkerScript(
     const Extension* extension) {
   const BackgroundInfo& info = GetBackgroundInfo(extension);
-  DCHECK(info.background_service_worker_script_url_.has_value());
-  return *info.background_service_worker_script_url_;
+  DCHECK(info.background_service_worker_script_.has_value());
+  return *info.background_service_worker_script_;
 }
 
 // static
@@ -84,7 +88,7 @@ BackgroundServiceWorkerType BackgroundInfo::GetBackgroundServiceWorkerType(
 }
 
 // static
-const std::vector<ExtensionResource>& BackgroundInfo::GetBackgroundScripts(
+const std::vector<std::string>& BackgroundInfo::GetBackgroundScripts(
     const Extension* extension) {
   return GetBackgroundInfo(extension).background_scripts_;
 }
@@ -118,7 +122,7 @@ bool BackgroundInfo::AllowJSAccess(const Extension* extension) {
 // static
 bool BackgroundInfo::IsServiceWorkerBased(const Extension* extension) {
   return GetBackgroundInfo(extension)
-      .background_service_worker_script_url_.has_value();
+      .background_service_worker_script_.has_value();
 }
 
 bool BackgroundInfo::Parse(Extension* extension, std::u16string* error) {
@@ -135,7 +139,7 @@ bool BackgroundInfo::Parse(Extension* extension, std::u16string* error) {
   int background_solution_sum =
       (background_url_.is_valid() ? 1 : 0) +
       (!background_scripts_.empty() ? 1 : 0) +
-      (background_service_worker_script_url_.has_value() ? 1 : 0);
+      (background_service_worker_script_.has_value() ? 1 : 0);
   if (background_solution_sum > 1) {
     *error = errors::kInvalidBackgroundCombination;
     return false;
@@ -159,7 +163,7 @@ bool BackgroundInfo::LoadBackgroundScripts(Extension* extension,
     return false;
   }
 
-  const base::ListValue& background_scripts =
+  const base::Value::List& background_scripts =
       background_scripts_value->GetList();
   for (size_t i = 0; i < background_scripts.size(); ++i) {
     if (!background_scripts[i].is_string()) {
@@ -168,18 +172,15 @@ bool BackgroundInfo::LoadBackgroundScripts(Extension* extension,
       return false;
     }
 
-    ExtensionResource background_script =
-        extension->GetResource(background_scripts[i].GetString());
-    if (background_script.empty()) {
-      *error = ErrorUtils::FormatErrorMessageUTF16(
-          errors::kInvalidBackgroundScript, base::NumberToString(i));
-      return false;
-    }
+    const std::string& background_script = background_scripts[i].GetString();
 
     std::string mime_type;
-    if (!net::GetWellKnownMimeTypeFromFile(background_script.relative_path(),
-                                           &mime_type) ||
-        !blink::IsSupportedJavascriptMimeType(mime_type)) {
+    // TODO(https://crbug.com/40059598): Remove this if-check and always
+    // validate the mime type in M139.
+    if (base::FeatureList::IsEnabled(kValidateBackgroundScriptMimeType) &&
+        (!net::GetWellKnownMimeTypeFromFile(
+             base::FilePath::FromUTF8Unsafe(background_script), &mime_type) ||
+         !blink::IsSupportedJavascriptMimeType(mime_type))) {
       // Issue a warning and ignore this file. This is a warning and not a
       // hard-error to preserve both backwards compatibility and potential
       // future-compatibility if mime types change.
@@ -191,7 +192,7 @@ bool BackgroundInfo::LoadBackgroundScripts(Extension* extension,
       continue;
     }
 
-    background_scripts_.push_back(std::move(background_script));
+    background_scripts_.push_back(background_script);
   }
 
   return true;
@@ -235,10 +236,6 @@ bool BackgroundInfo::LoadBackgroundPage(const Extension* extension,
     }
   } else {
     background_url_ = extension->GetResourceURL(background_str);
-    if (!background_url_.is_valid()) {
-      *error = errors::kInvalidBackground;
-      return false;
-    }
   }
 
   return true;
@@ -259,12 +256,7 @@ bool BackgroundInfo::LoadBackgroundServiceWorkerScript(
     return false;
   }
 
-  background_service_worker_script_url_ =
-      extension->GetResourceURL(scripts_value->GetString());
-  if (!background_service_worker_script_url_->is_valid()) {
-    *error = errors::kInvalidBackgroundServiceWorkerScript;
-    return false;
-  }
+  background_service_worker_script_ = scripts_value->GetString();
 
   const base::Value* scripts_type =
       extension->manifest()->FindPath(keys::kBackgroundServiceWorkerType);
@@ -380,32 +372,34 @@ bool BackgroundManifestHandler::Parse(Extension* extension,
 }
 
 bool BackgroundManifestHandler::Validate(
-    const Extension& extension,
+    const Extension* extension,
     std::string* error,
     std::vector<InstallWarning>* warnings) const {
   // Validate that background scripts exist.
-  const std::vector<ExtensionResource>& background_scripts =
-      BackgroundInfo::GetBackgroundScripts(&extension);
+  const std::vector<std::string>& background_scripts =
+      BackgroundInfo::GetBackgroundScripts(extension);
   for (const auto& background_script : background_scripts) {
-    base::FilePath path = background_script.GetFilePath();
-    if (path.empty() || !base::PathExists(path)) {
-      *error = l10n_util::GetStringFUTF8(
-          IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED,
-          background_script.relative_path().AsUTF16Unsafe());
+    if (!base::PathExists(
+            extension->GetResource(background_script).GetFilePath())) {
+      *error =
+          l10n_util::GetStringFUTF8(IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED,
+                                    base::UTF8ToUTF16(background_script));
       return false;
     }
   }
 
-  if (BackgroundInfo::IsServiceWorkerBased(&extension)) {
-    DCHECK(extension.is_extension() ||
-           extension.is_chromeos_system_extension() ||
-           extension.is_login_screen_extension());
-    base::FilePath path = file_util::ExtensionURLToAbsoluteFilePath(
-        extension,
-        BackgroundInfo::GetBackgroundServiceWorkerScriptURL(&extension));
-    if (path.empty() || !base::PathExists(path)) {
+  if (BackgroundInfo::IsServiceWorkerBased(extension)) {
+    DCHECK(extension->is_extension() ||
+           extension->is_chromeos_system_extension() ||
+           extension->is_login_screen_extension());
+    const std::string& background_service_worker_script =
+        BackgroundInfo::GetBackgroundServiceWorkerScript(extension);
+    if (!base::PathExists(
+            extension->GetResource(background_service_worker_script)
+                .GetFilePath())) {
       *error = l10n_util::GetStringFUTF8(
-          IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED, path.LossyDisplayName());
+          IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED,
+          base::UTF8ToUTF16(background_service_worker_script));
       return false;
     }
   }
@@ -413,22 +407,24 @@ bool BackgroundManifestHandler::Validate(
   // Validate background page location, except for hosted apps, which should use
   // an external URL. Background page for hosted apps are verified when the
   // extension is created (in Extension::InitFromValue)
-  if (BackgroundInfo::HasBackgroundPage(&extension) &&
-      !extension.is_hosted_app() && background_scripts.empty()) {
-    base::FilePath path = file_util::ExtensionURLToAbsoluteFilePath(
-        extension, BackgroundInfo::GetBackgroundURL(&extension));
+  if (BackgroundInfo::HasBackgroundPage(extension) &&
+      !extension->is_hosted_app() && background_scripts.empty()) {
+    base::FilePath page_path = file_util::ExtensionURLToRelativeFilePath(
+        BackgroundInfo::GetBackgroundURL(extension));
+    const base::FilePath path = extension->GetResource(page_path).GetFilePath();
     if (path.empty() || !base::PathExists(path)) {
-      *error = l10n_util::GetStringFUTF8(
-          IDS_EXTENSION_LOAD_BACKGROUND_PAGE_FAILED, path.LossyDisplayName());
+      *error =
+          l10n_util::GetStringFUTF8(IDS_EXTENSION_LOAD_BACKGROUND_PAGE_FAILED,
+                                    page_path.LossyDisplayName());
       return false;
     }
   }
 
-  if (extension.is_platform_app()) {
+  if (extension->is_platform_app()) {
     const std::string manifest_key =
         std::string(keys::kPlatformAppBackground) + ".persistent";
     // Validate that packaged apps do not use a persistent background page.
-    if (extension.manifest()->FindBoolPath(manifest_key).value_or(false)) {
+    if (extension->manifest()->FindBoolPath(manifest_key).value_or(false)) {
       warnings->emplace_back(errors::kInvalidBackgroundPersistentInPlatformApp);
     }
   }
@@ -437,7 +433,7 @@ bool BackgroundManifestHandler::Validate(
 }
 
 bool BackgroundManifestHandler::AlwaysParseForType(Manifest::Type type) const {
-  return type == Manifest::Type::kPlatformApp;
+  return type == Manifest::TYPE_PLATFORM_APP;
 }
 
 base::span<const char* const> BackgroundManifestHandler::Keys() const {

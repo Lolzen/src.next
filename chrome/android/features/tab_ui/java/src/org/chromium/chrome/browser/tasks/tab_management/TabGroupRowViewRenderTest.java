@@ -4,8 +4,6 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static com.google.common.truth.Truth.assertThat;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 
@@ -127,7 +125,7 @@ public class TabGroupRowViewRenderTest {
 
         LayoutInflater inflater = LayoutInflater.from(context);
         inflater.inflate(layoutRes, contentView);
-        assertThat(contentView.getChildCount()).isEqualTo(1);
+        assert contentView.getChildCount() == 1;
         return (T) contentView.getChildAt(0);
     }
 

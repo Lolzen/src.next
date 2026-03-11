@@ -4,7 +4,6 @@
 
 #include <optional>
 
-#include "base/values.h"
 #include "content/browser/back_forward_cache_browsertest.h"
 #include "content/browser/back_forward_cache_test_util.h"
 #include "content/browser/renderer_host/navigation_request.h"
@@ -592,7 +591,7 @@ IN_PROC_BROWSER_TEST_P(BackForwardCacheBrowserTestWithUpdatedNotRestoredReasons,
         EvalJs(
             new_tab_impl->GetPrimaryFrameTree().root()->current_frame_host(),
             "performance.getEntriesByType('navigation')[0].notRestoredReasons"),
-        base::Value());
+        nullptr);
     EXPECT_TRUE(new_tab_impl->GetPrimaryFrameTree()
                     .root()
                     ->current_frame_host()

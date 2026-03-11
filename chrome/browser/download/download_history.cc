@@ -35,6 +35,7 @@
 
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
+#include "base/not_fatal_until.h"
 #include "base/observer_list.h"
 #include "build/build_config.h"
 #include "chrome/browser/download/download_crx_util.h"
@@ -52,7 +53,7 @@
 #include "content/public/browser/storage_partition_config.h"
 #include "extensions/buildflags/buildflags.h"
 
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+#if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/api/downloads/downloads_api.h"
 #endif
 
@@ -143,7 +144,7 @@ const char DownloadHistoryData::kKey[] =
 
 history::DownloadRow GetDownloadRow(download::DownloadItem* item) {
   std::string by_ext_id, by_ext_name;
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+#if BUILDFLAG(ENABLE_EXTENSIONS)
   extensions::DownloadedByExtension* by_ext =
       extensions::DownloadedByExtension::Get(item);
   if (by_ext) {
@@ -209,7 +210,7 @@ ShouldUpdateHistoryResult ShouldUpdateHistory(
   // Chrome will write the http response data to a temporary file, and later
   // rename it. If Chrome is killed before committing the history here,
   // that temporary file will still get permanently left.
-  // See http://crbug.com/40493321.
+  // See http://crbug.com/664677.
   if (previous == nullptr || previous->current_path != current.current_path) {
     return ShouldUpdateHistoryResult::UPDATE_IMMEDIATELY;
   }
@@ -277,7 +278,7 @@ bool ShouldSkipLoadingDownload(const history::DownloadRow& row,
   if (file_path.empty())
     return false;
   auto iter = file_path_count->find(file_path);
-  CHECK(iter != file_path_count->end());
+  CHECK(iter != file_path_count->end(), base::NotFatalUntil::M130);
   --iter->second;
   if (iter->second < 1)
     return false;
@@ -443,7 +444,7 @@ void DownloadHistory::LoadHistoryDownloads(
     // modification, so that observers who care about the extra info may have an
     // updated view of the item.
     bool should_update_observers = false;
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+#if BUILDFLAG(ENABLE_EXTENSIONS)
     if (!row.by_ext_id.empty() && !row.by_ext_name.empty()) {
       new extensions::DownloadedByExtension(item, row.by_ext_id,
                                             row.by_ext_name);
@@ -657,7 +658,7 @@ void DownloadHistory::OnDownloadRestoredFromHistory(
 
 bool DownloadHistory::NeedToUpdateDownloadHistory(
     download::DownloadItem* item) {
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+#if BUILDFLAG(ENABLE_EXTENSIONS)
   // Always populate new extension downloads to history.
   DownloadHistoryData* data = DownloadHistoryData::Get(item);
   extensions::DownloadedByExtension* by_ext =

@@ -8,6 +8,7 @@
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/not_fatal_until.h"
 #include "base/supports_user_data.h"
 #include "base/types/optional_util.h"
 #include "build/build_config.h"
@@ -95,7 +96,7 @@ class BrowserContextData : public base::SupportsUserData::Data {
 
   void RemoveProxy(ProxyingURLLoaderFactory* proxy) {
     auto it = proxies_.find(proxy);
-    CHECK(it != proxies_.end());
+    CHECK(it != proxies_.end(), base::NotFatalUntil::M130);
     proxies_.erase(it);
   }
 
@@ -270,9 +271,12 @@ class ProxyingURLLoaderFactory::InProgressRequest::ProxyRequestAdapter
 class ProxyingURLLoaderFactory::InProgressRequest::ProxyResponseAdapter
     : public ResponseAdapter {
  public:
-  ProxyResponseAdapter(InProgressRequest& in_progress_request,
+  ProxyResponseAdapter(InProgressRequest* in_progress_request,
                        net::HttpResponseHeaders* headers)
-      : in_progress_request_(in_progress_request), headers_(headers) {}
+      : in_progress_request_(in_progress_request), headers_(headers) {
+    DCHECK(in_progress_request_);
+    DCHECK(headers_);
+  }
 
   ProxyResponseAdapter(const ProxyResponseAdapter&) = delete;
   ProxyResponseAdapter& operator=(const ProxyResponseAdapter&) = delete;
@@ -303,9 +307,7 @@ class ProxyingURLLoaderFactory::InProgressRequest::ProxyResponseAdapter
   }
 
   void RemoveHeader(const std::string& name) override {
-    if (headers_) {
-      headers_->RemoveHeader(name);
-    }
+    headers_->RemoveHeader(name);
   }
 
   base::SupportsUserData::Data* GetUserData(const void* key) const override {
@@ -319,7 +321,7 @@ class ProxyingURLLoaderFactory::InProgressRequest::ProxyResponseAdapter
   }
 
  private:
-  const raw_ref<InProgressRequest> in_progress_request_;
+  const raw_ptr<InProgressRequest> in_progress_request_;
   const raw_ptr<net::HttpResponseHeaders> headers_;
 };
 
@@ -421,7 +423,7 @@ void ProxyingURLLoaderFactory::InProgressRequest::OnReceiveResponse(
   // Even though |head| is const we can get a non-const pointer to the headers
   // and modifications we made are passed to the target client.
   {
-    ProxyResponseAdapter adapter(*this, head->headers.get());
+    ProxyResponseAdapter adapter(this, head->headers.get());
     factory_->delegate_->ProcessResponse(&adapter, GURL() /* redirect_url */);
     // The `adapter` must be destroyed before moving the `head` in the
     // `target_client_`.
@@ -436,7 +438,7 @@ void ProxyingURLLoaderFactory::InProgressRequest::OnReceiveRedirect(
   // Even though |head| is const we can get a non-const pointer to the headers
   // and modifications we made are passed to the target client.
   {
-    ProxyResponseAdapter adapter(*this, head->headers.get());
+    ProxyResponseAdapter adapter(this, head->headers.get());
     factory_->delegate_->ProcessResponse(&adapter, redirect_info.new_url);
     // The `adapter` must be destroyed before moving the `head` in the
     // `target_client_`.
@@ -574,7 +576,7 @@ void ProxyingURLLoaderFactory::OnProxyBindingError() {
 
 void ProxyingURLLoaderFactory::RemoveRequest(InProgressRequest* request) {
   auto it = requests_.find(request);
-  CHECK(it != requests_.end());
+  CHECK(it != requests_.end(), base::NotFatalUntil::M130);
   requests_.erase(it);
 
   MaybeDestroySelf();

@@ -10,8 +10,6 @@ import android.graphics.drawable.Drawable;
 import androidx.appcompat.content.res.AppCompatResources;
 
 import org.chromium.base.ResettersForTesting;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.bookmarks.BookmarkManagerOpenerImpl;
 import org.chromium.chrome.browser.bookmarks.BookmarkModel;
 import org.chromium.chrome.browser.bookmarks.BookmarkUtils;
@@ -20,14 +18,12 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiMetricsHelper.TabListEditorActionMetricGroups;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
 import org.chromium.chrome.tab_ui.R;
-import org.chromium.components.browser_ui.util.motion.MotionEventInfo;
 
 import java.util.List;
 
 /** Bookmark action for the {@link TabListEditorMenu}. */
-@NullMarked
 public class TabListEditorBookmarkAction extends TabListEditorAction {
-    private final Activity mActivity;
+    private Activity mActivity;
     private TabListEditorBookmarkActionDelegate mDelegate;
 
     /** Interface for passing params on bookmark action. */
@@ -44,7 +40,6 @@ public class TabListEditorBookmarkAction extends TabListEditorAction {
 
     /**
      * Create an action for bookmarking tabs.
-     *
      * @param activity for loading resources.
      * @param showMode whether to show an action view.
      * @param buttonType the type of the action view.
@@ -55,7 +50,7 @@ public class TabListEditorBookmarkAction extends TabListEditorAction {
             @ShowMode int showMode,
             @ButtonType int buttonType,
             @IconPosition int iconPosition) {
-        Drawable drawable = AppCompatResources.getDrawable(activity, R.drawable.ic_star_24dp);
+        Drawable drawable = AppCompatResources.getDrawable(activity, R.drawable.star_outline_24dp);
         TabListEditorBookmarkActionDelegate delegate =
                 new TabListEditorBookmarkActionDelegateImpl();
         return new TabListEditorBookmarkAction(
@@ -103,24 +98,22 @@ public class TabListEditorBookmarkAction extends TabListEditorAction {
     }
 
     @Override
-    public void onSelectionStateChange(List<TabListEditorItemSelectionId> itemIds) {
+    public void onSelectionStateChange(List<Integer> tabIds) {
         int size =
                 editorSupportsActionOnRelatedTabs()
-                        ? getTabCountIncludingRelatedTabs(getTabGroupModelFilter(), itemIds)
-                        : itemIds.size();
-        setEnabledAndItemCount(!itemIds.isEmpty(), size);
+                        ? getTabCountIncludingRelatedTabs(getTabGroupModelFilter(), tabIds)
+                        : tabIds.size();
+        setEnabledAndItemCount(!tabIds.isEmpty(), size);
     }
 
     @Override
-    public boolean performAction(
-            List<Tab> tabs,
-            List<String> tabGroupSyncIds,
-            @Nullable MotionEventInfo triggeringMotion) {
+    public boolean performAction(List<Tab> tabs) {
         assert !tabs.isEmpty() : "Bookmark action should not be enabled for no tabs.";
         SnackbarManager snackbarManager = getActionDelegate().getSnackbarManager();
         snackbarManager.dismissAllSnackbars();
 
         if (mDelegate != null) {
+            assert snackbarManager != null;
             mDelegate.bookmarkTabsAndShowSnackbar(mActivity, tabs, snackbarManager);
         }
         TabUiMetricsHelper.recordSelectionEditorActionMetrics(

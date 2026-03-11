@@ -7,7 +7,7 @@
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "chrome/browser/util/jni_headers/AfterStartupTaskUtils_jni.h"
 
-using jni_zero::JavaRef;
+using jni_zero::JavaParamRef;
 
 namespace android {
 
@@ -23,5 +23,3 @@ class AfterStartupTaskUtilsJNI {
 static void JNI_AfterStartupTaskUtils_SetStartupComplete(JNIEnv* env) {
   android::AfterStartupTaskUtilsJNI::SetBrowserStartupIsComplete();
 }
-
-DEFINE_JNI(AfterStartupTaskUtils)

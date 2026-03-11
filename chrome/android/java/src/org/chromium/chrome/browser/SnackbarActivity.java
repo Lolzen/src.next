@@ -4,14 +4,14 @@
 
 package org.chromium.chrome.browser;
 
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 
 import androidx.annotation.CallSuper;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager.SnackbarManageable;
 
@@ -22,7 +22,6 @@ import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager.Snackbar
  * For heavier Activities that show web content, use ChromeActivity instead to get asynchronous
  * loading of the native libraries.
  */
-@NullMarked
 public abstract class SnackbarActivity extends SynchronousInitializationActivity
         implements SnackbarManageable {
 
@@ -30,11 +29,13 @@ public abstract class SnackbarActivity extends SynchronousInitializationActivity
 
     @CallSuper
     @Override
-    protected void onCreateInternal(@Nullable Bundle savedInstanceState) {
+    protected void onCreateInternal(Bundle savedInstanceState) {
         super.onCreateInternal(savedInstanceState);
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O) {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        }
         // TODO(crbug.com/399495650): Add render tests for snackbar padding in edge-to-edge mode.
-        mSnackbarManager =
-                new SnackbarManager(this, getContentView(), null, null, getModalDialogManager());
+        mSnackbarManager = new SnackbarManager(this, getContentView(), null);
     }
 
     @Override

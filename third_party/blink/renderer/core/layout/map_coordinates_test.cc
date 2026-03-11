@@ -98,14 +98,6 @@ gfx::QuadF MapCoordinatesTest::MapAncestorToLocal(
   return object->AncestorToLocalQuad(ancestor, quad, mode);
 }
 
-namespace {
-
-inline LayoutBox* ParentBoxOf(const LayoutObject* object) {
-  return To<LayoutBox>(object->Parent());
-}
-
-}  // namespace
-
 TEST_F(MapCoordinatesTest, SimpleText) {
   SetBodyInnerHTML("<div id='container'><br>text</div>");
 
@@ -368,9 +360,9 @@ TEST_F(MapCoordinatesTest, FixedPos) {
   auto* target = GetLayoutBoxByElementId("target");
   auto* static_child = GetLayoutBoxByElementId("staticChild");
   auto* container = GetLayoutBoxByElementId("container");
-  LayoutBox* body = ParentBoxOf(container);
-  LayoutBox* html = ParentBoxOf(body);
-  LayoutBox* view = ParentBoxOf(html);
+  LayoutBox* body = container->ParentBox();
+  LayoutBox* html = body->ParentBox();
+  LayoutBox* view = html->ParentBox();
   ASSERT_TRUE(IsA<LayoutView>(view));
 
   PhysicalOffset mapped_point =
@@ -427,9 +419,9 @@ TEST_F(MapCoordinatesTest, FixedPosAuto) {
   auto* target = GetLayoutBoxByElementId("target");
   auto* static_child = GetLayoutBoxByElementId("staticChild");
   auto* container = GetLayoutBoxByElementId("container");
-  LayoutBox* body = ParentBoxOf(container);
-  LayoutBox* html = ParentBoxOf(body);
-  LayoutBox* view = ParentBoxOf(html);
+  LayoutBox* body = container->ParentBox();
+  LayoutBox* html = body->ParentBox();
+  LayoutBox* view = html->ParentBox();
   ASSERT_TRUE(IsA<LayoutView>(view));
 
   PhysicalOffset mapped_point =
@@ -491,9 +483,9 @@ TEST_F(MapCoordinatesTest, FixedPosInFixedPos) {
   auto* outer_fixed = GetLayoutBoxByElementId("outerFixed");
   auto* static_child = GetLayoutBoxByElementId("staticChild");
   auto* container = GetLayoutBoxByElementId("container");
-  LayoutBox* body = ParentBoxOf(container);
-  LayoutBox* html = ParentBoxOf(body);
-  LayoutBox* view = ParentBoxOf(html);
+  LayoutBox* body = container->ParentBox();
+  LayoutBox* html = body->ParentBox();
+  LayoutBox* view = html->ParentBox();
   ASSERT_TRUE(IsA<LayoutView>(view));
 
   PhysicalOffset mapped_point =
@@ -551,14 +543,13 @@ TEST_F(MapCoordinatesTest, FixedPosInFixedPosScrollView) {
 
   auto* target = GetLayoutBoxByElementId("target");
   auto* container = GetLayoutBoxByElementId("container");
-  LayoutBox* body = ParentBoxOf(container);
-  LayoutBox* html = ParentBoxOf(body);
-  LayoutBox* view = ParentBoxOf(html);
+  LayoutBox* body = container->ParentBox();
+  LayoutBox* html = body->ParentBox();
+  LayoutBox* view = html->ParentBox();
   ASSERT_TRUE(IsA<LayoutView>(view));
 
   GetDocument().View()->LayoutViewport()->SetScrollOffset(
-      ScrollOffset(0.0, 50), mojom::blink::ScrollType::kProgrammatic,
-      cc::ScrollSourceType::kNone);
+      ScrollOffset(0.0, 50), mojom::blink::ScrollType::kProgrammatic);
   UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(50, GetDocument().View()->LayoutViewport()->ScrollOffsetInt().y());
 
@@ -586,14 +577,13 @@ TEST_F(MapCoordinatesTest, FixedPosInAbsolutePosScrollView) {
 
   auto* target = GetLayoutBoxByElementId("target");
   auto* container = GetLayoutBoxByElementId("container");
-  LayoutBox* body = ParentBoxOf(container);
-  LayoutBox* html = ParentBoxOf(body);
-  LayoutBox* view = ParentBoxOf(html);
+  LayoutBox* body = container->ParentBox();
+  LayoutBox* html = body->ParentBox();
+  LayoutBox* view = html->ParentBox();
   ASSERT_TRUE(IsA<LayoutView>(view));
 
   GetDocument().View()->LayoutViewport()->SetScrollOffset(
-      ScrollOffset(0.0, 50), mojom::blink::ScrollType::kProgrammatic,
-      cc::ScrollSourceType::kNone);
+      ScrollOffset(0.0, 50), mojom::blink::ScrollType::kProgrammatic);
   UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(50, GetDocument().View()->LayoutViewport()->ScrollOffsetInt().y());
 
@@ -621,16 +611,15 @@ TEST_F(MapCoordinatesTest, FixedPosInTransform) {
   )HTML");
 
   GetDocument().View()->LayoutViewport()->SetScrollOffset(
-      ScrollOffset(0.0, 50), mojom::blink::ScrollType::kProgrammatic,
-      cc::ScrollSourceType::kNone);
+      ScrollOffset(0.0, 50), mojom::blink::ScrollType::kProgrammatic);
   UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(50, GetDocument().View()->LayoutViewport()->ScrollOffsetInt().y());
 
   auto* target = GetLayoutBoxByElementId("target");
   auto* container = GetLayoutBoxByElementId("container");
-  LayoutBox* body = ParentBoxOf(container);
-  LayoutBox* html = ParentBoxOf(body);
-  LayoutBox* view = ParentBoxOf(html);
+  LayoutBox* body = container->ParentBox();
+  LayoutBox* html = body->ParentBox();
+  LayoutBox* view = html->ParentBox();
   ASSERT_TRUE(IsA<LayoutView>(view));
 
   PhysicalOffset mapped_point =
@@ -661,16 +650,15 @@ TEST_F(MapCoordinatesTest, FixedPosInContainPaint) {
   )HTML");
 
   GetDocument().View()->LayoutViewport()->SetScrollOffset(
-      ScrollOffset(0.0, 50), mojom::blink::ScrollType::kProgrammatic,
-      cc::ScrollSourceType::kNone);
+      ScrollOffset(0.0, 50), mojom::blink::ScrollType::kProgrammatic);
   UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(50, GetDocument().View()->LayoutViewport()->ScrollOffsetInt().y());
 
   auto* target = GetLayoutBoxByElementId("target");
   auto* container = GetLayoutBoxByElementId("container");
-  LayoutBox* body = ParentBoxOf(container);
-  LayoutBox* html = ParentBoxOf(body);
-  LayoutBox* view = ParentBoxOf(html);
+  LayoutBox* body = container->ParentBox();
+  LayoutBox* html = body->ParentBox();
+  LayoutBox* view = html->ParentBox();
   ASSERT_TRUE(IsA<LayoutView>(view));
 
   PhysicalOffset mapped_point =
@@ -705,8 +693,7 @@ TEST_F(MapCoordinatesTest, FixedPosInIFrameWhenMainFrameScrolled) {
       "position:fixed}</style><div id=target></div>");
 
   GetDocument().View()->LayoutViewport()->SetScrollOffset(
-      ScrollOffset(0.0, 1000), mojom::blink::ScrollType::kProgrammatic,
-      cc::ScrollSourceType::kNone);
+      ScrollOffset(0.0, 1000), mojom::blink::ScrollType::kProgrammatic);
   UpdateAllLifecyclePhasesForTest();
 
   Element* target = ChildDocument().getElementById(AtomicString("target"));
@@ -737,8 +724,7 @@ TEST_F(MapCoordinatesTest, IFrameTransformed) {
   UpdateAllLifecyclePhasesForTest();
 
   ChildDocument().View()->LayoutViewport()->SetScrollOffset(
-      ScrollOffset(0.0, 1000), mojom::blink::ScrollType::kProgrammatic,
-      cc::ScrollSourceType::kNone);
+      ScrollOffset(0.0, 1000), mojom::blink::ScrollType::kProgrammatic);
   ChildDocument().View()->UpdateAllLifecyclePhasesForTest();
 
   Element* target = ChildDocument().getElementById(AtomicString("target"));
@@ -774,8 +760,7 @@ TEST_F(MapCoordinatesTest, FixedPosInScrolledIFrameWithTransform) {
 
   UpdateAllLifecyclePhasesForTest();
   ChildDocument().View()->LayoutViewport()->SetScrollOffset(
-      ScrollOffset(0.0, 1000), mojom::blink::ScrollType::kProgrammatic,
-      cc::ScrollSourceType::kNone);
+      ScrollOffset(0.0, 1000), mojom::blink::ScrollType::kProgrammatic);
   UpdateAllLifecyclePhasesForTest();
 
   Element* target = ChildDocument().getElementById(AtomicString("target"));
@@ -802,10 +787,10 @@ TEST_F(MapCoordinatesTest, MulticolWithText) {
   ASSERT_TRUE(target->IsText());
 
   PhysicalOffset mapped_point =
-      MapLocalToAncestor(target, multicol, PhysicalOffset(220, 20));
+      MapLocalToAncestor(target, multicol, PhysicalOffset(10, 70));
   EXPECT_EQ(PhysicalOffset(225, 25), mapped_point);
   mapped_point = MapAncestorToLocal(target, multicol, mapped_point);
-  EXPECT_EQ(PhysicalOffset(220, 20), mapped_point);
+  EXPECT_EQ(PhysicalOffset(10, 70), mapped_point);
 }
 
 TEST_F(MapCoordinatesTest, MulticolWithInline) {
@@ -821,10 +806,10 @@ TEST_F(MapCoordinatesTest, MulticolWithInline) {
   LayoutObject* target = GetLayoutObjectByElementId("target");
 
   PhysicalOffset mapped_point =
-      MapLocalToAncestor(target, multicol, PhysicalOffset(220, 20));
+      MapLocalToAncestor(target, multicol, PhysicalOffset(10, 70));
   EXPECT_EQ(PhysicalOffset(225, 25), mapped_point);
   mapped_point = MapAncestorToLocal(target, multicol, mapped_point);
-  EXPECT_EQ(PhysicalOffset(220, 20), mapped_point);
+  EXPECT_EQ(PhysicalOffset(10, 70), mapped_point);
 }
 
 TEST_F(MapCoordinatesTest, MulticolWithBlock) {
@@ -892,16 +877,16 @@ TEST_F(MapCoordinatesTest, NestedMulticolWithBlock) {
 
   // Walk each ancestor in the chain separately, to verify each step on the way.
   mapped_point = MapLocalToAncestor(target, inner_multicol, PhysicalOffset());
-  EXPECT_EQ(PhysicalOffset(420, 90), mapped_point);
+  EXPECT_EQ(PhysicalOffset(140, 305), mapped_point);
   mapped_point = MapAncestorToLocal(target, inner_multicol, mapped_point);
   EXPECT_EQ(PhysicalOffset(), mapped_point);
 
   mapped_point = MapLocalToAncestor(inner_multicol, outer_multicol,
-                                    PhysicalOffset(420, 90));
+                                    PhysicalOffset(140, 305));
   EXPECT_EQ(PhysicalOffset(435, 115), mapped_point);
   mapped_point =
       MapAncestorToLocal(inner_multicol, outer_multicol, mapped_point);
-  EXPECT_EQ(PhysicalOffset(420, 90), mapped_point);
+  EXPECT_EQ(PhysicalOffset(140, 305), mapped_point);
 }
 
 TEST_F(MapCoordinatesTest, MulticolWithAbsPosInRelPos) {
@@ -1220,7 +1205,7 @@ TEST_F(MapCoordinatesTest, Table) {
   EXPECT_EQ(PhysicalOffset(), mapped_point);
 
   // Walk each ancestor in the chain separately, to verify each step on the way.
-  LayoutBox* td = ParentBoxOf(target);
+  LayoutBox* td = target->ParentBox();
   ASSERT_TRUE(td->IsTableCell());
   mapped_point = MapLocalToAncestor(target, td, PhysicalOffset());
   // Cells are middle-aligned by default.
@@ -1228,21 +1213,21 @@ TEST_F(MapCoordinatesTest, Table) {
   mapped_point = MapAncestorToLocal(target, td, mapped_point);
   EXPECT_EQ(PhysicalOffset(), mapped_point);
 
-  LayoutBox* tr = ParentBoxOf(td);
+  LayoutBox* tr = td->ParentBox();
   ASSERT_TRUE(tr->IsTableRow());
   mapped_point = MapLocalToAncestor(td, tr, PhysicalOffset(2, 47));
   EXPECT_EQ(PhysicalOffset(116, 47), mapped_point);
   mapped_point = MapAncestorToLocal(td, tr, mapped_point);
   EXPECT_EQ(PhysicalOffset(2, 47), mapped_point);
 
-  LayoutBox* tbody = ParentBoxOf(tr);
+  LayoutBox* tbody = tr->ParentBox();
   ASSERT_TRUE(tbody->IsTableSection());
   mapped_point = MapLocalToAncestor(tr, tbody, PhysicalOffset(126, 47));
   EXPECT_EQ(PhysicalOffset(126, 161), mapped_point);
   mapped_point = MapAncestorToLocal(tr, tbody, mapped_point);
   EXPECT_EQ(PhysicalOffset(126, 47), mapped_point);
 
-  LayoutBox* table = ParentBoxOf(tbody);
+  LayoutBox* table = tbody->ParentBox();
   ASSERT_TRUE(table->IsTable());
   mapped_point = MapLocalToAncestor(tbody, table, PhysicalOffset(126, 161));
   EXPECT_EQ(PhysicalOffset(141, 290), mapped_point);

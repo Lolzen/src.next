@@ -2,9 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "net/http/mock_gssapi_library_posix.h"
 
-#include "base/compiler_specific.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -79,7 +83,7 @@ void SetBuffer(gss_buffer_t dest, const void* src, size_t length) {
   dest->length = length;
   if (length) {
     dest->value = new char[length];
-    UNSAFE_TODO(memcpy(dest->value, src, length));
+    memcpy(dest->value, src, length);
   }
 }
 
@@ -432,9 +436,9 @@ OM_uint32 MockGSSAPILibrary::init_sec_context(
   } else {
     EXPECT_EQ(input_token->length, security_query.expected_input_token.length);
     if (input_token->length) {
-      UNSAFE_TODO(EXPECT_EQ(0, memcmp(input_token->value,
-                                      security_query.expected_input_token.value,
-                                      input_token->length)));
+      EXPECT_EQ(0, memcmp(input_token->value,
+                          security_query.expected_input_token.value,
+                          input_token->length));
     }
   }
   CopyBuffer(output_token, &security_query.output_token);

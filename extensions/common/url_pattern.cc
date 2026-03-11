@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "extensions/common/url_pattern.h"
 
 #include <stddef.h>
@@ -10,6 +15,7 @@
 #include <ostream>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/strings/pattern.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
@@ -89,7 +95,8 @@ bool IsStandardScheme(std::string_view scheme) {
     return true;
   }
 
-  return url::IsStandard(scheme);
+  return url::IsStandard(scheme.data(),
+                         url::Component(0, static_cast<int>(scheme.length())));
 }
 
 bool IsValidPortForScheme(std::string_view scheme, std::string_view port) {
@@ -325,7 +332,7 @@ URLPattern::ParseResult URLPattern::Parse(std::string_view pattern) {
   // No other '*' can occur in the host, though. This isn't necessary, but is
   // done as a convenience to developers who might otherwise be confused and
   // think '*' works as a glob in the host.
-  if (host_.contains('*')) {
+  if (base::Contains(host_, '*')) {
     return ParseResult::kInvalidHostWildcard;
   }
 
@@ -341,7 +348,7 @@ URLPattern::ParseResult URLPattern::Parse(std::string_view pattern) {
   }
 
   // Null characters are not allowed in hosts.
-  if (host_.contains('\0')) {
+  if (base::Contains(host_, '\0')) {
     return ParseResult::kInvalidHost;
   }
 
@@ -439,7 +446,7 @@ bool URLPattern::MatchesURL(const GURL& test) const {
 
   // Ensure the scheme matches first, since <all_urls> may not match this URL if
   // the scheme is excluded.
-  if (!MatchesScheme(test_url->scheme())) {
+  if (!MatchesScheme(test_url->scheme_piece())) {
     return false;
   }
 
@@ -455,7 +462,7 @@ bool URLPattern::MatchesURL(const GURL& test) const {
 
   std::string path_for_request = test.PathForRequest();
   if (has_inner_url) {
-    path_for_request = base::StrCat({test_url->path(), path_for_request});
+    path_for_request = base::StrCat({test_url->path_piece(), path_for_request});
   }
 
   return MatchesSecurityOriginHelper(*test_url) &&
@@ -473,7 +480,7 @@ bool URLPattern::MatchesSecurityOrigin(const GURL& test) const {
     test_url = test.inner_url();
   }
 
-  if (!MatchesScheme(test_url->GetScheme())) {
+  if (!MatchesScheme(test_url->scheme())) {
     return false;
   }
 
@@ -502,7 +509,7 @@ bool URLPattern::MatchesHost(std::string_view host) const {
 }
 
 bool URLPattern::MatchesHost(const GURL& test) const {
-  std::string_view test_host(CanonicalizeHostForMatching(test.host()));
+  std::string_view test_host(CanonicalizeHostForMatching(test.host_piece()));
   const std::string_view pattern_host(CanonicalizeHostForMatching(host_));
 
   // If the hosts are exactly equal, we have a match.

@@ -32,8 +32,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_DOM_ELEMENT_DATA_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_ELEMENT_DATA_H_
 
-#include <concepts>
-
 #include "base/containers/span.h"
 #include "build/build_config.h"
 #include "third_party/blink/renderer/core/dom/attribute.h"
@@ -98,11 +96,11 @@ class ElementData : public GarbageCollected<ElementData> {
   void Trace(Visitor*) const;
 
  protected:
-  using BitField = ConcurrentlyReadBitField<uint32_t>;
+  using BitField = WTF::ConcurrentlyReadBitField<uint32_t>;
   using IsUniqueFlag =
-      BitField::DefineFirstValue<bool, 1, BitFieldValueConstness::kConst>;
+      BitField::DefineFirstValue<bool, 1, WTF::BitFieldValueConstness::kConst>;
   using ArraySize = IsUniqueFlag::
-      DefineNextValue<uint32_t, 28, BitFieldValueConstness::kConst>;
+      DefineNextValue<uint32_t, 28, WTF::BitFieldValueConstness::kConst>;
   using PresentationAttributeStyleIsDirty = ArraySize::DefineNextValue<bool, 1>;
   using StyleAttributeIsDirty =
       PresentationAttributeStyleIsDirty::DefineNextValue<bool, 1>;
@@ -158,8 +156,7 @@ class ElementData : public GarbageCollected<ElementData> {
 };
 
 template <typename T>
-  requires(std::derived_from<T, ElementData>)
-struct ThreadingTrait<T> {
+struct ThreadingTrait<T, std::enable_if_t<std::is_base_of_v<ElementData, T>>> {
   static constexpr ThreadAffinity kAffinity = kMainThreadOnly;
 };
 
@@ -252,11 +249,12 @@ inline AttributeCollection ElementData::Attributes() const {
 }
 
 inline AttributeCollection ShareableElementData::Attributes() const {
-  return AttributeCollection(AttributesSpan());
+  return AttributeCollection(attribute_array_, bit_field_.get<ArraySize>());
 }
 
 inline AttributeCollection UniqueElementData::Attributes() const {
-  return AttributeCollection(attribute_vector_);
+  return AttributeCollection(attribute_vector_.data(),
+                             attribute_vector_.size());
 }
 
 inline MutableAttributeCollection UniqueElementData::Attributes() {

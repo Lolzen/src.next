@@ -19,11 +19,12 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
+#include "chrome/browser/apps/app_service/app_launch_params.h"
 #include "chrome/browser/apps/app_service/launch_utils.h"
 #include "chrome/browser/apps/platform_apps/platform_app_launch.h"
-#include "chrome/browser/extensions/app_tab_helper.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/file_handlers/file_handling_launch_utils.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -33,8 +34,6 @@
 #include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
 #include "chrome/browser/ui/extensions/web_file_handlers/multiclient_util.h"
@@ -43,7 +42,6 @@
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/url_constants.h"
-#include "components/services/app_service/public/cpp/app_launch_params.h"
 #include "components/services/app_service/public/cpp/app_launch_util.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
@@ -186,14 +184,14 @@ ui::mojom::WindowShowState DetermineWindowShowState(
   }
 
 #if BUILDFLAG(IS_CHROMEOS)
-  // In ChromeOS, LaunchType::kFullscreen launches in a maximized app window and
-  // LaunchType::kWindow launches in a default app window.
+  // In ChromeOS, LAUNCH_TYPE_FULLSCREEN launches in a maximized app window and
+  // LAUNCH_TYPE_WINDOW launches in a default app window.
   extensions::LaunchType launch_type =
       extensions::GetLaunchType(ExtensionPrefs::Get(profile), extension);
-  if (launch_type == extensions::LaunchType::kFullscreen) {
+  if (launch_type == extensions::LAUNCH_TYPE_FULLSCREEN) {
     return ui::mojom::WindowShowState::kMaximized;
   }
-  if (launch_type == extensions::LaunchType::kWindow) {
+  if (launch_type == extensions::LAUNCH_TYPE_WINDOW) {
     return ui::mojom::WindowShowState::kDefault;
   }
 #endif
@@ -235,7 +233,7 @@ WebContents* OpenApplicationTab(Profile* profile,
       extensions::GetLaunchType(ExtensionPrefs::Get(profile), extension);
 
   int add_type = AddTabTypes::ADD_ACTIVE;
-  if (launch_type == extensions::LaunchType::kPinned) {
+  if (launch_type == extensions::LAUNCH_TYPE_PINNED) {
     add_type |= AddTabTypes::ADD_PINNED;
   }
 
@@ -279,15 +277,15 @@ WebContents* OpenApplicationTab(Profile* profile,
   }
 
 #if BUILDFLAG(IS_CHROMEOS)
-  // In ChromeOS, extensions::LaunchType::kFullscreen launches in the
-  // OpenApplicationWindow function i.e. it should not reach here.
-  DCHECK(launch_type != extensions::LaunchType::kFullscreen);
+  // In ChromeOS, LAUNCH_FULLSCREEN launches in the OpenApplicationWindow
+  // function i.e. it should not reach here.
+  DCHECK(launch_type != extensions::LAUNCH_TYPE_FULLSCREEN);
 #else
   // TODO(skerner):  If we are already in full screen mode, and the user set the
   // app to open as a regular or pinned tab, what should happen? Today we open
   // the tab, but stay in full screen mode.  Should we leave full screen mode in
   // this case?
-  if (launch_type == extensions::LaunchType::kFullscreen &&
+  if (launch_type == extensions::LAUNCH_TYPE_FULLSCREEN &&
       !browser->window()->IsFullscreen()) {
     chrome::ToggleFullscreenMode(browser, /*user_initiated=*/false);
   }
@@ -339,9 +337,6 @@ WebContents* OpenEnabledApplicationHelper(Profile* profile,
     // `params.intent->activity_name` is actually the `action` url set in the
     // manifest of the extension.
     url = extension.GetResourceURL(params.intent->activity_name.value());
-    if (!url.is_valid()) {
-      return nullptr;
-    }
   } else {
     url = UrlForExtension(&extension, profile, params);
   }
@@ -416,22 +411,16 @@ WebContents* OpenEnabledApplication(Profile* profile,
   return OpenEnabledApplicationHelper(profile, params, *extension);
 }
 
-BrowserWindowInterface* FindBrowserForApp(Profile* profile,
-                                          const std::string& app_id) {
-  BrowserWindowInterface* browser_for_app = nullptr;
-  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
-      [&](BrowserWindowInterface* browser) {
-        std::string browser_app_id = web_app::GetAppIdFromApplicationName(
-            browser->GetBrowserForMigrationOnly()->app_name());
-        if (profile == browser->GetProfile() &&
-            browser->GetType() == BrowserWindowInterface::TYPE_APP &&
-            app_id == browser_app_id) {
-          browser_for_app = browser;
-          return false;  // stop iterating
-        }
-        return true;  // continue iterating
-      });
-  return browser_for_app;
+Browser* FindBrowserForApp(Profile* profile, const std::string& app_id) {
+  for (Browser* browser : BrowserList::GetInstance()->OrderedByActivation()) {
+    std::string browser_app_id =
+        web_app::GetAppIdFromApplicationName(browser->app_name());
+    if (profile == browser->profile() && browser->is_type_app() &&
+        app_id == browser_app_id) {
+      return browser;
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace
@@ -503,10 +492,9 @@ WebContents* NavigateApplicationWindow(Browser* browser,
   WebContents* const web_contents = nav_params.navigated_or_inserted_contents;
 
   // Before MV3, an extension reaching this point must have been an app. MV3
-  // added support for Web File Handlers, which don't use extension
-  // AppTabHelper.
+  // added support for Web File Handlers, which don't use extension TabHelper.
   if (extension && extension->is_app()) {
-    extensions::AppTabHelper::FromWebContents(web_contents)
+    extensions::TabHelper::FromWebContents(web_contents)
         ->SetExtensionApp(extension);
   }
 
@@ -573,10 +561,10 @@ void LaunchAppWithCallback(
     const std::string& app_id,
     const base::CommandLine& command_line,
     const base::FilePath& current_directory,
-    base::OnceCallback<void(BrowserWindowInterface* browser,
-                            apps::LaunchContainer container)> callback) {
+    base::OnceCallback<void(Browser* browser, apps::LaunchContainer container)>
+        callback) {
   apps::LaunchContainer container;
-  BrowserWindowInterface* app_browser = nullptr;
+  Browser* app_browser = nullptr;
   if (apps::OpenExtensionApplicationWindow(profile, app_id, command_line,
                                            current_directory)) {
     container = apps::LaunchContainer::kLaunchContainerWindow;

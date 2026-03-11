@@ -52,9 +52,7 @@ class CORE_EXPORT LayoutVideo final : public LayoutMedia {
 
   HTMLVideoElement* VideoElement() const;
 
-  void StyleDidChange(StyleDifference,
-                      const ComputedStyle* old_style,
-                      const StyleChangeContext&) override;
+  void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
 
   const char* GetName() const override {
     NOT_DESTROYED();
@@ -93,8 +91,7 @@ class CORE_EXPORT LayoutVideo final : public LayoutMedia {
   }
   CompositingReasons AdditionalCompositingReasons() const override;
 
-  PhysicalNaturalSizingInfo natural_dimensions_ =
-      PhysicalNaturalSizingInfo::None();
+  PhysicalNaturalSizingInfo natural_dimensions_;
 };
 
 template <>

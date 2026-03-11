@@ -27,15 +27,21 @@
 
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
-#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/video_painter.h"
 
 namespace blink {
 
-LayoutVideo::LayoutVideo(HTMLVideoElement* video) : LayoutMedia(video) {}
+LayoutVideo::LayoutVideo(HTMLVideoElement* video)
+    : LayoutMedia(video),
+      natural_dimensions_(PhysicalNaturalSizingInfo::MakeFixed(DefaultSize())) {
+}
 
 LayoutVideo::~LayoutVideo() = default;
+
+PhysicalSize LayoutVideo::DefaultSize() {
+  return PhysicalSize(LayoutUnit(kDefaultWidth), LayoutUnit(kDefaultHeight));
+}
 
 void LayoutVideo::NaturalSizeChanged() {
   NOT_DESTROYED();
@@ -99,7 +105,10 @@ PhysicalNaturalSizingInfo LayoutVideo::GetNaturalDimensions() const {
       break;
   }
 
-  return PhysicalNaturalSizingInfo::None();
+  // Natural dimensions are missing.
+  PhysicalSize default_size(DefaultSize());
+  default_size.Scale(StyleRef().EffectiveZoom());
+  return PhysicalNaturalSizingInfo::MakeFixed(default_size);
 }
 
 void LayoutVideo::ImageChanged(WrappedImagePtr new_image,
@@ -145,12 +154,10 @@ HTMLVideoElement* LayoutVideo::VideoElement() const {
   return To<HTMLVideoElement>(GetNode());
 }
 
-void LayoutVideo::StyleDidChange(
-    StyleDifference diff,
-    const ComputedStyle* old_style,
-    const StyleChangeContext& style_change_context) {
+void LayoutVideo::StyleDidChange(StyleDifference diff,
+                                 const ComputedStyle* old_style) {
   NOT_DESTROYED();
-  LayoutImage::StyleDidChange(diff, old_style, style_change_context);
+  LayoutImage::StyleDidChange(diff, old_style);
   VideoElement()->StyleDidChange(old_style, StyleRef());
 }
 

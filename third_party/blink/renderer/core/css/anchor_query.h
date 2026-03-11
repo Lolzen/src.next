@@ -59,6 +59,7 @@ class CORE_EXPORT AnchorQuery {
   }
 
   bool operator==(const AnchorQuery& other) const;
+  bool operator!=(const AnchorQuery& other) const { return !operator==(other); }
   void Trace(Visitor*) const;
 
  private:

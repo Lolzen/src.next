@@ -100,9 +100,8 @@ class ImageLoaderTest : public ExtensionsTest {
       return nullptr;
     }
 
-    std::u16string utf16_error;
     return Extension::Create(extension_dir, location, valid_value->GetDict(),
-                             Extension::NO_FLAGS, &utf16_error);
+                             Extension::NO_FLAGS, &error);
   }
 
   gfx::Image image_;

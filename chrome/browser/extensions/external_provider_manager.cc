@@ -7,7 +7,9 @@
 #include <cstddef>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
+#include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notimplemented.h"
@@ -20,7 +22,7 @@
 #include "chrome/browser/extensions/external_install_manager.h"
 #include "chrome/browser/extensions/external_provider_impl.h"
 #include "chrome/browser/extensions/external_provider_manager_factory.h"
-#include "chrome/browser/extensions/forced_extensions/install_stage_tracker_factory.h"
+#include "chrome/browser/extensions/forced_extensions/install_stage_tracker.h"
 #include "chrome/browser/extensions/installed_loader.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/profiles/profile.h"
@@ -34,11 +36,9 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/external_install_info.h"
-#include "extensions/browser/forced_extensions/install_stage_tracker.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/pending_extension_manager.h"
 #include "extensions/browser/updater/extension_cache.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
@@ -49,9 +49,11 @@
 #include "chrome/browser/ash/extensions/install_limiter.h"
 #endif
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
-
 namespace {
+BASE_FEATURE(kCheckExternalExtensionInstallLocation,
+             "CheckExternalExtensionInstallLocation",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 bool g_external_updates_disabled_for_test_ = false;
 }  // namespace
 
@@ -184,12 +186,24 @@ void ExternalProviderManager::CheckExternalUninstall(const std::string& id) {
   }
 
   // Check if the providers know about this extension.
+  bool known_extension = false;
   for (const auto& provider : external_extension_providers_) {
     DCHECK(provider->IsReady());
-    if (provider->HasExtensionWithLocation(id, extension->location())) {
-      // Yup, known extension, don't uninstall.
-      return;
+    // TODO(https://crbug.com/397903880): Remove this if-check and always check
+    // manifest location in M138.
+    if (base::FeatureList::IsEnabled(kCheckExternalExtensionInstallLocation)) {
+      if (provider->HasExtensionWithLocation(id, extension->location())) {
+        known_extension = true;
+        break;
+      }
+    } else if (provider->HasExtension(id)) {
+      known_extension = true;
+      break;
     }
+  }
+  if (known_extension) {
+    // Yup, known extension, don't uninstall.
+    return;
   }
 
   ExtensionRegistrar::Get(context_)->UninstallExtension(
@@ -291,6 +305,7 @@ bool ExternalProviderManager::OnExternalExtensionFileFound(
   installer->set_expected_id(info.extension_id);
   installer->set_expected_version(info.version,
                                   true /* fail_install_if_unexpected */);
+  installer->set_install_cause(extension_misc::INSTALL_CAUSE_EXTERNAL_FILE);
   installer->set_install_immediately(info.install_immediately);
   installer->set_creation_flags(info.creation_flags);
 
@@ -334,7 +349,7 @@ bool ExternalProviderManager::OnExternalExtensionUpdateUrlFound(
   }
 
   InstallStageTracker* install_stage_tracker =
-      InstallStageTrackerFactory::GetForBrowserContext(context_);
+      InstallStageTracker::Get(context_);
 
   const Extension* extension = registry_->GetExtensionById(
       info.extension_id, ExtensionRegistry::EVERYTHING);

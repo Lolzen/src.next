@@ -7,11 +7,9 @@ package org.chromium.chrome.browser.tabmodel;
 import static org.chromium.build.NullUtil.assumeNonNull;
 
 import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabAttributeKeys;
 import org.chromium.chrome.browser.tab.TabAttributes;
-import org.chromium.chrome.browser.tab.TabId;
 import org.chromium.chrome.browser.tab.TabLaunchType;
 
 /**
@@ -33,35 +31,10 @@ class TabModelOrderControllerImpl implements TabModelOrderController {
     @Override
     public int determineInsertionIndex(@TabLaunchType int type, int position, Tab newTab) {
         if (type == TabLaunchType.FROM_BROWSER_ACTIONS || type == TabLaunchType.FROM_RECENT_TABS) {
-            return TabList.INVALID_TAB_INDEX;
+            return -1;
         }
-        if (newTab.getIsPinned() && type != TabLaunchType.FROM_RESTORE) {
-            TabModel tabModel = mTabModelSelector.getCurrentModel();
-
-            if (type == TabLaunchType.FROM_TAB_LIST_INTERFACE) {
-                @TabId int parentId = newTab.getParentId();
-                @Nullable Tab parentTab = tabModel.getTabById(parentId);
-                int index = tabModel.indexOf(parentTab);
-                if (parentTab != null
-                        && index != TabList.INVALID_TAB_INDEX
-                        && parentTab.getIsPinned()) {
-                    return index + 1;
-                }
-            }
-
-            // Use the `position` when its in valid range; otherwise defer to TabModel
-            // implementation, which will place it at the first unpinned position.
-            int firstNonPinnedTabIndex = tabModel.findFirstNonPinnedTabIndex();
-            if (position <= firstNonPinnedTabIndex) {
-                return position;
-            }
-
-            // TabModel will handle the index.
-            return TabList.INVALID_TAB_INDEX;
-        }
-
-        if (mightBeAdjacent(type)) {
-            position = determineInsertionIndexIfMaybeAdjacent(type, newTab);
+        if (linkClicked(type)) {
+            position = determineInsertionIndex(type, newTab);
         }
 
         if (willOpenInForeground(type, newTab.isIncognitoBranded())) {
@@ -71,17 +44,18 @@ class TabModelOrderControllerImpl implements TabModelOrderController {
         }
 
         // TODO(crbug.com/40877620): This is a bandaid fix to ensure tab groups are contiguous such
-        // that no tabs within a group are separate from one another and that no tab that is not
-        // part of a group can be added in-between members of a group. This doesn't address the
-        // issue of moving tabs to be between members of a group, however when a group is moved it
-        // is moved tab-by-tab so it is difficult to enforce anything there without significant
-        // refactoring.
+        // that
+        // no tabs within a group are separate from one another and that no tab that is not part of
+        // a group can be added in-between members of a group. This doesn't address the issue of
+        // moving tabs to be between members of a group, however when a group is moved it is moved
+        // tab-by-tab so it is difficult to enforce anything there without significant refactoring.
         position = getValidPositionConsideringRelatedTabs(newTab, position);
 
         return position;
     }
 
-    private int determineInsertionIndexIfMaybeAdjacent(@TabLaunchType int type, Tab newTab) {
+    @Override
+    public int determineInsertionIndex(@TabLaunchType int type, Tab newTab) {
         TabModel currentModel = mTabModelSelector.getCurrentModel();
 
         if (sameModelType(currentModel, newTab)) {
@@ -92,11 +66,6 @@ class TabModelOrderControllerImpl implements TabModelOrderController {
             }
             int currentId = currentTab.getId();
             int currentIndex = TabModelUtils.getTabIndexById(currentModel, currentId);
-
-            // If the current tab is a pinned tab, new tabs are inserted after the last pinned tab.
-            if (currentTab.getIsPinned()) {
-                return currentModel.findFirstNonPinnedTabIndex();
-            }
 
             if (willOpenInForeground(type, newTab.isIncognito())) {
                 // If the tab was opened in the foreground, insert it adjacent to its parent tab if
@@ -151,7 +120,10 @@ class TabModelOrderControllerImpl implements TabModelOrderController {
     }
 
     private int getValidPositionConsideringRelatedTabs(Tab newTab, int position) {
-        TabGroupModelFilter filter = mTabModelSelector.getTabGroupModelFilter(newTab.isIncognito());
+        TabGroupModelFilter filter =
+                mTabModelSelector
+                        .getTabGroupModelFilterProvider()
+                        .getTabGroupModelFilter(newTab.isIncognito());
         assumeNonNull(filter);
         return filter.getValidPosition(newTab, position);
     }
@@ -159,35 +131,24 @@ class TabModelOrderControllerImpl implements TabModelOrderController {
     /** Clear the opener attribute on all tabs in the model. */
     void forgetAllOpeners() {
         TabModel currentModel = mTabModelSelector.getCurrentModel();
-        for (Tab tab : currentModel) {
-            TabAttributes.from(tab).set(TabAttributeKeys.GROUPED_WITH_PARENT, false);
+        int count = currentModel.getCount();
+        for (int i = 0; i < count; i++) {
+            TabAttributes.from(currentModel.getTabAtChecked(i))
+                    .set(TabAttributeKeys.GROUPED_WITH_PARENT, false);
         }
     }
 
-    /** Determine if a launch type requires calculation to determine the position of the new tab. */
-    static boolean mightBeAdjacent(@TabLaunchType int type) {
+    /** Determine if a launch type is the result of linked being clicked. */
+    static boolean linkClicked(@TabLaunchType int type) {
         return type == TabLaunchType.FROM_LINK
                 || type == TabLaunchType.FROM_LONGPRESS_FOREGROUND
-                || type == TabLaunchType.FROM_LONGPRESS_FOREGROUND_IN_GROUP
                 || type == TabLaunchType.FROM_LONGPRESS_BACKGROUND
                 || type == TabLaunchType.FROM_LONGPRESS_BACKGROUND_IN_GROUP
-                || type == TabLaunchType.FROM_LONGPRESS_INCOGNITO
-                || type == TabLaunchType.FROM_HISTORY_NAVIGATION_BACKGROUND
-                || type == TabLaunchType.FROM_HISTORY_NAVIGATION_FOREGROUND;
+                || type == TabLaunchType.FROM_LONGPRESS_INCOGNITO;
     }
 
     @Override
     public boolean willOpenInForeground(@TabLaunchType int type, boolean isNewTabIncognitoBranded) {
-        return willOpenInForeground(
-                type,
-                isNewTabIncognitoBranded,
-                mTabModelSelector.isIncognitoBrandedModelSelected());
-    }
-
-    public static boolean willOpenInForeground(
-            @TabLaunchType int type,
-            boolean isNewTabIncognitoBranded,
-            boolean isCurrentModelIncognitoBranded) {
         // Restore is handling the active index by itself.
         if (type == TabLaunchType.FROM_RESTORE
                 || type == TabLaunchType.FROM_BROWSER_ACTIONS
@@ -200,9 +161,9 @@ class TabModelOrderControllerImpl implements TabModelOrderController {
                         && type != TabLaunchType.FROM_SYNC_BACKGROUND
                         && type != TabLaunchType.FROM_COLLABORATION_BACKGROUND_IN_GROUP
                         && type != TabLaunchType.FROM_BOOKMARK_BAR_BACKGROUND
-                        && type != TabLaunchType.FROM_REPARENTING_BACKGROUND
-                        && type != TabLaunchType.FROM_HISTORY_NAVIGATION_BACKGROUND)
-                || isCurrentModelIncognitoBranded != isNewTabIncognitoBranded;
+                        && type != TabLaunchType.FROM_REPARENTING_BACKGROUND)
+                || (!mTabModelSelector.isIncognitoBrandedModelSelected()
+                        && isNewTabIncognitoBranded);
     }
 
     /**

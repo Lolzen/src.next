@@ -26,11 +26,12 @@ std::string NativeLibraryLoadError::ToString() const {
   return message;
 }
 
-NativeLibrary LoadNativeLibrary(const FilePath& library_path,
-                                NativeLibraryLoadError* error) {
+NativeLibrary LoadNativeLibraryWithOptions(const FilePath& library_path,
+                                           const NativeLibraryOptions& options,
+                                           NativeLibraryLoadError* error) {
   // dlopen() etc. open the file off disk.
-  if (!DirectoryExists(library_path)) {
-    void* dylib = dlopen(library_path.value().c_str(), RTLD_LAZY | RTLD_LOCAL);
+  if (library_path.Extension() == "dylib" || !DirectoryExists(library_path)) {
+    void* dylib = dlopen(library_path.value().c_str(), RTLD_LAZY);
     if (!dylib) {
       if (error) {
         error->message = dlerror();

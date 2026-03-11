@@ -41,7 +41,7 @@ class LayoutEmbeddedObject final : public LayoutEmbeddedContent {
     kPluginBlockedByContentSecurityPolicy,
   };
   void SetPluginAvailability(PluginAvailability);
-  bool ShowsUnavailablePluginIndicator() const override;
+  bool ShowsUnavailablePluginIndicator() const;
 
   const char* GetName() const override {
     NOT_DESTROYED();
@@ -68,8 +68,6 @@ class LayoutEmbeddedObject final : public LayoutEmbeddedContent {
     NOT_DESTROYED();
     return false;
   }
-  PhysicalRect ReplacedContentRectFrom(
-      const PhysicalRect& base_content_rect) const override;
 
   PluginAvailability plugin_availability_ = kPluginAvailable;
   String unavailable_plugin_replacement_text_;

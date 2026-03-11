@@ -7,7 +7,6 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
-#include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/frame/directive.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 
@@ -23,7 +22,7 @@ class ScriptState;
 // is scrolling to.
 // See: https://github.com/WICG/scroll-to-text-fragment/issues/160
 // TODO(bokan): Update link once we have better public documentation.
-class CORE_EXPORT SelectorDirective : public Directive {
+class SelectorDirective : public Directive {
   DEFINE_WRAPPERTYPEINFO();
 
  public:

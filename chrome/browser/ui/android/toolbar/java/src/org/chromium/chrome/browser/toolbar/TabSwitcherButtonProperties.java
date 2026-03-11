@@ -18,23 +18,24 @@ import org.chromium.ui.modelutil.PropertyModel.WritableObjectPropertyKey;
 @NullMarked
 public interface TabSwitcherButtonProperties {
     /** The current number of tabs. */
-    WritableIntPropertyKey NUMBER_OF_TABS = new WritableIntPropertyKey();
+    public static final WritableIntPropertyKey NUMBER_OF_TABS = new WritableIntPropertyKey();
 
     /** The click listener for the tab switcher button. */
-    WritableObjectPropertyKey<OnClickListener> ON_CLICK_LISTENER =
+    public static final WritableObjectPropertyKey<OnClickListener> ON_CLICK_LISTENER =
             new WritableObjectPropertyKey<>();
 
     /** The long click listener for the tab switcher button. */
-    WritableObjectPropertyKey<OnLongClickListener> ON_LONG_CLICK_LISTENER =
+    public static final WritableObjectPropertyKey<OnLongClickListener> ON_LONG_CLICK_LISTENER =
             new WritableObjectPropertyKey<>();
 
     /** The button tint. */
-    WritableObjectPropertyKey<ColorStateList> TINT = new WritableObjectPropertyKey<>();
+    public static final WritableObjectPropertyKey<ColorStateList> TINT =
+            new WritableObjectPropertyKey<>();
 
     /** Whether the button is enabled. */
-    WritableBooleanPropertyKey IS_ENABLED = new WritableBooleanPropertyKey();
+    public static final WritableBooleanPropertyKey IS_ENABLED = new WritableBooleanPropertyKey();
 
-    PropertyKey[] ALL_KEYS =
+    public static final PropertyKey[] ALL_KEYS =
             new PropertyKey[] {
                 NUMBER_OF_TABS, ON_CLICK_LISTENER, ON_LONG_CLICK_LISTENER, TINT, IS_ENABLED
             };

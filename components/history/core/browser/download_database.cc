@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/contains.h"
 #include "base/debug/alias.h"
 #include "base/files/file_path.h"
 #include "base/metrics/histogram_macros.h"
@@ -79,7 +80,8 @@ DownloadDatabase::DownloadDatabase(
       download_interrupt_reason_none_(download_interrupt_reason_none),
       download_interrupt_reason_crash_(download_interrupt_reason_crash) {}
 
-DownloadDatabase::~DownloadDatabase() {}
+DownloadDatabase::~DownloadDatabase() {
+}
 
 bool DownloadDatabase::EnsureColumnExists(const std::string& name,
                                           const std::string& type) {
@@ -92,225 +94,6 @@ bool DownloadDatabase::EnsureColumnExistsInTable(const std::string& table,
   std::string add_col =
       base::StrCat({"ALTER TABLE ", table, " ADD COLUMN ", name, " ", type});
   return GetDB().DoesColumnExist(table, name) || GetDB().Execute(add_col);
-}
-
-bool DownloadDatabase::MigrateMimeType() {
-  return EnsureColumnExists("mime_type",
-                            "VARCHAR(255) NOT NULL"
-                            " DEFAULT \"\"") &&
-         EnsureColumnExists("original_mime_type",
-                            "VARCHAR(255) NOT NULL"
-                            " DEFAULT \"\"");
-}
-
-bool DownloadDatabase::MigrateDownloadsState() {
-  sql::Statement statement(GetDB().GetUniqueStatement(
-      "UPDATE " DOWNLOADS_TABLE " SET state=? WHERE state=?"));
-  statement.BindInt(0, DownloadStateToInt(DownloadState::INTERRUPTED));
-  statement.BindInt(1, DownloadStateToInt(DownloadState::BUG_140687));
-  return statement.Run();
-}
-
-bool DownloadDatabase::MigrateDownloadsReasonPathsAndDangerType() {
-  // We need to rename the table and copy back from it because SQLite
-  // provides no way to rename or delete a column.
-  if (!GetDB().Execute("ALTER TABLE " DOWNLOADS_TABLE
-                       " RENAME TO downloads_tmp")) {
-    return false;
-  }
-
-  const constexpr char kReasonPathDangerSchema[] =
-      "CREATE TABLE " DOWNLOADS_TABLE
-      "("
-      "id INTEGER PRIMARY KEY,"
-      "current_path LONGVARCHAR NOT NULL,"
-      "target_path LONGVARCHAR NOT NULL,"
-      "start_time INTEGER NOT NULL,"
-      "received_bytes INTEGER NOT NULL,"
-      "total_bytes INTEGER NOT NULL,"
-      "state INTEGER NOT NULL,"
-      "danger_type INTEGER NOT NULL,"
-      "interrupt_reason INTEGER NOT NULL,"
-      "end_time INTEGER NOT NULL,"
-      "opened INTEGER NOT NULL)";
-
-  static constexpr char kReasonPathDangerUrlChainSchema[] =
-      "CREATE TABLE downloads_url_chains ("
-      "id INTEGER NOT NULL,"           // downloads.id.
-      "chain_index INTEGER NOT NULL,"  // Index of url in chain
-                                       // 0 is initial target,
-                                       // MAX is target after redirects.
-      "url LONGVARCHAR NOT NULL, "     // URL.
-      "PRIMARY KEY (id, chain_index) )";
-
-  // Recreate main table.
-  if (!GetDB().Execute(kReasonPathDangerSchema)) {
-    return false;
-  }
-
-  // Populate it.  As we do so, we transform the time values from time_t
-  // (seconds since 1/1/1970 UTC), to our internal measure (microseconds
-  // since the Windows Epoch).  Note that this is dependent on the
-  // internal representation of base::Time and needs to change if that changes.
-  sql::Statement statement_populate(GetDB().GetUniqueStatement(
-      // clang-format: off
-      "INSERT INTO " DOWNLOADS_TABLE
-      "(id,current_path,target_path,start_time,received_bytes,"
-      "total_bytes,state,danger_type,interrupt_reason,end_time,"
-      "opened)"
-      "SELECT id,full_path,full_path,"
-      "CASE start_time WHEN 0 THEN 0 ELSE "
-      "(start_time + 11644473600) * 1000000 END,"
-      "received_bytes,total_bytes,state,?,?,"
-      "CASE end_time WHEN 0 THEN 0 ELSE "
-      "(end_time + 11644473600) * 1000000 END,"
-      "opened "
-      "FROM downloads_tmp"));
-  // clang-format: on
-  statement_populate.BindInt(
-      0, DownloadInterruptReasonToInt(download_interrupt_reason_none_));
-  statement_populate.BindInt(
-      1, DownloadDangerTypeToInt(DownloadDangerType::NOT_DANGEROUS));
-  if (!statement_populate.Run()) {
-    return false;
-  }
-
-  // Create new chain table and populate it.
-  if (!GetDB().Execute(kReasonPathDangerUrlChainSchema)) {
-    return false;
-  }
-
-  if (!GetDB().Execute("INSERT INTO downloads_url_chains "
-                       "  ( id, chain_index, url) "
-                       "  SELECT id, 0, url from downloads_tmp")) {
-    return false;
-  }
-
-  // Get rid of temporary table.
-  if (!GetDB().Execute("DROP TABLE downloads_tmp")) {
-    return false;
-  }
-
-  return true;
-}
-
-bool DownloadDatabase::MigrateReferrer() {
-  return EnsureColumnExists("referrer", "VARCHAR NOT NULL DEFAULT \"\"");
-}
-
-bool DownloadDatabase::MigrateDownloadedByExtension() {
-  return EnsureColumnExists("by_ext_id", "VARCHAR NOT NULL DEFAULT \"\"") &&
-         EnsureColumnExists("by_ext_name", "VARCHAR NOT NULL DEFAULT \"\"");
-}
-
-bool DownloadDatabase::MigrateDownloadValidators() {
-  return EnsureColumnExists("etag", "VARCHAR NOT NULL DEFAULT \"\"") &&
-         EnsureColumnExists("last_modified", "VARCHAR NOT NULL DEFAULT \"\"");
-}
-
-bool DownloadDatabase::MigrateHashHttpMethodAndGenerateGuids() {
-  if (!EnsureColumnExists("guid", "VARCHAR NOT NULL DEFAULT ''") ||
-      !EnsureColumnExists("hash", "BLOB NOT NULL DEFAULT X''") ||
-      !EnsureColumnExists("http_method", "VARCHAR NOT NULL DEFAULT ''")) {
-    return false;
-  }
-
-  // Generate GUIDs for each download. GUIDs based on random data should conform
-  // with RFC 4122 section 4.4. Given the following field layout (based on RFC
-  // 4122):
-  //
-  //  0                   1                   2                   3
-  //  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //  |                          time_low                             |
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //  |       time_mid                |         time_hi_and_version   |
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //  |clk_seq_hi_res |  clk_seq_low  |         node (0-1)            |
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //  |                         node (2-5)                            |
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //
-  // * Bits 4-7 of time_hi_and_version should be set to 0b0100 == 4
-  // * Bits 6-7 of clk_seq_hi_res should be set to 0b10
-  // * All other bits should be random or pseudorandom.
-  //
-  // We are going to take the liberty of setting time_low to the 32-bit download
-  // ID. That will guarantee that no two randomly generated GUIDs will collide
-  // even if the 90 bits of entropy doesn't save us.
-  //
-  // Translated to the canonical string representation, the GUID is generated
-  // thusly:
-  //
-  //    XXXXXXXX-RRRR-4RRR-yRRR-RRRRRRRRRRRR
-  //    \__  __/ \___________  ____________/
-  //       \/                \/
-  //       |          R = random hex digit.
-  //       |          y = one of {'8','9','A','B'} selected randomly.
-  //       |          4 = the character '4'.
-  //       |
-  //       Hex representation of 32-bit download ID.
-  //
-  // This GUID generation scheme is only used for migrated download rows and
-  // assumes that the likelihood of a collision with a GUID generated via
-  // base::Uuid::GenerateRandomV4().AsLowercaseString() will be vanishingly
-  // small.
-  //
-  // A previous version of this code generated GUIDs that used random bits for
-  // all but the first 32-bits. I.e. the scheme didn't respect the 6 fixed bits
-  // as prescribed for type 4 GUIDs. The resulting GUIDs are not believed to
-  // have an elevated risk of collision with GUIDs generated via
-  // base::Uuid::GenerateRandomV4().AsLowercaseString() and are considered valid
-  // by all known consumers. Hence no additional migration logic is being
-  // introduced to fix those GUIDs.
-  sql::Statement select(
-      GetDB().GetUniqueStatement("SELECT id FROM " DOWNLOADS_TABLE));
-  sql::Statement update(GetDB().GetUniqueStatement(
-      "UPDATE " DOWNLOADS_TABLE " SET guid = ? WHERE id = ?"));
-  while (select.Step()) {
-    int id = select.ColumnInt(0);
-    uint64_t r1 = base::RandUint64();
-    uint64_t r2 = base::RandUint64();
-    std::string guid = base::StringPrintf(
-        "%08" PRIX32 "-%04" PRIX64 "-4%03" PRIX64 "-%04" PRIX64 "-%012" PRIX64,
-        id, r1 >> 48, (r1 >> 36) & 0xfff,
-        ((8 | ((r1 >> 34) & 3)) << 12) | ((r1 >> 22) & 0xfff),
-        r2 & 0xffffffffffff);
-    update.BindString(0, guid);
-    update.BindInt(1, id);
-    if (!update.Run()) {
-      return false;
-    }
-    update.Reset(true);
-  }
-  return true;
-}
-
-bool DownloadDatabase::MigrateDownloadTabUrl() {
-  return EnsureColumnExists("tab_url", "VARCHAR NOT NULL DEFAULT ''") &&
-         EnsureColumnExists("tab_referrer_url", "VARCHAR NOT NULL DEFAULT ''");
-}
-
-bool DownloadDatabase::MigrateDownloadSiteInstanceUrl() {
-  return EnsureColumnExists("site_url", "VARCHAR NOT NULL DEFAULT ''");
-}
-
-bool DownloadDatabase::MigrateEmbedderDownloadData() {
-  return EnsureColumnExists("embedder_download_data",
-                            "VARCHAR NOT NULL DEFAULT ''");
-}
-
-bool DownloadDatabase::MigrateDownloadLastAccessTime() {
-  return EnsureColumnExists("last_access_time", "INTEGER NOT NULL DEFAULT 0");
-}
-
-bool DownloadDatabase::MigrateDownloadTransient() {
-  return EnsureColumnExists("transient", "INTEGER NOT NULL DEFAULT 0");
-}
-
-bool DownloadDatabase::MigrateDownloadSliceFinished() {
-  return EnsureColumnExistsInTable(DOWNLOADS_SLICES_TABLE, "finished",
-                                   "INTEGER NOT NULL DEFAULT 0");
 }
 
 bool DownloadDatabase::MigrateDownloadByWebApp() {
@@ -384,7 +167,7 @@ bool DownloadDatabase::InitDownloadTable() {
     // as it is introduced in version 24. A migration function will be run to
     // create it later.
     ret = EnsureColumnExists("end_time", "INTEGER NOT NULL DEFAULT 0") &&
-          EnsureColumnExists("opened", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumnExists("opened", "INTEGER NOT NULL DEFAULT 0");
   } else {
     // If the "downloads" table doesn't exist, neither should the
     // "downloads_url_chain" table.
@@ -474,7 +257,7 @@ void DownloadDatabase::QueryDownloads(std::vector<DownloadRow>* results) {
         IntToDownloadDangerType(statement_main.ColumnInt(column++));
     info->interrupt_reason =
         IntToDownloadInterruptReason(statement_main.ColumnInt(column++));
-    info->hash = statement_main.ColumnBlobAsString(column++);
+    statement_main.ColumnBlobAsString(column++, &info->hash);
     info->end_time =
         base::Time::FromInternalValue(statement_main.ColumnInt64(column++));
     info->opened = statement_main.ColumnInt(column++) != 0;
@@ -508,7 +291,7 @@ void DownloadDatabase::QueryDownloads(std::vector<DownloadRow>* results) {
       dropped_reason = DROPPED_REASON_BAD_DANGER_TYPE;
     }
     if (dropped_reason == DROPPED_REASON_MAX) {
-      DCHECK(!info_map.contains(info->id));
+      DCHECK(!base::Contains(info_map, info->id));
       uint32_t id = info->id;
       info_map[id] = info.release();
     }
@@ -526,15 +309,13 @@ void DownloadDatabase::QueryDownloads(std::vector<DownloadRow>* results) {
     int chain_index = statement_chain.ColumnInt(column++);
 
     DownloadId id = kInvalidDownloadId;
-    if (!ConvertIntToDownloadId(signed_id, &id)) {
+    if (!ConvertIntToDownloadId(signed_id, &id))
       continue;
-    }
 
     // Confirm the id has already been seen--if it hasn't, discard the
     // record.
-    if (!info_map.contains(id)) {
+    if (!base::Contains(info_map, id))
       continue;
-    }
 
     // Confirm all previous URLs in the chain have already been seen;
     // if not, fill in with null or discard record.
@@ -549,9 +330,8 @@ void DownloadDatabase::QueryDownloads(std::vector<DownloadRow>* results) {
       url_chain->push_back(GURL());
       current_chain_size++;
     }
-    if (current_chain_size > chain_index) {
+    if (current_chain_size > chain_index)
       continue;
-    }
 
     // Save the record.
     url_chain->push_back(GURL(statement_chain.ColumnStringView(2)));
@@ -619,17 +399,15 @@ bool DownloadDatabase::UpdateDownload(const DownloadRow& data) {
   statement.BindString(column++, data.last_modified);
   statement.BindInt64(column++, DownloadIdToInt(data.id));
 
-  if (!statement.Run()) {
+  if (!statement.Run())
     return false;
-  }
 
   if (data.download_slice_info.size() == 0) {
     RemoveDownloadSlices(data.id);
   } else {
     for (size_t i = 0; i < data.download_slice_info.size(); ++i) {
-      if (!CreateOrUpdateDownloadSlice(data.download_slice_info[i])) {
+      if (!CreateOrUpdateDownloadSlice(data.download_slice_info[i]))
         return false;
-      }
     }
   }
 
@@ -637,9 +415,8 @@ bool DownloadDatabase::UpdateDownload(const DownloadRow& data) {
 }
 
 void DownloadDatabase::EnsureInProgressEntriesCleanedUp() {
-  if (in_progress_entry_cleanup_completed_) {
+  if (in_progress_entry_cleanup_completed_)
     return;
-  }
 
   sql::Statement statement(GetDB().GetCachedStatement(
       SQL_FROM_HERE, "UPDATE " DOWNLOADS_TABLE
@@ -658,17 +435,14 @@ bool DownloadDatabase::CreateDownload(const DownloadRow& info) {
   DCHECK(!info.guid.empty());
   EnsureInProgressEntriesCleanedUp();
 
-  if (info.url_chain.empty()) {
+  if (info.url_chain.empty())
     return false;
-  }
 
-  if (info.state == DownloadState::INVALID) {
+  if (info.state == DownloadState::INVALID)
     return false;
-  }
 
-  if (info.danger_type == DownloadDangerType::INVALID) {
+  if (info.danger_type == DownloadDangerType::INVALID)
     return false;
-  }
 
   {
     sql::Statement statement_insert(GetDB().GetCachedStatement(
@@ -726,8 +500,8 @@ bool DownloadDatabase::CreateDownload(const DownloadRow& info) {
   }
 
   {
-    sql::Statement count_urls(GetDB().GetCachedStatement(
-        SQL_FROM_HERE, "SELECT count(*) FROM downloads_url_chains WHERE id=?"));
+    sql::Statement count_urls(GetDB().GetCachedStatement(SQL_FROM_HERE,
+        "SELECT count(*) FROM downloads_url_chains WHERE id=?"));
     count_urls.BindInt64(0, info.id);
     if (count_urls.Step()) {
       bool corrupt_urls = count_urls.ColumnInt(0) > 0;
@@ -784,8 +558,8 @@ void DownloadDatabase::RemoveDownload(DownloadId id) {
 }
 
 void DownloadDatabase::RemoveDownloadURLs(DownloadId id) {
-  sql::Statement urlchain_statement(GetDB().GetCachedStatement(
-      SQL_FROM_HERE, "DELETE FROM downloads_url_chains WHERE id=?"));
+  sql::Statement urlchain_statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
+      "DELETE FROM downloads_url_chains WHERE id=?"));
   urlchain_statement.BindInt64(0, id);
   if (!urlchain_statement.Run()) {
     UMA_HISTOGRAM_ENUMERATION("Download.DatabaseURLChainDeleteError",
@@ -807,9 +581,8 @@ bool DownloadDatabase::CreateOrUpdateDownloadSlice(
   // If the slice has no data, there is no need to insert it into the db. Note
   // that for each slice, `received_bytes` can only go up. So if a slice is
   // already in the db, its `received_bytes` should always be larger than 0.
-  if (info.received_bytes == 0) {
+  if (info.received_bytes == 0)
     return true;
-  }
   sql::Statement statement_replace(GetDB().GetCachedStatement(
       SQL_FROM_HERE, "REPLACE INTO " DOWNLOADS_SLICES_TABLE
                      "(download_id, offset, received_bytes, finished) "

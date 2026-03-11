@@ -2,13 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "components/history/core/browser/history_types.h"
 
 #include <algorithm>
 #include <limits>
 
 #include "base/check.h"
-#include "base/compiler_specific.h"
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -45,23 +49,25 @@ VisitRow::~VisitRow() = default;
 
 VisitRow::VisitRow(const VisitRow&) = default;
 
-// VisitedURLInfo
-// --------------------------------------------------------------------
+// VisitedLinkRow --------------------------------------------------------------
 
-VisitedURLInfo::VisitedURLInfo() = default;
+bool operator==(const VisitedLinkRow& lhs, const VisitedLinkRow& rhs) {
+  return std::tie(lhs.id, lhs.link_url_id, lhs.top_level_url, lhs.frame_url,
+                  lhs.visit_count) == std::tie(rhs.id, rhs.link_url_id,
+                                               rhs.top_level_url, rhs.frame_url,
+                                               rhs.visit_count);
+}
 
-VisitedURLInfo::VisitedURLInfo(URLRow url_row,
-                               VisitRow visit_row,
-                               VisitResponseCodeCategory response_code_category,
-                               std::optional<int64_t> local_navigation_id)
-    : url_row(std::move(url_row)),
-      visit_row(std::move(visit_row)),
-      response_code_category(response_code_category),
-      local_navigation_id(local_navigation_id) {}
+bool operator!=(const VisitedLinkRow& lhs, const VisitedLinkRow& rhs) {
+  return !(lhs == rhs);
+}
 
-VisitedURLInfo::~VisitedURLInfo() = default;
-
-VisitedURLInfo::VisitedURLInfo(const VisitedURLInfo& other) = default;
+bool operator<(const VisitedLinkRow& lhs, const VisitedLinkRow& rhs) {
+  return std::tie(lhs.id, lhs.link_url_id, lhs.top_level_url, lhs.frame_url,
+                  lhs.visit_count) < std::tie(rhs.id, rhs.link_url_id,
+                                              rhs.top_level_url, rhs.frame_url,
+                                              rhs.visit_count);
+}
 
 // QueryResults ----------------------------------------------------------------
 
@@ -143,7 +149,7 @@ void QueryResults::DeleteRange(size_t begin, size_t end) {
          match++) {
       if (found->second[match] >= begin && found->second[match] <= end) {
         // Remove this reference from the list.
-        found->second.erase(UNSAFE_TODO(found->second.begin() + match));
+        found->second.erase(found->second.begin() + match);
         match--;
       }
     }
@@ -228,24 +234,6 @@ QueryURLResult::QueryURLResult(QueryURLResult&&) noexcept = default;
 QueryURLResult& QueryURLResult::operator=(const QueryURLResult&) = default;
 
 QueryURLResult& QueryURLResult::operator=(QueryURLResult&&) noexcept = default;
-
-// QueryURLAndVisitsResult ----------------------------------------------------
-
-QueryURLAndVisitsResult::QueryURLAndVisitsResult() = default;
-
-QueryURLAndVisitsResult::~QueryURLAndVisitsResult() = default;
-
-QueryURLAndVisitsResult::QueryURLAndVisitsResult(
-    const QueryURLAndVisitsResult&) = default;
-
-QueryURLAndVisitsResult::QueryURLAndVisitsResult(
-    QueryURLAndVisitsResult&&) noexcept = default;
-
-QueryURLAndVisitsResult& QueryURLAndVisitsResult::operator=(
-    const QueryURLAndVisitsResult&) = default;
-
-QueryURLAndVisitsResult& QueryURLAndVisitsResult::operator=(
-    QueryURLAndVisitsResult&&) noexcept = default;
 
 // MostVisitedURL --------------------------------------------------------------
 
@@ -336,10 +324,9 @@ HistoryAddPageArgs::HistoryAddPageArgs()
                          ui::PAGE_TRANSITION_LINK,
                          false,
                          SOURCE_BROWSED,
-                         VisitResponseCodeCategory::kNot404,
                          false,
                          true,
-                         VisitContextEphemerality::kNotEphemeral,
+                         false,
                          std::nullopt,
                          std::nullopt,
                          std::nullopt,
@@ -359,18 +346,16 @@ HistoryAddPageArgs::HistoryAddPageArgs(
     ui::PageTransition transition,
     bool hidden,
     VisitSource source,
-    VisitResponseCodeCategory response_code_category,
     bool did_replace_entry,
     bool consider_for_ntp_most_visited,
-    VisitContextEphemerality visit_context_ephemerality,
+    bool is_ephemeral,
     std::optional<std::u16string> title,
     std::optional<GURL> top_level_url,
     std::optional<GURL> frame_url,
     std::optional<Opener> opener,
     std::optional<int64_t> bookmark_id,
     std::optional<std::string> app_id,
-    std::optional<VisitContextAnnotations::OnVisitFields> context_annotations,
-    std::optional<int32_t> actor_task_id)
+    std::optional<VisitContextAnnotations::OnVisitFields> context_annotations)
     : url(url),
       time(time),
       context_id(context_id),
@@ -381,18 +366,16 @@ HistoryAddPageArgs::HistoryAddPageArgs(
       transition(transition),
       hidden(hidden),
       visit_source(source),
-      response_code_category(response_code_category),
       did_replace_entry(did_replace_entry),
       consider_for_ntp_most_visited(consider_for_ntp_most_visited),
-      visit_context_ephemerality(visit_context_ephemerality),
+      is_ephemeral(is_ephemeral),
       title(title),
       top_level_url(top_level_url),
       frame_url(frame_url),
       opener(opener),
       bookmark_id(bookmark_id),
       app_id(app_id),
-      context_annotations(std::move(context_annotations)),
-      actor_task_id(actor_task_id) {}
+      context_annotations(std::move(context_annotations)) {}
 
 HistoryAddPageArgs::HistoryAddPageArgs(const HistoryAddPageArgs& other) =
     default;
@@ -519,6 +502,39 @@ VisitContextAnnotations::VisitContextAnnotations(
     const VisitContextAnnotations& other) = default;
 
 VisitContextAnnotations::~VisitContextAnnotations() = default;
+
+bool VisitContextAnnotations::operator==(
+    const VisitContextAnnotations& other) const {
+  return on_visit == other.on_visit &&
+         omnibox_url_copied == other.omnibox_url_copied &&
+         is_existing_part_of_tab_group == other.is_existing_part_of_tab_group &&
+         is_placed_in_tab_group == other.is_placed_in_tab_group &&
+         is_existing_bookmark == other.is_existing_bookmark &&
+         is_new_bookmark == other.is_new_bookmark &&
+         is_ntp_custom_link == other.is_ntp_custom_link &&
+         duration_since_last_visit == other.duration_since_last_visit &&
+         page_end_reason == other.page_end_reason &&
+         total_foreground_duration == other.total_foreground_duration;
+}
+
+bool VisitContextAnnotations::operator!=(
+    const VisitContextAnnotations& other) const {
+  return !(*this == other);
+}
+
+bool VisitContextAnnotations::OnVisitFields::operator==(
+    const VisitContextAnnotations::OnVisitFields& other) const {
+  return browser_type == other.browser_type && window_id == other.window_id &&
+         tab_id == other.tab_id && task_id == other.task_id &&
+         root_task_id == other.root_task_id &&
+         parent_task_id == other.parent_task_id &&
+         response_code == other.response_code;
+}
+
+bool VisitContextAnnotations::OnVisitFields::operator!=(
+    const VisitContextAnnotations::OnVisitFields& other) const {
+  return !(*this == other);
+}
 
 AnnotatedVisit::AnnotatedVisit() = default;
 AnnotatedVisit::AnnotatedVisit(URLRow url_row,

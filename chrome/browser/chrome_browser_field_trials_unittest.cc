@@ -7,7 +7,6 @@
 #include <memory>
 
 #include "base/feature_list.h"
-#include "chrome/browser/metrics/chrome_browser_sampling_trials.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/ukm/ukm_recorder_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -49,12 +48,10 @@ TEST(ChromeBrowserFieldTrialsTest, SamplingTrials) {
 #endif  // BUILDFLAG(IS_ANDROID)
   EXPECT_TRUE(base::FieldTrialList::TrialExists(kUkmSamplingTrialName));
 
-  // Try to create the sampling trials again. This should be a no-op,
+  // Call SetUpClientSideFieldTrials() again. This should be a no-op,
   // since the sampling trials already exist. If the trials are created again,
   // a CHECK will be triggered and this will crash.
-  metrics::CreateFallbackSamplingTrialsIfNeeded(
-      entropy_providers.default_entropy(), feature_list.get());
-  metrics::CreateFallbackUkmSamplingTrialIfNeeded(
-      entropy_providers.default_entropy(), feature_list.get());
+  chrome_browser_field_trials.SetUpClientSideFieldTrials(
+      /*has_seed=*/false, entropy_providers, feature_list.get());
 }
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)

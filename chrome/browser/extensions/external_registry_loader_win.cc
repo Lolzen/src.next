@@ -4,8 +4,6 @@
 
 #include "chrome/browser/extensions/external_registry_loader_win.h"
 
-#include <windows.h>
-
 #include <memory>
 #include <utility>
 
@@ -14,7 +12,6 @@
 #include "base/files/scoped_file.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
-#include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -80,8 +77,8 @@ void ExternalRegistryLoader::StartLoading() {
       base::BindOnce(&ExternalRegistryLoader::LoadOnBlockingThread, this));
 }
 
-base::DictValue ExternalRegistryLoader::LoadPrefsOnBlockingThread() {
-  base::DictValue prefs;
+base::Value::Dict ExternalRegistryLoader::LoadPrefsOnBlockingThread() {
+  base::Value::Dict prefs;
 
   // A map of IDs, to weed out duplicates between HKCU and HKLM.
   std::set<std::wstring> keys;
@@ -204,7 +201,7 @@ void ExternalRegistryLoader::LoadOnBlockingThread() {
   DCHECK(task_runner_);
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
   base::TimeTicks start_time = base::TimeTicks::Now();
-  base::DictValue prefs = LoadPrefsOnBlockingThread();
+  base::Value::Dict prefs = LoadPrefsOnBlockingThread();
   LOCAL_HISTOGRAM_TIMES("Extensions.ExternalRegistryLoaderWin",
                         base::TimeTicks::Now() - start_time);
   content::GetUIThreadTaskRunner({})->PostTask(
@@ -215,7 +212,7 @@ void ExternalRegistryLoader::LoadOnBlockingThread() {
 }
 
 void ExternalRegistryLoader::CompleteLoadAndStartWatchingRegistry(
-    base::DictValue prefs) {
+    base::Value::Dict prefs) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   LoadFinished(std::move(prefs));
 
@@ -232,8 +229,7 @@ void ExternalRegistryLoader::CompleteLoadAndStartWatchingRegistry(
                        base::Unretained(this), base::Unretained(&hklm_key_));
     hklm_key_.StartWatching(std::move(callback));
   } else {
-    ::SetLastError(result);
-    PLOG(WARNING) << "Error observing HKLM";
+    LOG(WARNING) << "Error observing HKLM: " << result;
   }
 
   if ((result = hkcu_key_.Create(HKEY_CURRENT_USER, kRegistryExtensions,
@@ -243,8 +239,7 @@ void ExternalRegistryLoader::CompleteLoadAndStartWatchingRegistry(
                        base::Unretained(this), base::Unretained(&hkcu_key_));
     hkcu_key_.StartWatching(std::move(callback));
   } else {
-    ::SetLastError(result);
-    PLOG(WARNING) << "Error observing HKCU";
+    LOG(WARNING) << "Error observing HKCU: " << result;
   }
 
   attempted_watching_registry_ = true;
@@ -281,7 +276,7 @@ void ExternalRegistryLoader::UpatePrefsOnBlockingThread() {
   DCHECK(task_runner_);
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
   base::TimeTicks start_time = base::TimeTicks::Now();
-  base::DictValue prefs = LoadPrefsOnBlockingThread();
+  base::Value::Dict prefs = LoadPrefsOnBlockingThread();
   LOCAL_HISTOGRAM_TIMES("Extensions.ExternalRegistryLoaderWinUpdate",
                         base::TimeTicks::Now() - start_time);
   content::GetUIThreadTaskRunner({})->PostTask(

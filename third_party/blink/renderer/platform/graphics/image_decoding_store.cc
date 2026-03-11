@@ -27,10 +27,11 @@
 
 #include <memory>
 
+#include "base/functional/bind.h"
+#include "base/not_fatal_until.h"
 #include "base/synchronization/lock.h"
 #include "third_party/blink/renderer/platform/graphics/image_frame_generator.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
-#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/threading.h"
 
 namespace blink {
@@ -43,7 +44,11 @@ static const size_t kDefaultMaxTotalSizeOfHeapEntries = 32 * 1024 * 1024;
 
 ImageDecodingStore::ImageDecodingStore()
     : heap_limit_in_bytes_(kDefaultMaxTotalSizeOfHeapEntries),
-      heap_memory_usage_in_bytes_(0) {}
+      heap_memory_usage_in_bytes_(0),
+      memory_pressure_listener_(
+          FROM_HERE,
+          base::BindRepeating(&ImageDecodingStore::OnMemoryPressure,
+                              base::Unretained(this))) {}
 
 ImageDecodingStore::~ImageDecodingStore() {
 #if DCHECK_IS_ON()
@@ -223,6 +228,18 @@ void ImageDecodingStore::Prune() {
   }
 }
 
+void ImageDecodingStore::OnMemoryPressure(
+    base::MemoryPressureListener::MemoryPressureLevel level) {
+  switch (level) {
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE:
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE:
+      break;
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL:
+      Clear();
+      break;
+  }
+}
+
 template <class T, class U, class V>
 void ImageDecodingStore::InsertCacheInternal(std::unique_ptr<T> cache_entry,
                                              U* cache_map,
@@ -263,7 +280,7 @@ void ImageDecodingStore::RemoveFromCacheInternal(
 
   // Remove entry from identifier map.
   typename V::iterator iter = identifier_map->find(cache_entry->Generator());
-  CHECK(iter != identifier_map->end());
+  CHECK(iter != identifier_map->end(), base::NotFatalUntil::M130);
   iter->value.erase(cache_entry->CacheKey());
   if (!iter->value.size())
     identifier_map->erase(iter);

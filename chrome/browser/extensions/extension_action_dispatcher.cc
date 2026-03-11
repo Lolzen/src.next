@@ -5,7 +5,6 @@
 #include "chrome/browser/extensions/extension_action_dispatcher.h"
 
 #include "base/lazy_instance.h"
-#include "chrome/browser/extensions/extension_tab_util.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "components/sessions/core/session_id.h"
 #include "content/public/browser/web_contents.h"
@@ -14,10 +13,11 @@
 #include "extensions/browser/extension_action_manager.h"
 #include "extensions/browser/extension_event_histogram_value.h"
 #include "extensions/browser/extension_prefs.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/mojom/context_type.mojom.h"
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_tab_util.h"
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 namespace extensions {
 
@@ -59,6 +59,7 @@ void ExtensionActionDispatcher::NotifyChange(ExtensionAction* extension_action,
   }
 }
 
+#if BUILDFLAG(ENABLE_EXTENSIONS)
 void ExtensionActionDispatcher::DispatchExtensionActionClicked(
     const ExtensionAction& extension_action,
     content::WebContents* web_contents,
@@ -81,7 +82,7 @@ void ExtensionActionDispatcher::DispatchExtensionActionClicked(
   }
 
   if (event_name) {
-    base::ListValue args;
+    base::Value::List args;
     // The action APIs (browserAction, pageAction, action) are only available
     // to privileged extension contexts. As such, we deterministically know that
     // the right context type here is privileged.
@@ -99,6 +100,7 @@ void ExtensionActionDispatcher::DispatchExtensionActionClicked(
                              event_name, std::move(args));
   }
 }
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 void ExtensionActionDispatcher::ClearAllValuesForTab(
     content::WebContents* web_contents) {
@@ -136,7 +138,7 @@ void ExtensionActionDispatcher::DispatchEventToExtension(
     const ExtensionId& extension_id,
     events::HistogramValue histogram_value,
     const std::string& event_name,
-    base::ListValue event_args) {
+    base::Value::List event_args) {
   if (!EventRouter::Get(context)) {
     return;
   }
@@ -160,8 +162,8 @@ void ExtensionActionDispatcher::OnActionPinnedStateChanged(
   // TODO(crbug.com/360916928): Today, no action APIs are compiled.
   // Unfortunately, this means we miss out on the compiled types, which would be
   // rather helpful here.
-  base::ListValue args;
-  base::DictValue change;
+  base::Value::List args;
+  base::Value::Dict change;
   change.Set("isOnToolbar", is_pinned);
   args.Append(std::move(change));
   DispatchEventToExtension(browser_context_, extension_id,

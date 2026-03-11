@@ -121,7 +121,7 @@ class MockDataHost : public attribution_reporting::mojom::blink::DataHost {
           data_host) {
     receiver_.Bind(std::move(data_host));
     receiver_.set_disconnect_handler(
-        BindOnce(&MockDataHost::OnDisconnect, Unretained(this)));
+        WTF::BindOnce(&MockDataHost::OnDisconnect, WTF::Unretained(this)));
   }
 
   ~MockDataHost() override = default;
@@ -210,7 +210,8 @@ class MockAttributionHost : public mojom::blink::AttributionHost {
       : provider_(provider) {
     provider_->OverrideBinderForTesting(
         mojom::blink::AttributionHost::Name_,
-        BindRepeating(&MockAttributionHost::BindReceiver, Unretained(this)));
+        WTF::BindRepeating(&MockAttributionHost::BindReceiver,
+                           WTF::Unretained(this)));
   }
 
   ~MockAttributionHost() override {
@@ -246,7 +247,7 @@ class MockAttributionHost : public mojom::blink::AttributionHost {
           data_host,
       attribution_reporting::mojom::RegistrationEligibility eligibility,
       bool is_for_background_requests,
-      const Vector<scoped_refptr<const blink::SecurityOrigin>>&
+      const WTF::Vector<scoped_refptr<const blink::SecurityOrigin>>&
           reporting_origins) override {
     mock_data_host_ = std::make_unique<MockDataHost>(std::move(data_host));
   }
@@ -479,7 +480,7 @@ TEST_F(AttributionSrcLoaderTest, DefaultReferrer_ContextMenu) {
   KURL url = ToKURL(kUrl);
   RegisterMockedURLLoad(url, test::CoreTestDataPath("foo.html"));
 
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+  GetDocument().documentElement()->setInnerHTML(
       "<head><meta name=referrer content=no-referrer>");
 
   auto* anchor = MakeGarbageCollected<HTMLAnchorElement>(GetDocument());
@@ -731,7 +732,9 @@ class AttributionSrcLoaderInBrowserMigrationEnabledTest
  public:
   AttributionSrcLoaderInBrowserMigrationEnabledTest() {
     scoped_feature_list_.InitWithFeatures(
-        {blink::features::kKeepAliveInBrowserMigration}, {});
+        {blink::features::kKeepAliveInBrowserMigration,
+         blink::features::kAttributionReportingInBrowserMigration},
+        {});
   }
 
  private:

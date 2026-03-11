@@ -10,6 +10,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/url_constants.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
@@ -42,8 +43,7 @@ void SetJSModuleDefaults(content::WebUIDataSource* source) {
   if (scheme == content::kChromeUIScheme) {
     source->OverrideContentSecurityPolicy(
         network::mojom::CSPDirectiveName::ConnectSrc,
-        "connect-src chrome://webui-test chrome://resources chrome://theme "
-        "'self';");
+        "connect-src chrome://resources chrome://theme 'self';");
     source->OverrideContentSecurityPolicy(
         network::mojom::CSPDirectiveName::ImgSrc,
         "img-src chrome://resources chrome://theme chrome://image "
@@ -87,7 +87,7 @@ void SetupWebUIDataSource(content::WebUIDataSource* source,
   SetJSModuleDefaults(source);
   EnableTrustedTypesCSP(source);
   source->AddResourcePaths(resources);
-  source->SetDefaultResource(default_resource);
+  source->AddResourcePath("", default_resource);
 }
 
 // There is another method, ash::EnableTrustedTypesCSP, used by ash-only WebUIs.

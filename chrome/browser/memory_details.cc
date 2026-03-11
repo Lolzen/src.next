@@ -18,6 +18,7 @@
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/nacl/common/nacl_process_type.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -92,7 +93,7 @@ void UpdateProcessTypeAndTitles(
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   if (!is_webui && extension_set) {
-    const Extension* extension = extension_set->GetByID(page_url.GetHost());
+    const Extension* extension = extension_set->GetByID(page_url.host());
     if (extension) {
       process.titles.push_back(base::UTF8ToUTF16(extension->name()));
       process.renderer_type = ProcessMemoryInformation::RENDERER_EXTENSION;
@@ -349,29 +350,17 @@ void MemoryDetails::CollectChildInfoOnUIThread() {
   std::erase_if(vector, is_unknown);
 
   // Grab a memory dump for all processes.
-  auto* memory_instrumentation =
-      memory_instrumentation::MemoryInstrumentation::GetInstance();
-  if (memory_instrumentation) {
-    memory_instrumentation->RequestPrivateMemoryFootprint(
-        base::kNullProcessId,
-        base::BindOnce(
-            [](scoped_refptr<MemoryDetails> details,
-               memory_instrumentation::mojom::RequestOutcome outcome,
-               std::unique_ptr<memory_instrumentation::GlobalMemoryDump>
-                   global_dump) {
-              details->DidReceiveMemoryDump(outcome, std::move(global_dump));
-            },
-            scoped_refptr<MemoryDetails>(this)));
-  } else {
-    DidReceiveMemoryDump(/*outcome=*/std::nullopt, /*dump=*/nullptr);
-  }
+  memory_instrumentation::MemoryInstrumentation::GetInstance()
+      ->RequestPrivateMemoryFootprint(
+          base::kNullProcessId,
+          base::BindOnce(&MemoryDetails::DidReceiveMemoryDump, this));
 }
 
 void MemoryDetails::DidReceiveMemoryDump(
-    std::optional<memory_instrumentation::mojom::RequestOutcome> outcome,
+    bool success,
     std::unique_ptr<memory_instrumentation::GlobalMemoryDump> global_dump) {
   ProcessData* const chrome_browser = ChromeBrowser();
-  if (outcome == memory_instrumentation::mojom::RequestOutcome::kSuccess) {
+  if (success) {
     for (const memory_instrumentation::GlobalMemoryDump::ProcessDump& dump :
          global_dump->process_dumps()) {
       base::ProcessId dump_pid = dump.pid();

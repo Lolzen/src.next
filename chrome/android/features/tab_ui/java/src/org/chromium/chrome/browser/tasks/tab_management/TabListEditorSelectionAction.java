@@ -10,19 +10,15 @@ import android.graphics.drawable.Drawable;
 import androidx.annotation.IntDef;
 import androidx.appcompat.content.res.AppCompatResources;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiMetricsHelper.TabListEditorActionMetricGroups;
 import org.chromium.chrome.tab_ui.R;
-import org.chromium.components.browser_ui.util.motion.MotionEventInfo;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.List;
 
 /** Select all and deselect all toggle action for the {@link TabListEditorMenu}. */
-@NullMarked
 public class TabListEditorSelectionAction extends TabListEditorAction {
     private @ActionState int mActionState;
     private final Drawable mSelectAllIcon;
@@ -85,8 +81,8 @@ public class TabListEditorSelectionAction extends TabListEditorAction {
     }
 
     @Override
-    public void onSelectionStateChange(List<TabListEditorItemSelectionId> itemIds) {
-        setEnabledAndItemCount(true, itemIds.size());
+    public void onSelectionStateChange(List<Integer> tabIds) {
+        setEnabledAndItemCount(true, tabIds.size());
         updateState(
                 getActionDelegate().areAllTabsSelected()
                         ? ActionState.DESELECT_ALL
@@ -94,10 +90,7 @@ public class TabListEditorSelectionAction extends TabListEditorAction {
     }
 
     @Override
-    public boolean performAction(
-            List<Tab> tabs,
-            List<String> tabGroupSyncIds,
-            @Nullable MotionEventInfo triggeringMotion) {
+    public boolean performAction(List<Tab> tabs) {
         if (mActionState == ActionState.SELECT_ALL) {
             getActionDelegate().selectAll();
             TabUiMetricsHelper.recordSelectionEditorActionMetrics(

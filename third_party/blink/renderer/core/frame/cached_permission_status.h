@@ -5,7 +5,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_CACHED_PERMISSION_STATUS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_CACHED_PERMISSION_STATUS_H_
 
-#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/public/mojom/permissions/permission.mojom-blink.h"
@@ -21,7 +20,7 @@
 
 namespace blink {
 
-class ExecutionContext;
+class LocalDOMWindow;
 
 // This cache keeps track of permission statuses, restricted to the permission
 // element. These permission statuses are not canonical and should not be used
@@ -35,12 +34,12 @@ class ExecutionContext;
 class CORE_EXPORT CachedPermissionStatus final
     : public GarbageCollected<CachedPermissionStatus>,
       public mojom::blink::PermissionObserver,
-      public Supplement<ExecutionContext> {
+      public Supplement<LocalDOMWindow> {
  public:
   static const char kSupplementName[];
 
   // Returns the supplement, creating one as needed.
-  static CachedPermissionStatus* From(ExecutionContext* context);
+  static CachedPermissionStatus* From(LocalDOMWindow* window);
 
   using PermissionStatusMap =
       HashMap<mojom::blink::PermissionName, mojom::blink::PermissionStatus>;
@@ -60,7 +59,7 @@ class CORE_EXPORT CachedPermissionStatus final
         PermissionStatusMap initilized_map) = 0;
   };
 
-  explicit CachedPermissionStatus(ExecutionContext* context);
+  explicit CachedPermissionStatus(LocalDOMWindow* local_dom_window);
 
   ~CachedPermissionStatus() override = default;
 

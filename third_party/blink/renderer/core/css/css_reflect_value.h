@@ -26,8 +26,13 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CSS_REFLECT_VALUE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CSS_REFLECT_VALUE_H_
 
+#include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/core/css/css_value.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
+
+namespace WTF {
+class String;
+}  // namespace WTF
 
 namespace blink {
 
@@ -50,11 +55,9 @@ class CSSReflectValue : public CSSValue {
   CSSPrimitiveValue* Offset() const { return offset_.Get(); }
   CSSValue* Mask() const { return mask_.Get(); }
 
-  String CustomCSSText() const;
+  WTF::String CustomCSSText() const;
 
   bool Equals(const CSSReflectValue&) const;
-
-  bool HasRandomFunctions() const;
 
   void TraceAfterDispatch(blink::Visitor*) const;
 

@@ -4,18 +4,14 @@
 
 package org.chromium.chrome.browser.tab;
 
-import androidx.annotation.ColorInt;
+import androidx.annotation.Nullable;
 
 import org.chromium.base.Callback;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.content_public.browser.NavigationHandle;
-import org.chromium.content_public.browser.WebContents;
 import org.chromium.net.NetError;
 import org.chromium.ui.base.WindowAndroid;
 
 /** Monitor changes that indicate a theme color change may be needed from tab contents. */
-@NullMarked
 public class TabThemeColorHelper extends EmptyTabObserver {
     private final Callback<Integer> mUpdateCallback;
 
@@ -26,13 +22,8 @@ public class TabThemeColorHelper extends EmptyTabObserver {
 
     /** Notifies the listeners of the tab theme color change. */
     private void updateIfNeeded(Tab tab, boolean didWebContentsThemeColorChange) {
-        @ColorInt int themeColor = tab.getThemeColor();
-        if (didWebContentsThemeColorChange) {
-            WebContents webContents = tab.getWebContents();
-            if (webContents != null) {
-                themeColor = webContents.getThemeColor();
-            }
-        }
+        int themeColor = tab.getThemeColor();
+        if (didWebContentsThemeColorChange) themeColor = tab.getWebContents().getThemeColor();
         mUpdateCallback.onResult(themeColor);
     }
 

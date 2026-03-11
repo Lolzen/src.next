@@ -24,8 +24,8 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
-#include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "chrome/browser/page_load_metrics/observers/service_worker_page_load_metrics_observer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -42,9 +42,8 @@
 #include "components/favicon/content/content_favicon_driver.h"
 #include "components/favicon/core/favicon_driver_observer.h"
 #include "components/metrics/content/subprocess_metrics_provider.h"
-#include "components/page_load_metrics/browser/observers/service_worker_page_load_metrics_observer.h"
+#include "components/nacl/common/buildflags.h"
 #include "components/page_load_metrics/browser/page_load_metrics_test_waiter.h"
-#include "components/prefs/pref_service.h"
 #include "components/ukm/test_ukm_recorder.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -68,6 +67,7 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
+#include "ppapi/shared_impl/ppapi_switches.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "third_party/blink/public/common/messaging/string_message_codec.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -227,7 +227,7 @@ class ChromeServiceWorkerTest : public InProcessBrowserTest {
   base::ScopedTempDir service_worker_dir_;
 };
 
-// http://crbug.com/40363335
+// http://crbug.com/368570
 IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerTest,
                        CanShutDownWithRegisteredServiceWorker) {
   WriteFile(FILE_PATH_LITERAL("service_worker.js"), "");
@@ -255,7 +255,7 @@ IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerTest,
   // do that.
 }
 
-// http://crbug.com/40387150
+// http://crbug.com/419290
 IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerTest,
                        CanCloseIncognitoWindowWithServiceWorkerController) {
   WriteFile(FILE_PATH_LITERAL("service_worker.js"), "");
@@ -451,8 +451,8 @@ IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerTest, SubresourceCountUKM) {
       entries[0], ukm::builders::ServiceWorker_OnLoad::kImageHandledName, 0);
 }
 
-// TODO(crbug.com/480291001): The test is flaky. Re-enable it.
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+// TODO(crbug.com/355104619): The test is flaky. Re-enable it.
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 #define MAYBE_StaticRoutingAPISubresourceHistogramTest \
   DISABLED_StaticRoutingAPISubresourceHistogramTest
 #else
@@ -645,7 +645,7 @@ class ChromeServiceWorkerFetchTest : public ChromeServiceWorkerTest {
         // control the timing of the request. If the request is sent after
         // clients.claim() is called, fetch event for the default favicon
         // request is triggered and the tests become flaky. See
-        // https://crbug.com/41430391.
+        // https://crbug.com/912543.
         "  if (event.request.url.endsWith('/favicon.ico')) {"
         "    return;"
         "  }"
@@ -896,6 +896,88 @@ IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerLinkFetchTest, FaviconOtherOrigin) {
   EXPECT_EQ("", ExecuteFaviconFetchTest(url));
 }
 
+#if BUILDFLAG(ENABLE_NACL)
+// This test registers a service worker and then loads a controlled iframe that
+// creates a PNaCl plugin in an <embed> element. Once loaded, the PNaCl plugin
+// is ordered to do a resource request for "/echo". The service worker records
+// all the fetch events it sees. Since requests for plug-ins and requests
+// initiated by plug-ins should not be interecepted by service workers, we
+// expect that the the service worker only see the navigation request for the
+// iframe.
+class ChromeServiceWorkerFetchPPAPITest : public ChromeServiceWorkerFetchTest {
+ public:
+  ChromeServiceWorkerFetchPPAPITest(const ChromeServiceWorkerFetchPPAPITest&) =
+      delete;
+  ChromeServiceWorkerFetchPPAPITest& operator=(
+      const ChromeServiceWorkerFetchPPAPITest&) = delete;
+
+ protected:
+  ChromeServiceWorkerFetchPPAPITest() = default;
+  ~ChromeServiceWorkerFetchPPAPITest() override = default;
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    ChromeServiceWorkerFetchTest::SetUpCommandLine(command_line);
+    // Use --enable-nacl flag to ensure the PNaCl module can load (without
+    // needing to use an OT token)
+    command_line->AppendSwitch(switches::kEnableNaCl);
+  }
+
+  void SetUpOnMainThread() override {
+    base::FilePath document_root;
+    ASSERT_TRUE(ui_test_utils::GetRelativeBuildDirectory(&document_root));
+    embedded_test_server()->AddDefaultHandlers(
+        document_root.Append(FILE_PATH_LITERAL("nacl_test_data"))
+            .Append(FILE_PATH_LITERAL("pnacl")));
+    ChromeServiceWorkerFetchTest::SetUpOnMainThread();
+    test_page_url_ = GetURL("/pnacl_url_loader.html");
+  }
+
+  std::string GetNavigationRequestString(const std::string& fragment) const {
+    return RequestString(test_page_url_ + fragment, "navigate", "include", "");
+  }
+
+  std::string ExecutePNACLUrlLoaderTest(const std::string& mode) {
+    content::DOMMessageQueue message_queue;
+    EXPECT_TRUE(content::ExecJs(
+        browser()->tab_strip_model()->GetActiveWebContents(),
+        base::StringPrintf("reportOnFetch = false;"
+                           "var iframe = document.createElement('iframe');"
+                           "iframe.src='%s#%s';"
+                           "document.body.appendChild(iframe);",
+                           test_page_url_.c_str(), mode.c_str())));
+
+    std::string json;
+    EXPECT_TRUE(message_queue.WaitForMessage(&json));
+
+    base::Value result =
+        base::JSONReader::Read(json, base::JSON_ALLOW_TRAILING_COMMAS).value();
+
+    EXPECT_TRUE(result.is_string());
+    EXPECT_EQ(base::StringPrintf("OnOpen%s", mode.c_str()), result.GetString());
+    return EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
+                  "reportRequests();")
+        .ExtractString();
+  }
+
+ private:
+  std::string test_page_url_;
+};
+
+// Flaky on Windows and Linux ASan. https://crbug.com/1113802
+IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerFetchPPAPITest,
+                       DISABLED_NotInterceptedByServiceWorker) {
+  // Only the navigation to the iframe should be intercepted by the service
+  // worker. The request for the PNaCl manifest ("/pnacl_url_loader.nmf"),
+  // the request for the compiled code ("/pnacl_url_loader_newlib_pnacl.pexe"),
+  // and any other requests initiated by the plug-in ("/echo") should not be
+  // seen by the service worker.
+  const std::string fragment =
+      "NotIntercepted";  // this string is not important.
+  EXPECT_EQ(GetNavigationRequestString("#" + fragment),
+            ExecutePNACLUrlLoaderTest(fragment));
+}
+#endif  // BUILDFLAG(ENABLE_NACL)
+
 class ChromeServiceWorkerNavigationHintTest : public ChromeServiceWorkerTest {
  protected:
   void RunNavigationHintTest(
@@ -1119,8 +1201,8 @@ class ChromeWebUIServiceWorkerTest : public ChromeServiceWorkerTest {
   // it. Returns the result of registering the Service Worker.
   blink::ServiceWorkerStatusCode CreateWebUIAndRegisterServiceWorker(
       const GURL& base_url) {
-    auto webui_config = std::make_unique<TestWebUIConfig>(base_url.GetScheme(),
-                                                          base_url.GetHost());
+    auto webui_config =
+        std::make_unique<TestWebUIConfig>(base_url.scheme(), base_url.host());
     if (base_url.SchemeIs(content::kChromeUIScheme)) {
       content::WebUIConfigMap::GetInstance().AddWebUIConfig(
           std::move(webui_config));
@@ -1154,8 +1236,8 @@ class ChromeWebUIServiceWorkerTest : public ChromeServiceWorkerTest {
   // otherwise it returns the error string.
   content::EvalJsResult CreateWebUIAndRegisterServiceWorkerInJavaScript(
       const GURL& base_url) {
-    auto webui_config = std::make_unique<TestWebUIConfig>(base_url.GetScheme(),
-                                                          base_url.GetHost());
+    auto webui_config =
+        std::make_unique<TestWebUIConfig>(base_url.scheme(), base_url.host());
     if (base_url.SchemeIs(content::kChromeUIScheme)) {
       content::WebUIConfigMap::GetInstance().AddWebUIConfig(
           std::move(webui_config));
@@ -1382,9 +1464,8 @@ class ChromeServiceWorkerNavigationPreloadTest : public InProcessBrowserTest {
     // Intercept requests to the "test" endpoint.
     GURL url = request.base_url;
     url = url.Resolve(request.relative_url);
-    if (url.GetPath() != "/service_worker/test") {
+    if (url.path() != "/service_worker/test")
       return nullptr;
-    }
 
     // Stash the request for testing. We'd typically prefer to echo back the
     // request and test the resulting page contents, but that becomes
@@ -1431,7 +1512,7 @@ class ChromeServiceWorkerNavigationPreloadTest : public InProcessBrowserTest {
 // Tests navigation preload during a navigation in the top-level frame
 // when third-party cookies are blocked. The navigation preload request
 // should be sent with cookies as normal. Regression test for
-// https://crbug.com/40605694.
+// https://crbug.com/913220.
 IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerNavigationPreloadTest,
                        TopFrameWithThirdPartyBlocking) {
   // Enable third-party cookie blocking.
@@ -1507,29 +1588,6 @@ IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerNavigationPreloadTest,
   EXPECT_FALSE(
       HasHeader(received_request(), "Service-Worker-Navigation-Preload"));
   EXPECT_FALSE(HasHeader(received_request(), "Cookie"));
-}
-
-class ChromeServiceWorkerPrewarmForDSETest : public InProcessBrowserTest {
- public:
-  void SetUp() override {
-    ChromeContentBrowserClient::
-        PrewarmServiceWorkerRegistrationForDSECalledCountForTesting() = 0;
-    // The following step starts the browser, and prewarms the registration of
-    // ServiceWorker for DSE.
-    InProcessBrowserTest::SetUp();
-  }
-
-  void TearDown() override {
-    ChromeContentBrowserClient::
-        PrewarmServiceWorkerRegistrationForDSECalledCountForTesting() =
-            std::nullopt;
-  }
-};
-
-IN_PROC_BROWSER_TEST_F(ChromeServiceWorkerPrewarmForDSETest, PrewarmIsCalled) {
-  EXPECT_GE(*ChromeContentBrowserClient::
-                PrewarmServiceWorkerRegistrationForDSECalledCountForTesting(),
-            1);
 }
 
 }  // namespace chrome_service_worker_browser_test

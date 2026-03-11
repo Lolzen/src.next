@@ -62,15 +62,15 @@ TEST_P(LayoutBoxModelObjectTest, LocalCaretRectForEmptyElementVertical) {
       writing-mode: vertical-lr;
     }
     </style>
-    <div contenteditable id='target-rl' class="target"></div>
-    <div contenteditable id='target-lr' class="target"></div>
+    <div id='target-rl' class="target"></div>
+    <div id='target-lr' class="target"></div>
 
-    <div contenteditable style="writing-mode:vertical-rl;">
+    <div style="writing-mode:vertical-rl;">
     <br>
     <span id="target-inline-rl" class="target"></span>
     </div>
 
-    <div contenteditable style="writing-mode:vertical-lr;">
+    <div style="writing-mode:vertical-lr;">
     <br>
     <span id="target-inline-lr" class="target"></span>
     </div>
@@ -80,60 +80,32 @@ TEST_P(LayoutBoxModelObjectTest, LocalCaretRectForEmptyElementVertical) {
   constexpr LayoutUnit kPaddingRight = LayoutUnit(3);
   constexpr LayoutUnit kPaddingLeft = LayoutUnit(7);
   constexpr LayoutUnit kFontHeight = LayoutUnit(10);
-  constexpr LayoutUnit kFontWidth = LayoutUnit(10);
-  // width for bar and height for underscore.
   constexpr LayoutUnit kCaretWidth = LayoutUnit(1);
 
   {
     auto* rl = GetLayoutBoxByElementId("target-rl");
-    EXPECT_EQ(
-        PhysicalRect(rl->StitchedSize().width - kPaddingRight - kFontHeight,
-                     kPaddingTop, kFontHeight, kCaretWidth),
-        rl->LocalCaretRect(0, CaretShape::kBar));
-    EXPECT_EQ(
-        PhysicalRect(rl->StitchedSize().width - kPaddingRight - kFontHeight,
-                     kPaddingTop, kFontHeight, kFontWidth),
-        rl->LocalCaretRect(0, CaretShape::kBlock));
-    EXPECT_EQ(PhysicalRect(rl->StitchedSize().width - kPaddingRight -
-                               kFontHeight - kCaretWidth,
-                           kPaddingTop, kCaretWidth, kFontWidth),
-              rl->LocalCaretRect(0, CaretShape::kUnderscore));
+    EXPECT_EQ(PhysicalRect(rl->Size().width - kPaddingRight - kFontHeight,
+                           kPaddingTop, kFontHeight, kCaretWidth),
+              rl->LocalCaretRect(0));
   }
   {
     auto* lr = GetLayoutBoxByElementId("target-lr");
     EXPECT_EQ(PhysicalRect(kPaddingLeft, kPaddingTop, kFontHeight, kCaretWidth),
-              lr->LocalCaretRect(0, CaretShape::kBar));
-    EXPECT_EQ(PhysicalRect(kPaddingLeft, kPaddingTop, kFontHeight, kFontWidth),
-              lr->LocalCaretRect(0, CaretShape::kBlock));
-    EXPECT_EQ(PhysicalRect(kPaddingLeft + kFontHeight, kPaddingTop, kCaretWidth,
-                           kFontWidth),
-              lr->LocalCaretRect(0, CaretShape::kUnderscore));
+              lr->LocalCaretRect(0));
   }
   {
     auto* inline_rl =
         To<LayoutInline>(GetLayoutObjectByElementId("target-inline-rl"));
     EXPECT_EQ(PhysicalRect(LayoutUnit(), kPaddingTop - kCaretWidth, kFontHeight,
                            kCaretWidth),
-              inline_rl->LocalCaretRect(0, CaretShape::kBar));
-    EXPECT_EQ(PhysicalRect(LayoutUnit(), kPaddingTop - kCaretWidth, kFontHeight,
-                           kFontWidth),
-              inline_rl->LocalCaretRect(0, CaretShape::kBlock));
-    EXPECT_EQ(PhysicalRect(LayoutUnit() - kCaretWidth,
-                           kPaddingTop - kCaretWidth, kCaretWidth, kFontWidth),
-              inline_rl->LocalCaretRect(0, CaretShape::kUnderscore));
+              inline_rl->LocalCaretRect(0));
   }
   {
     auto* inline_lr =
         To<LayoutInline>(GetLayoutObjectByElementId("target-inline-lr"));
     EXPECT_EQ(PhysicalRect(kFontHeight, kPaddingTop - kCaretWidth, kFontHeight,
                            kCaretWidth),
-              inline_lr->LocalCaretRect(0, CaretShape::kBar));
-    EXPECT_EQ(PhysicalRect(kFontHeight, kPaddingTop - kCaretWidth, kFontHeight,
-                           kFontWidth),
-              inline_lr->LocalCaretRect(0, CaretShape::kBlock));
-    EXPECT_EQ(PhysicalRect(kFontHeight + kFontHeight, kPaddingTop - kCaretWidth,
-                           kCaretWidth, kFontWidth),
-              inline_lr->LocalCaretRect(0, CaretShape::kUnderscore));
+              inline_lr->LocalCaretRect(0));
   }
 }
 
@@ -1221,7 +1193,7 @@ TEST_P(LayoutBoxModelObjectTest, StickyPositionNestedFixedPos) {
   )HTML");
 
   // The view size is set by the base class. This test depends on it.
-  ASSERT_EQ(PhysicalSize(800, 600), GetLayoutView().StitchedSize());
+  ASSERT_EQ(PhysicalSize(800, 600), GetLayoutView().Size());
 
   auto* outer_sticky = GetLayoutBoxModelObjectByElementId("outerSticky");
   auto* inner_sticky_top = GetLayoutBoxModelObjectByElementId("innerStickyTop");
@@ -1509,7 +1481,7 @@ TEST_P(LayoutBoxModelObjectTest, UpdateStackingContextForOption) {
         animation: op 0.001s;
       }
     </style>
-    <select multiple size=4>
+    <select multiple size=1>
       <option id=opt>PASS</option>
     </select>
   )HTML");
@@ -1570,8 +1542,7 @@ TEST_P(LayoutBoxModelObjectTest, RemoveStickyUnderContain) {
 
   // This should not crash.
   scrollable_area->SetScrollOffset(ScrollOffset(0, 100),
-                                   mojom::blink::ScrollType::kProgrammatic,
-                                   cc::ScrollSourceType::kNone);
+                                   mojom::blink::ScrollType::kProgrammatic);
   UpdateAllLifecyclePhasesForTest();
 }
 

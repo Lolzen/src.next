@@ -37,7 +37,7 @@ namespace blink {
 namespace cssvalue {
 
 String CSSBracketedValueList::CustomCSSText() const {
-  return StrCat({"[", CSSValueList::CustomCSSText(), "]"});
+  return WTF::StrCat({"[", CSSValueList::CustomCSSText(), "]"});
 }
 
 CSSBracketedValueList::CSSBracketedValueList()

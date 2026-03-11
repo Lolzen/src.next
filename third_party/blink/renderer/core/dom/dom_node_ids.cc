@@ -4,7 +4,6 @@
 
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 
-#include "third_party/blink/renderer/core/dom/node-inl.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -22,7 +21,7 @@ static GCedHeapHashMap<DOMNodeId, WeakMember<Node>>& IdToNodeMap() {
 
 // static
 DOMNodeId DOMNodeIds::ExistingIdForNode(Node* node) {
-  return node ? node->NodeID(base::PassKey<DOMNodeIds>()) : kInvalidDOMNodeId;
+  return node ? node->NodeID() : kInvalidDOMNodeId;
 }
 
 // static
@@ -36,7 +35,7 @@ DOMNodeId DOMNodeIds::IdForNode(Node* node) {
     return kInvalidDOMNodeId;
   }
 
-  DOMNodeId& id = node->EnsureNodeID(base::PassKey<DOMNodeIds>());
+  DOMNodeId& id = node->EnsureNodeID();
   if (id == kInvalidDOMNodeId) {
     // See WeakIdentifierMap::Next().
     static DOMNodeId last_id = 0;

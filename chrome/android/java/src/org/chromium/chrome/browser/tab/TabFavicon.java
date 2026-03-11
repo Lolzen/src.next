@@ -7,25 +7,20 @@ package org.chromium.chrome.browser.tab;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 
+import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import org.jni_zero.CalledByNative;
-import org.jni_zero.JniType;
 import org.jni_zero.NativeMethods;
 
 import org.chromium.base.ObserverList.RewindableIterator;
-import org.chromium.base.ResettersForTesting;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.R;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.url.GURL;
 
 /** Fetches a favicon for active WebContents in a Tab. */
-@NullMarked
 public class TabFavicon extends TabWebContentsUserData {
     private static final Class<TabFavicon> USER_DATA_KEY = TabFavicon.class;
-    private static @Nullable TabFavicon sInstanceForTesting;
 
     private final TabImpl mTab;
     private final long mNativeTabFavicon;
@@ -42,16 +37,15 @@ public class TabFavicon extends TabWebContentsUserData {
     private int mNavigationTransitionsFaviconWidth;
     private int mNavigationTransitionsFaviconHeight;
     // The URL of the tab when the favicon was fetch for navigation transitions.
-    private @Nullable GURL mFaviconTabUrlForNavigationTransition;
+    private GURL mFaviconTabUrlForNavigationTransition;
 
-    private @Nullable Bitmap mFavicon;
+    private Bitmap mFavicon;
     private int mFaviconWidth;
     private int mFaviconHeight;
     // The URL of the tab when mFavicon was fetched.
-    private @Nullable GURL mFaviconTabUrl;
+    private GURL mFaviconTabUrl;
 
     static TabFavicon from(Tab tab) {
-        if (sInstanceForTesting != null) return sInstanceForTesting;
         TabFavicon favicon = get(tab);
         if (favicon == null) {
             favicon = tab.getUserDataHost().setUserData(USER_DATA_KEY, new TabFavicon(tab));
@@ -59,17 +53,15 @@ public class TabFavicon extends TabWebContentsUserData {
         return favicon;
     }
 
-    private static @Nullable TabFavicon get(Tab tab) {
-        return sInstanceForTesting != null
-                ? sInstanceForTesting
-                : !TabUtils.isValid(tab) ? null : tab.getUserDataHost().getUserData(USER_DATA_KEY);
+    private static TabFavicon get(Tab tab) {
+        if (tab == null || !tab.isInitialized()) return null;
+        return tab.getUserDataHost().getUserData(USER_DATA_KEY);
     }
 
     /**
      * @param tab Tab containing the web contents's favicon.
      * @return {@link Bitmap} of the favicon.
      */
-    @CalledByNative
     public static @Nullable Bitmap getBitmap(Tab tab) {
         TabFavicon tabFavicon = get(tab);
         return tabFavicon != null ? tabFavicon.getFavicon() : null;
@@ -82,43 +74,39 @@ public class TabFavicon extends TabWebContentsUserData {
         mIdealFaviconSize = resources.getDimensionPixelSize(R.dimen.default_favicon_size);
         mNavigationTransitionsIdealFaviconSize =
                 resources.getDimensionPixelSize(R.dimen.navigation_transitions_favicon_size);
-        mNativeTabFavicon = TabFaviconJni.get().init(tab, mNavigationTransitionsIdealFaviconSize);
+        mNativeTabFavicon =
+                TabFaviconJni.get().init(TabFavicon.this, mNavigationTransitionsIdealFaviconSize);
     }
 
     @Override
     public void initWebContents(WebContents webContents) {
-        TabFaviconJni.get().setWebContents(mNativeTabFavicon, webContents);
+        TabFaviconJni.get().setWebContents(mNativeTabFavicon, TabFavicon.this, webContents);
     }
 
     @Override
-    public void cleanupWebContents(@Nullable WebContents webContents) {
-        TabFaviconJni.get().resetWebContents(mNativeTabFavicon);
+    public void cleanupWebContents(WebContents webContents) {
+        TabFaviconJni.get().resetWebContents(mNativeTabFavicon, TabFavicon.this);
     }
 
     @Override
     public void destroyInternal() {
-        TabFaviconJni.get().onDestroyed(mNativeTabFavicon);
+        TabFaviconJni.get().onDestroyed(mNativeTabFavicon, TabFavicon.this);
     }
 
     /**
-     * Returns the bitmap of the favicon scaled to 16x16dp. null if no favicon is specified or it
-     * requires the default favicon.
+     * @return The bitmap of the favicon scaled to 16x16dp. null if no favicon
+     *         is specified or it requires the default favicon.
      */
-    @VisibleForTesting
-    public @Nullable Bitmap getFavicon() {
-        // If we have no content, are a native page, or have a pending navigation, return null.
-        if (mTab.isNativePage()
-                || mTab.getWebContents() == null
-                || mTab.getPendingLoadParams() != null) {
-            return null;
-        }
+    private Bitmap getFavicon() {
+        // If we have no content or a native page, return null.
+        if (mTab.isNativePage() || mTab.getWebContents() == null) return null;
 
         // Use the cached favicon only if the page wasn't changed.
         if (mFavicon != null && mFaviconTabUrl != null && mFaviconTabUrl.equals(mTab.getUrl())) {
             return mFavicon;
         }
 
-        return TabFaviconJni.get().getFavicon(mNativeTabFavicon);
+        return TabFaviconJni.get().getFavicon(mNativeTabFavicon, TabFavicon.this);
     }
 
     /**
@@ -165,15 +153,6 @@ public class TabFavicon extends TabWebContentsUserData {
     }
 
     @CalledByNative
-    private static void onFaviconAvailable(
-            @JniType("TabAndroid*") Tab tab, Bitmap icon, GURL iconUrl) {
-        TabFavicon tabFavicon = get(tab);
-        if (tabFavicon == null) {
-            return;
-        }
-        tabFavicon.onFaviconAvailable(icon, iconUrl);
-    }
-
     @VisibleForTesting
     void onFaviconAvailable(Bitmap icon, GURL iconUrl) {
         assert icon != null;
@@ -188,15 +167,6 @@ public class TabFavicon extends TabWebContentsUserData {
     }
 
     @CalledByNative
-    private static boolean shouldUpdateFaviconForBrowserUi(
-            @JniType("TabAndroid*") Tab tab, int newIconWidth, int newIconHeight) {
-        TabFavicon tabFavicon = get(tab);
-        if (tabFavicon == null) {
-            return false;
-        }
-        return tabFavicon.shouldUpdateFaviconForBrowserUi(newIconWidth, newIconHeight);
-    }
-
     @VisibleForTesting
     boolean shouldUpdateFaviconForBrowserUi(int newIconWidth, int newIconHeight) {
         return pageUrlChanged()
@@ -209,15 +179,6 @@ public class TabFavicon extends TabWebContentsUserData {
     }
 
     @CalledByNative
-    private static boolean shouldUpdateFaviconForNavigationTransitions(
-            @JniType("TabAndroid*") Tab tab, int newIconWidth, int newIconHeight) {
-        TabFavicon tabFavicon = get(tab);
-        if (tabFavicon == null) {
-            return false;
-        }
-        return tabFavicon.shouldUpdateFaviconForNavigationTransitions(newIconWidth, newIconHeight);
-    }
-
     private boolean shouldUpdateFaviconForNavigationTransitions(
             int newIconWidth, int newIconHeight) {
         boolean shouldUpdate =
@@ -236,22 +197,16 @@ public class TabFavicon extends TabWebContentsUserData {
         return shouldUpdate;
     }
 
-    public static void setInstanceForTesting(TabFavicon instance) {
-        sInstanceForTesting = instance;
-        ResettersForTesting.register(() -> sInstanceForTesting = null);
-    }
-
     @NativeMethods
     interface Natives {
-        long init(@JniType("TabAndroid*") Tab tab, int navigaionTransitionFaviconSize);
+        long init(TabFavicon caller, int navigaionTransitionFaviconSize);
 
-        void onDestroyed(long nativeTabFavicon);
+        void onDestroyed(long nativeTabFavicon, TabFavicon caller);
 
-        void setWebContents(
-                long nativeTabFavicon, @JniType("content::WebContents*") WebContents webContents);
+        void setWebContents(long nativeTabFavicon, TabFavicon caller, WebContents webContents);
 
-        void resetWebContents(long nativeTabFavicon);
+        void resetWebContents(long nativeTabFavicon, TabFavicon caller);
 
-        Bitmap getFavicon(long nativeTabFavicon);
+        Bitmap getFavicon(long nativeTabFavicon, TabFavicon caller);
     }
 }

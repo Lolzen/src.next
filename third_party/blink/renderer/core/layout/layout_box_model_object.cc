@@ -26,7 +26,6 @@
 #include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
 
 #include "cc/input/main_thread_scrolling_reason.h"
-#include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/editing/ime/input_method_controller.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -38,10 +37,12 @@
 #include "third_party/blink/renderer/core/layout/geometry/transform_state.h"
 #include "third_party/blink/renderer/core/layout/inline/inline_cursor.h"
 #include "third_party/blink/renderer/core/layout/layout_block.h"
+#include "third_party/blink/renderer/core/layout/layout_flow_thread.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_result.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
+#include "third_party/blink/renderer/core/layout/legacy_layout_tree_walking.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_resources.h"
 #include "third_party/blink/renderer/core/layout/table/layout_table_section.h"
 #include "third_party/blink/renderer/core/page/scrolling/sticky_position_scrolling_constraints.h"
@@ -49,10 +50,8 @@
 #include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
-#include "third_party/blink/renderer/core/style/computed_style_base_constants.h"
 #include "third_party/blink/renderer/core/style/shadow_list.h"
 #include "third_party/blink/renderer/platform/geometry/length_functions.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -66,9 +65,8 @@ void MarkBoxForRelayoutAfterSplit(LayoutBoxModelObject* box) {
 void CollapseLoneAnonymousBlockChild(LayoutBox* parent, LayoutObject* child) {
   auto* child_block_flow = DynamicTo<LayoutBlockFlow>(child);
   auto* parent_block_flow = DynamicTo<LayoutBlockFlow>(parent);
-  if (!child->IsAnonymousBlockFlow() || !child_block_flow) {
+  if (!child->IsAnonymousBlock() || !child_block_flow)
     return;
-  }
   if (!parent_block_flow)
     return;
   parent_block_flow->CollapseAnonymousBlockChild(child_block_flow);
@@ -81,19 +79,13 @@ bool NeedsAnchorPositionScrollData(Element& element,
   if (!style.HasOutOfFlowPosition()) {
     return false;
   }
-  const StylePositionAnchor& position_anchor = style.PositionAnchor();
-  using Type = StylePositionAnchor::Type;
-  switch (position_anchor.GetType()) {
-    case Type::kNone:
-      return false;
-    case Type::kAuto:
-      // Now we have `position-anchor: auto`. We need `AnchorPositionScrollData`
-      // only if there's an implicit anchor element to track.
-      return static_cast<bool>(element.ImplicitAnchorElement());
-    case Type::kName:
-      // There's an explicitly set default anchor.
-      return true;
+  // There's an explicitly set default anchor.
+  if (style.PositionAnchor()) {
+    return true;
   }
+  // Now we have `position-anchor: auto`. We need `AnchorPositionScrollData`
+  // only if there's an implicit anchor element to track.
+  return element.ImplicitAnchorElement();
 }
 
 }  // namespace
@@ -127,10 +119,8 @@ void LayoutBoxModelObject::WillBeDestroyed() {
   DCHECK(!Layer());
 }
 
-void LayoutBoxModelObject::StyleWillChange(
-    StyleDifference diff,
-    const ComputedStyle& new_style,
-    StyleChangeContext& style_change_context) {
+void LayoutBoxModelObject::StyleWillChange(StyleDifference diff,
+                                           const ComputedStyle& new_style) {
   NOT_DESTROYED();
   // Change of stacked/stacking context status may cause change of this or
   // descendant PaintLayer's PaintingContainer, so we need to eagerly
@@ -144,14 +134,19 @@ void LayoutBoxModelObject::StyleWillChange(
     ObjectPaintInvalidator(*this).SlowSetPaintingLayerNeedsRepaint();
   }
 
-  LayoutObject::StyleWillChange(diff, new_style, style_change_context);
+  if (Style()) {
+    LayoutFlowThread* flow_thread = FlowThreadContainingBlock();
+    if (flow_thread && flow_thread != this) {
+      flow_thread->FlowThreadDescendantStyleWillChange(this, diff, new_style);
+    }
+  }
+
+  LayoutObject::StyleWillChange(diff, new_style);
 }
 
 DISABLE_CFI_PERF
-void LayoutBoxModelObject::StyleDidChange(
-    StyleDifference diff,
-    const ComputedStyle* old_style,
-    const StyleChangeContext& style_change_context) {
+void LayoutBoxModelObject::StyleDidChange(StyleDifference diff,
+                                          const ComputedStyle* old_style) {
   NOT_DESTROYED();
   bool had_transform_related_property = HasTransformRelatedProperty();
   bool had_filter_inducing_property = HasFilterInducingProperty();
@@ -161,7 +156,7 @@ void LayoutBoxModelObject::StyleDidChange(
   bool could_contain_fixed = CanContainFixedPositionObjects();
   bool could_contain_absolute = CanContainAbsolutePositionObjects();
 
-  LayoutObject::StyleDidChange(diff, old_style, style_change_context);
+  LayoutObject::StyleDidChange(diff, old_style);
   UpdateFromStyle();
 
   // When an out-of-flow-positioned element changes its display between block
@@ -200,9 +195,7 @@ void LayoutBoxModelObject::StyleDidChange(
 
       CreateLayerAfterStyleChange();
     }
-  } else if (Layer() && (RuntimeEnabledFeatures::
-                             LayoutReinsertOnInFlowStateChangeEnabled() ||
-                         Layer()->Parent())) {
+  } else if (Layer() && Layer()->Parent()) {
     Layer()->UpdateFilters(diff, old_style, StyleRef());
     Layer()->UpdateBackdropFilters(old_style, StyleRef());
     Layer()->UpdateClipPath(old_style, StyleRef());
@@ -240,6 +233,12 @@ void LayoutBoxModelObject::StyleDidChange(
   }
 
   if (old_style && Parent()) {
+    if (LayoutFlowThread* flow_thread = FlowThreadContainingBlock()) {
+      if (flow_thread != this) {
+        flow_thread->FlowThreadDescendantStyleDidChange(this, diff, *old_style);
+      }
+    }
+
     LayoutBlock* block = InclusiveContainingBlock();
 
     if ((could_contain_fixed && !can_contain_fixed) ||
@@ -322,12 +321,6 @@ void LayoutBoxModelObject::StyleDidChange(
     } else {
       element->RemoveAnchorPositionScrollData();
     }
-  }
-
-  // The backdrop-filter effect is clipped by the element's border radii, so we
-  // need to update properties when the border radii change.
-  if (HasNonInitialBackdropFilter() && diff.border_radius_changed) {
-    SetNeedsPaintPropertyUpdate();
   }
 }
 
@@ -465,7 +458,7 @@ void LayoutBoxModelObject::UpdateFromStyle() {
   const ComputedStyle& style = StyleRef();
   SetHasBoxDecorationBackground(style.HasBoxDecorationBackground());
   SetInline(ShouldBeHandledAsInline(style));
-  SetPositionState(ToPositionedState(style.GetPosition()));
+  SetPositionState(style.GetPosition());
   SetHorizontalWritingMode(style.IsHorizontalWritingMode());
 
   const bool is_fixed_container = ComputeIsFixedContainer(style);
@@ -584,7 +577,7 @@ LayoutBoxModelObject::ComputeStickyPositionConstraints() const {
       // It's unclear whether this is totally fine.
       // Compute the container-relative area within which the sticky element is
       // allowed to move.
-      LayoutUnit max_width = sticky_container->ContentLogicalWidth();
+      LayoutUnit max_width = sticky_container->AvailableLogicalWidth();
       scroll_container_relative_containing_block_rect.ContractEdges(
           MinimumValueForLength(StyleRef().MarginTop(), max_width),
           MinimumValueForLength(StyleRef().MarginRight(), max_width),
@@ -607,8 +600,7 @@ LayoutBoxModelObject::ComputeStickyPositionConstraints() const {
       sticky_box_rect = To<LayoutInline>(this)->PhysicalLinesBoundingBox();
     } else {
       const LayoutBox& box = To<LayoutBox>(*this);
-      sticky_box_rect =
-          PhysicalRect(box.PhysicalLocation(), box.StitchedSize());
+      sticky_box_rect = PhysicalRect(box.PhysicalLocation(), box.Size());
     }
 
     PhysicalRect scroll_container_relative_sticky_box_rect =
@@ -657,30 +649,22 @@ LayoutBoxModelObject::ComputeStickyPositionConstraints() const {
     std::optional<LayoutUnit> bottom =
         ResolveInset(style.Bottom(), available_size.height);
 
-    const WritingDirectionMode sticky_container_writing_direction =
-        sticky_container->StyleRef().GetWritingDirection();
-
-    // Reduce the end inset if there is not enough space to honor both insets.
+    // Skip the end inset if there is not enough space to honor both insets.
     if (left && right) {
-      const LayoutUnit free_space =
-          available_size.width - sticky_box_rect.Width() - *left - *right;
-      if (free_space < LayoutUnit()) {
-        if (sticky_container_writing_direction.IsFlippedX()) {
-          *left += free_space;
+      if (*left + *right + sticky_box_rect.Width() > available_size.width) {
+        if (style.IsLeftToRightDirection()) {
+          right = std::nullopt;
         } else {
-          *right += free_space;
+          left = std::nullopt;
         }
       }
     }
     if (top && bottom) {
-      const LayoutUnit free_space =
-          available_size.height - sticky_box_rect.Height() - *top - *bottom;
-      if (free_space < LayoutUnit()) {
-        if (sticky_container_writing_direction.IsFlippedY()) {
-          *top += free_space;
-        } else {
-          *bottom += free_space;
-        }
+      // TODO(flackr): Exclude top or bottom edge offset depending on the
+      // writing mode when related sections are fixed in spec. See
+      // http://lists.w3.org/Archives/Public/www-style/2014May/0286.html
+      if (*top + *bottom + sticky_box_rect.Height() > available_size.height) {
+        bottom = std::nullopt;
       }
     }
 
@@ -744,6 +728,7 @@ PhysicalOffset LayoutBoxModelObject::AdjustedPositionRelativeTo(
            current && current->GetNode() != offset_parent;
            current = current->Container()) {
         // FIXME: What are we supposed to do inside SVG content?
+        reference_point += current->ColumnOffset(reference_point);
         if (current->IsBox()) {
           reference_point += To<LayoutBox>(current)->PhysicalLocation();
         }
@@ -775,6 +760,20 @@ PhysicalOffset LayoutBoxModelObject::AdjustedPositionRelativeTo(
   return reference_point;
 }
 
+LayoutUnit LayoutBoxModelObject::OffsetLeft(const Element* parent) const {
+  NOT_DESTROYED();
+  // Note that LayoutInline and LayoutBox override this to pass a different
+  // startPoint to adjustedPositionRelativeTo.
+  return AdjustedPositionRelativeTo(PhysicalOffset(), parent).left;
+}
+
+LayoutUnit LayoutBoxModelObject::OffsetTop(const Element* parent) const {
+  NOT_DESTROYED();
+  // Note that LayoutInline and LayoutBox override this to pass a different
+  // startPoint to adjustedPositionRelativeTo.
+  return AdjustedPositionRelativeTo(PhysicalOffset(), parent).top;
+}
+
 LayoutUnit LayoutBoxModelObject::ComputedCSSPadding(
     const Length& padding) const {
   NOT_DESTROYED();
@@ -787,13 +786,12 @@ LayoutUnit LayoutBoxModelObject::ComputedCSSPadding(
 
 LayoutUnit LayoutBoxModelObject::ContainingBlockLogicalWidthForContent() const {
   NOT_DESTROYED();
-  return ContainingBlock()->ContentLogicalWidth();
+  return ContainingBlock()->AvailableLogicalWidth();
 }
 
 LogicalRect LayoutBoxModelObject::LocalCaretRectForEmptyElement(
     LayoutUnit width,
-    LayoutUnit text_indent_offset,
-    CaretShape caret_shape) const {
+    LayoutUnit text_indent_offset) const {
   NOT_DESTROYED();
   DCHECK(!SlowFirstChild() || SlowFirstChild()->IsPseudoElement());
 
@@ -807,19 +805,7 @@ LogicalRect LayoutBoxModelObject::LocalCaretRectForEmptyElement(
 
   CaretAlignment alignment = kAlignLeft;
 
-  ETextAlign reference_align = current_style.GetTextAlign();
-  const ComputedStyle* reference_style = &current_style;
-
-  if (reference_align == ETextAlign::kMatchParent) {
-    if (!Parent()) {
-      reference_align = ETextAlign::kStart;
-    } else {
-      reference_align = Parent()->StyleRef().GetTextAlign();
-      reference_style = &Parent()->StyleRef();
-    }
-  }
-
-  switch (reference_align) {
+  switch (current_style.GetTextAlign()) {
     case ETextAlign::kLeft:
     case ETextAlign::kWebkitLeft:
       break;
@@ -833,17 +819,12 @@ LogicalRect LayoutBoxModelObject::LocalCaretRectForEmptyElement(
       break;
     case ETextAlign::kJustify:
     case ETextAlign::kStart:
-      if (!reference_style->IsLeftToRightDirection()) {
+      if (!current_style.IsLeftToRightDirection())
         alignment = kAlignRight;
-      }
       break;
     case ETextAlign::kEnd:
-      if (reference_style->IsLeftToRightDirection()) {
+      if (current_style.IsLeftToRightDirection())
         alignment = kAlignRight;
-      }
-      break;
-    case ETextAlign::kMatchParent:
-      // Already handled above by resolving to parent's alignment
       break;
   }
 
@@ -855,7 +836,7 @@ LogicalRect LayoutBoxModelObject::LocalCaretRectForEmptyElement(
               {current_style.GetWritingMode(), TextDirection::kLtr});
   x = border_padding.inline_start;
   max_x = width - border_padding.inline_end;
-  LayoutUnit caret_width = GetFrameView()->BarCaretWidth();
+  LayoutUnit caret_width = GetFrameView()->CaretWidth();
 
   switch (alignment) {
     case kAlignLeft:
@@ -884,25 +865,8 @@ LogicalRect LayoutBoxModelObject::LocalCaretRectForEmptyElement(
   // primaryFont is null.
   if (font_data)
     height = LayoutUnit(font_data->GetFontMetrics().Height());
-  LayoutUnit vertical_space =
-      current_style.ComputedLineHeightAsFixed() - height;
+  LayoutUnit vertical_space = FirstLineHeight() - height;
   LayoutUnit block_start = border_padding.block_start + (vertical_space / 2);
-  // Care-shape applies to text or elements that accept text input.
-  const Node* node = GetNode();
-  if (!node || !IsEditable(*node)) {
-    caret_shape = CaretShape::kBar;
-  }
-  if (caret_shape != CaretShape::kBar && font_data) [[unlikely]] {
-    if (caret_shape == CaretShape::kBlock) {
-      caret_width = LayoutUnit(font_data->GetFontMetrics().ZeroWidth());
-    } else if (caret_shape == CaretShape::kUnderscore) {
-      height = caret_width;
-      caret_width = LayoutUnit(font_data->GetFontMetrics().ZeroWidth());
-      block_start =
-          block_start + LayoutUnit(font_data->GetFontMetrics().Height());
-    }
-  }
-
   return LogicalRect(x, block_start, caret_width, height);
 }
 
@@ -999,38 +963,6 @@ LayoutBox* LayoutBoxModelObject::CreateAnonymousBoxToSplit(
     const LayoutBox* box_to_split) const {
   NOT_DESTROYED();
   return box_to_split->CreateAnonymousBoxWithSameTypeAs(this);
-}
-
-void LayoutBoxModelObject::AttemptToMerge(LayoutBoxModelObject* prev,
-                                          LayoutBoxModelObject* next) {
-  if (!prev || !prev->IsAnonymous()) {
-    return;
-  }
-
-  if (!next || !next->IsAnonymous()) {
-    return;
-  }
-
-  DCHECK_EQ(prev->NextSibling(), next);
-
-  DCHECK_EQ(prev->CanMergeWith(*next), next->CanMergeWith(*prev));
-  if (!prev->CanMergeWith(*next)) {
-    return;
-  }
-
-  LayoutBoxModelObject* last_child =
-      DynamicTo<LayoutBoxModelObject>(prev->SlowLastChild());
-  LayoutBoxModelObject* first_child =
-      DynamicTo<LayoutBoxModelObject>(next->SlowFirstChild());
-
-  // Shift all the children of `next` into `prev`, and destroy the
-  // (now empty) sibling.
-  next->MoveAllChildrenTo(prev, true);
-  next->Destroy();
-
-  // We now need to recurse, as there may be multiple levels of anonymous
-  // objects which need to be stitched together.
-  AttemptToMerge(last_child, first_child);
 }
 
 bool LayoutBoxModelObject::BackgroundTransfersToView(

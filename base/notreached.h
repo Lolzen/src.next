@@ -10,6 +10,10 @@
 #include "base/compiler_specific.h"
 #include "base/dcheck_is_on.h"
 
+// TODO(crbug.com/41493641): Remove once NOTIMPLEMENTED() call sites include
+// base/notimplemented.h.
+#include "base/notimplemented.h"
+
 namespace logging {
 
 #if CHECK_WILL_STREAM()

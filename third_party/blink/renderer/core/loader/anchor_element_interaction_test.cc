@@ -4,7 +4,6 @@
 
 #include <cstddef>
 #include <optional>
-#include <ranges>
 #include <string_view>
 #include <tuple>
 
@@ -55,46 +54,27 @@ class MockAnchorElementInteractionHost
     receiver_.Bind(std::move(pending_receiver));
   }
 
-  struct Call {
-    KURL url;
-    PointerEventType type = PointerEventType::kNone;
-    std::optional<bool> is_mouse_pointer;
-    std::optional<double> mouse_velocity;
-    std::optional<bool> is_eager;
-  };
-  std::vector<Call> calls_;
+  std::optional<KURL> url_received_ = std::nullopt;
+  PointerEventType event_type_{PointerEventType::kNone};
+  double mouse_velocity_{0.0};
+  bool is_mouse_pointer_{false};
 
  private:
   void OnPointerDown(const KURL& target) override {
-    calls_.push_back({.url = target, .type = PointerEventType::kOnPointerDown});
+    url_received_ = target;
+    event_type_ = PointerEventType::kOnPointerDown;
   }
-  void OnPointerHoverEager(
+  void OnPointerHover(
       const KURL& target,
       mojom::blink::AnchorElementPointerDataPtr mouse_data) override {
-    calls_.push_back({.url = target,
-                      .type = PointerEventType::kOnPointerHover,
-                      .is_mouse_pointer = mouse_data->is_mouse_pointer,
-                      .mouse_velocity = mouse_data->mouse_velocity,
-                      .is_eager = true});
+    url_received_ = target;
+    event_type_ = PointerEventType::kOnPointerHover;
+    is_mouse_pointer_ = mouse_data->is_mouse_pointer;
+    mouse_velocity_ = mouse_data->mouse_velocity;
   }
-  void OnPointerHoverModerate(
-      const KURL& target,
-      mojom::blink::AnchorElementPointerDataPtr mouse_data) override {
-    calls_.push_back({.url = target,
-                      .type = PointerEventType::kOnPointerHover,
-                      .is_mouse_pointer = mouse_data->is_mouse_pointer,
-                      .mouse_velocity = mouse_data->mouse_velocity,
-                      .is_eager = false});
-  }
-  void OnModerateViewportHeuristicTriggered(const KURL& target) override {
-    calls_.push_back(
-        {.url = target, .type = PointerEventType::kNone, .is_eager = false});
-  }
-  void OnEagerViewportHeuristicTriggered(const Vector<KURL>& targets) override {
-    for (const KURL& url : targets) {
-      calls_.push_back(
-          {.url = url, .type = PointerEventType::kNone, .is_eager = true});
-    }
+  void OnViewportHeuristicTriggered(const KURL& target) override {
+    url_received_ = target;
+    event_type_ = PointerEventType::kNone;
   }
 
  private:
@@ -108,13 +88,9 @@ class AnchorElementInteractionTest : public SimTest {
 
     MainFrame().GetFrame()->GetBrowserInterfaceBroker().SetBinderForTesting(
         mojom::blink::AnchorElementInteractionHost::Name_,
-        BindRepeating(&AnchorElementInteractionTest::Bind, Unretained(this)));
+        WTF::BindRepeating(&AnchorElementInteractionTest::Bind,
+                           WTF::Unretained(this)));
     WebView().MainFrameViewWidget()->Resize(gfx::Size(400, 400));
-
-    // Check our invariant about dwell times, otherwise tests that use them
-    // (and some production code) will not make sense.
-    ASSERT_LT(AnchorElementInteractionTracker::EagerHoverDwellTime(),
-              AnchorElementInteractionTracker::kModerateHoverDwellTime);
   }
 
   void TearDown() override {
@@ -140,18 +116,6 @@ class AnchorElementInteractionTest : public SimTest {
     GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(event);
   }
 
-  base::TimeDelta GetShorterThanEagerHoverDwellTime() {
-    return AnchorElementInteractionTracker::EagerHoverDwellTime() * 0.5;
-  }
-  base::TimeDelta GetBetweenEagerAndModerateHoverDwellTime() {
-    return (AnchorElementInteractionTracker::EagerHoverDwellTime() +
-            AnchorElementInteractionTracker::kModerateHoverDwellTime) /
-           2;
-  }
-  base::TimeDelta GetLongerThanModerateHoverDwellTime() {
-    return AnchorElementInteractionTracker::kModerateHoverDwellTime * 1.5;
-  }
-
   std::vector<std::unique_ptr<MockAnchorElementInteractionHost>> hosts_;
 };
 
@@ -160,17 +124,18 @@ TEST_F(AnchorElementInteractionTest, SingleAnchor) {
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
   main_resource.Complete(R"HTML(
-    <a href='https://anchor1.example/'>
+    <a href='https://anchor1.com/'>
       <div style='padding: 0px; width: 400px; height: 400px;'></div>
     </a>
   )HTML");
   SendMouseDownEvent();
   base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_GE(hosts_[0]->calls_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://anchor1.example/"));
-  EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kOnPointerDown);
+  KURL expected_url = KURL("https://anchor1.com/");
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_TRUE(url_received.has_value());
+  EXPECT_EQ(expected_url, url_received);
+  EXPECT_EQ(PointerEventType::kOnPointerDown, hosts_[0]->event_type_);
 }
 
 class AnchorElementInteractionFragmentTest
@@ -179,7 +144,7 @@ class AnchorElementInteractionFragmentTest
  public:
   AnchorElementInteractionFragmentTest()
       : base::test::WithFeatureOverride(
-            blink::kPreloadingNoSamePageFragmentAnchorTracking) {}
+            blink::kNoSamePageFragmentPreloadingAnchorTracking) {}
 };
 
 INSTANTIATE_FEATURE_OVERRIDE_TEST_SUITE(AnchorElementInteractionFragmentTest);
@@ -195,18 +160,13 @@ TEST_P(AnchorElementInteractionFragmentTest, SamePageFragment) {
   )HTML");
   SendMouseDownEvent();
   base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  if (IsParamFeatureEnabled()) {
-    EXPECT_EQ(hosts_[0]->calls_.size(), 0u);
-  } else {
-    ASSERT_GE(hosts_[0]->calls_.size(), 1u);
-    EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://example.com/p1#foo"));
-    EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kOnPointerDown);
-  }
+  EXPECT_EQ(1u, hosts_.size());
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_EQ(url_received.has_value(), !IsParamFeatureEnabled());
 }
 
-TEST_P(AnchorElementInteractionFragmentTest, OtherPageFragment) {
+TEST_F(AnchorElementInteractionTest, OtherPageFragment) {
   String source("https://example.com/p1");
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
@@ -217,12 +177,12 @@ TEST_P(AnchorElementInteractionFragmentTest, OtherPageFragment) {
   )HTML");
   SendMouseDownEvent();
   base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  ASSERT_GE(hosts_[0]->calls_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://example.com/bar.html#foo"));
-
-  EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kOnPointerDown);
+  KURL expected_url = KURL("https://example.com/bar.html#foo");
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_TRUE(url_received.has_value());
+  EXPECT_EQ(expected_url, url_received);
+  EXPECT_EQ(PointerEventType::kOnPointerDown, hosts_[0]->event_type_);
 }
 
 TEST_F(AnchorElementInteractionTest, InvalidHref) {
@@ -236,9 +196,9 @@ TEST_F(AnchorElementInteractionTest, InvalidHref) {
   )HTML");
   SendMouseDownEvent();
   base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_.size(), 0u);
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_FALSE(url_received.has_value());
 }
 
 TEST_F(AnchorElementInteractionTest, RightClick) {
@@ -246,7 +206,7 @@ TEST_F(AnchorElementInteractionTest, RightClick) {
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
   main_resource.Complete(R"HTML(
-    <a href='https://anchor1.example/'>
+    <a href='https://anchor1.com/'>
       <div style='padding: 0px; width: 400px; height: 400px;'></div>
     </a>
   )HTML");
@@ -257,11 +217,9 @@ TEST_F(AnchorElementInteractionTest, RightClick) {
                       WebInputEvent::GetStaticTimeStampForTests());
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(event);
   base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  for (const auto& call : hosts_[0]->calls_) {
-    EXPECT_NE(call.type, PointerEventType::kOnPointerDown);
-  }
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_FALSE(url_received.has_value());
 }
 
 TEST_F(AnchorElementInteractionTest, NestedAnchorElementCheck) {
@@ -269,19 +227,20 @@ TEST_F(AnchorElementInteractionTest, NestedAnchorElementCheck) {
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
   main_resource.Complete(R"HTML(
-    <a href='https://anchor1.example/'>
-      <a href='https://anchor2.example/'>
+    <a href='https://anchor1.com/'>
+      <a href='https://anchor2.com/'>
         <div style='padding: 0px; width: 400px; height: 400px;'></div>
       </a>
     </a>
   )HTML");
   SendMouseDownEvent();
   base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  ASSERT_GE(hosts_[0]->calls_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://anchor2.example/"));
-  EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kOnPointerDown);
+  KURL expected_url = KURL("https://anchor2.com/");
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_TRUE(url_received.has_value());
+  EXPECT_EQ(expected_url, url_received);
+  EXPECT_EQ(PointerEventType::kOnPointerDown, hosts_[0]->event_type_);
 }
 
 TEST_F(AnchorElementInteractionTest, SiblingAnchorElements) {
@@ -289,20 +248,21 @@ TEST_F(AnchorElementInteractionTest, SiblingAnchorElements) {
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
   main_resource.Complete(R"HTML(
-    <a href='https://anchor1.example/'>
+    <a href='https://anchor1.com/'>
         <div style='padding: 0px; width: 400px; height: 400px;'></div>
     </a>
-    <a href='https://anchor2.example/'>
+    <a href='https://anchor2.com/'>
         <div style='padding: 0px; width: 400px; height: 400px;'></div>
     </a>
   )HTML");
   SendMouseDownEvent();
   base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  ASSERT_GE(hosts_[0]->calls_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://anchor1.example/"));
-  EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kOnPointerDown);
+  KURL expected_url = KURL("https://anchor1.com/");
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_TRUE(url_received.has_value());
+  EXPECT_EQ(expected_url, url_received);
+  EXPECT_EQ(PointerEventType::kOnPointerDown, hosts_[0]->event_type_);
 }
 
 TEST_F(AnchorElementInteractionTest, NoAnchorElement) {
@@ -314,9 +274,9 @@ TEST_F(AnchorElementInteractionTest, NoAnchorElement) {
   )HTML");
   SendMouseDownEvent();
   base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_.size(), 0u);
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_FALSE(url_received.has_value());
 }
 
 TEST_F(AnchorElementInteractionTest, TouchEvent) {
@@ -324,7 +284,7 @@ TEST_F(AnchorElementInteractionTest, TouchEvent) {
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
   main_resource.Complete(R"HTML(
-    <a href='https://anchor1.example/'>
+    <a href='https://anchor1.com/'>
       <div style='padding: 0px; width: 400px; height: 400px;'></div>
     </a>
   )HTML");
@@ -340,11 +300,12 @@ TEST_F(AnchorElementInteractionTest, TouchEvent) {
   GetDocument().GetFrame()->GetEventHandler().DispatchBufferedTouchEvents();
 
   base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  ASSERT_GE(hosts_[0]->calls_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://anchor1.example/"));
-  EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kOnPointerDown);
+  KURL expected_url = KURL("https://anchor1.com/");
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_TRUE(url_received.has_value());
+  EXPECT_EQ(expected_url, url_received);
+  EXPECT_EQ(PointerEventType::kOnPointerDown, hosts_[0]->event_type_);
 }
 
 TEST_F(AnchorElementInteractionTest, DestroyedContext) {
@@ -352,7 +313,7 @@ TEST_F(AnchorElementInteractionTest, DestroyedContext) {
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
   main_resource.Complete(R"HTML(
-    <a href='https://anchor1.example/'>
+    <a href='https://anchor1.com/'>
       <div style='padding: 0px; width: 400px; height: 400px;'></div>
     </a>
   )HTML");
@@ -371,17 +332,18 @@ TEST_F(AnchorElementInteractionTest, DestroyedContext) {
   GetDocument().GetFrame()->GetEventHandler().DispatchBufferedTouchEvents();
 
   base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_.size(), 0u);
+  KURL expected_url = KURL("https://anchor1.com/");
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_FALSE(url_received.has_value());
 }
 
-TEST_F(AnchorElementInteractionTest, ShorterThanEagerMouseHover) {
+TEST_F(AnchorElementInteractionTest, ValidMouseHover) {
   String source("https://example.com/p1");
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
   main_resource.Complete(R"HTML(
-    <a href='https://anchor1.example/'>
+    <a href='https://anchor1.com/'>
       <div style='padding: 0px; width: 400px; height: 400px;'></div>
     </a>
   )HTML");
@@ -399,32 +361,24 @@ TEST_F(AnchorElementInteractionTest, ShorterThanEagerMouseHover) {
       event, Vector<WebMouseEvent>(), Vector<WebMouseEvent>());
 
   // Wait for hover logic to process the event
-  task_runner->AdvanceTimeAndRun(GetShorterThanEagerHoverDwellTime());
+  task_runner->AdvanceTimeAndRun(
+      AnchorElementInteractionTracker::GetHoverDwellTime());
   base::RunLoop().RunUntilIdle();
 
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_.size(), 0u);
+  KURL expected_url = KURL("https://anchor1.com/");
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_TRUE(url_received.has_value());
+  EXPECT_EQ(expected_url, url_received);
+  EXPECT_EQ(PointerEventType::kOnPointerHover, hosts_[0]->event_type_);
 }
 
-class AnchorElementInteractionEagerHeuristicsTest
-    : public base::test::WithFeatureOverride,
-      public AnchorElementInteractionTest {
- public:
-  AnchorElementInteractionEagerHeuristicsTest()
-      : base::test::WithFeatureOverride(
-            blink::features::kPreloadingEagerHoverHeuristics) {}
-};
-
-INSTANTIATE_FEATURE_OVERRIDE_TEST_SUITE(
-    AnchorElementInteractionEagerHeuristicsTest);
-
-TEST_P(AnchorElementInteractionEagerHeuristicsTest,
-       BetweenEagerAndModerateMouseHover) {
+TEST_F(AnchorElementInteractionTest, ShortMouseHover) {
   String source("https://example.com/p1");
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
   main_resource.Complete(R"HTML(
-    <a href='https://anchor1.example/'>
+    <a href='https://anchor1.com/'>
       <div style='padding: 0px; width: 400px; height: 400px;'></div>
     </a>
   )HTML");
@@ -442,83 +396,22 @@ TEST_P(AnchorElementInteractionEagerHeuristicsTest,
       event, Vector<WebMouseEvent>(), Vector<WebMouseEvent>());
 
   // Wait for hover logic to process the event
-  task_runner->AdvanceTimeAndRun(GetBetweenEagerAndModerateHoverDwellTime());
+  task_runner->AdvanceTimeAndRun(
+      0.5 * AnchorElementInteractionTracker::GetHoverDwellTime());
   base::RunLoop().RunUntilIdle();
 
-  ASSERT_EQ(hosts_.size(), 1u);
-  if (IsParamFeatureEnabled()) {
-    ASSERT_EQ(hosts_[0]->calls_.size(), 1u);
-    EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://anchor1.example/"));
-    EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kOnPointerHover);
-    EXPECT_TRUE(hosts_[0]->calls_[0].is_mouse_pointer.value());
-    EXPECT_TRUE(hosts_[0]->calls_[0].mouse_velocity.has_value());
-    EXPECT_TRUE(hosts_[0]->calls_[0].is_eager.value());
-  } else {
-    EXPECT_EQ(hosts_[0]->calls_.size(), 0u);
-  }
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_FALSE(url_received.has_value());
+  EXPECT_EQ(PointerEventType::kNone, hosts_[0]->event_type_);
 }
 
-TEST_P(AnchorElementInteractionEagerHeuristicsTest,
-       LongerThanModerateMouseHover) {
+TEST_F(AnchorElementInteractionTest, MousePointerEnterAndLeave) {
   String source("https://example.com/p1");
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
   main_resource.Complete(R"HTML(
-    <a href='https://anchor1.example/'>
-      <div style='padding: 0px; width: 400px; height: 400px;'></div>
-    </a>
-  )HTML");
-
-  auto task_runner = base::MakeRefCounted<scheduler::FakeTaskRunner>();
-  GetDocument().GetAnchorElementInteractionTracker()->SetTaskRunnerForTesting(
-      task_runner, task_runner->GetMockTickClock());
-
-  gfx::PointF coordinates(100, 100);
-  WebMouseEvent event(WebInputEvent::Type::kMouseMove, coordinates, coordinates,
-                      WebPointerProperties::Button::kNoButton, 0,
-                      WebInputEvent::kNoModifiers,
-                      WebInputEvent::GetStaticTimeStampForTests());
-  GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
-      event, Vector<WebMouseEvent>(), Vector<WebMouseEvent>());
-
-  // Wait for eager hover logic to process the event.
-  task_runner->AdvanceTimeAndRun(GetBetweenEagerAndModerateHoverDwellTime());
-  base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_.size(), 1u);
-
-  if (IsParamFeatureEnabled()) {
-    ASSERT_EQ(hosts_[0]->calls_.size(), 1u);
-    EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://anchor1.example/"));
-    EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kOnPointerHover);
-    EXPECT_TRUE(hosts_[0]->calls_[0].is_mouse_pointer.value());
-    EXPECT_TRUE(hosts_[0]->calls_[0].mouse_velocity.has_value());
-    EXPECT_TRUE(hosts_[0]->calls_[0].is_eager.value());
-  } else {
-    EXPECT_EQ(hosts_[0]->calls_.size(), 0u);
-  }
-
-  // Wait for moderate hover logic to process the event.
-  task_runner->AdvanceTimeAndRun(GetLongerThanModerateHoverDwellTime());
-  base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(hosts_[0]->calls_.size(), IsParamFeatureEnabled() ? 2u : 1u);
-  const MockAnchorElementInteractionHost::Call& final_call =
-      hosts_[0]->calls_.back();
-  EXPECT_EQ(final_call.url, KURL("https://anchor1.example/"));
-  EXPECT_EQ(final_call.type, PointerEventType::kOnPointerHover);
-  EXPECT_TRUE(final_call.is_mouse_pointer.value());
-  EXPECT_TRUE(final_call.mouse_velocity.has_value());
-  EXPECT_FALSE(final_call.is_eager.value());
-}
-
-TEST_F(AnchorElementInteractionTest,
-       MousePointerEnterAndLeaveShorterThanEager) {
-  String source("https://example.com/p1");
-  SimRequest main_resource(source, "text/html");
-  LoadURL(source);
-  main_resource.Complete(R"HTML(
-    <a href='https://anchor1.example/'>
+    <a href='https://anchor1.com/'>
       <div style='padding: 0px; width: 400px; height: 400px;'></div>
     </a>
   )HTML");
@@ -536,7 +429,8 @@ TEST_F(AnchorElementInteractionTest,
   GetDocument().GetFrame()->GetEventHandler().HandleMouseMoveEvent(
       mouse_enter_event, Vector<WebMouseEvent>(), Vector<WebMouseEvent>());
 
-  task_runner->AdvanceTimeAndRun(GetShorterThanEagerHoverDwellTime());
+  task_runner->AdvanceTimeAndRun(
+      0.5 * AnchorElementInteractionTracker::GetHoverDwellTime());
 
   WebMouseEvent mouse_leave_event(
       WebInputEvent::Type::kMouseLeave, coordinates, coordinates,
@@ -546,11 +440,14 @@ TEST_F(AnchorElementInteractionTest,
       mouse_leave_event);
 
   // Wait for hover logic to process the event
-  task_runner->AdvanceTimeAndRun(GetShorterThanEagerHoverDwellTime());
+  task_runner->AdvanceTimeAndRun(
+      AnchorElementInteractionTracker::GetHoverDwellTime());
 
   base::RunLoop().RunUntilIdle();
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_.size(), 0u);
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_FALSE(url_received.has_value());
+  EXPECT_EQ(PointerEventType::kNone, hosts_[0]->event_type_);
 }
 
 TEST_F(AnchorElementInteractionTest, MouseMotionEstimatorUnitTest) {
@@ -676,7 +573,7 @@ TEST_F(AnchorElementInteractionTest, MouseVelocitySent) {
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
   main_resource.Complete(R"HTML(
-    <a href='https://anchor1.example/'>
+    <a href='https://anchor1.com/'>
       <div style='padding: 0px; width: 400px; height: 400px;'></div>
     </a>
   )HTML");
@@ -686,9 +583,10 @@ TEST_F(AnchorElementInteractionTest, MouseVelocitySent) {
       task_runner, task_runner->GetMockTickClock());
 
   constexpr gfx::PointF origin{200, 200};
-  constexpr gfx::Vector2dF velocity{40, -30};  // sqrt(40**2 + (-30)**2) = 50
-  constexpr base::TimeDelta timestep = base::Milliseconds(1);
-  for (base::TimeDelta t; t <= GetLongerThanModerateHoverDwellTime();
+  constexpr gfx::Vector2dF velocity{40, -30};
+  constexpr base::TimeDelta timestep = base::Milliseconds(20);
+  for (base::TimeDelta t;
+       t <= AnchorElementInteractionTracker::GetHoverDwellTime();
        t += timestep) {
     gfx::PointF coordinates =
         origin + gfx::ScaleVector2d(velocity, t.InSecondsF());
@@ -703,30 +601,14 @@ TEST_F(AnchorElementInteractionTest, MouseVelocitySent) {
 
   base::RunLoop().RunUntilIdle();
 
-  ASSERT_EQ(hosts_.size(), 1u);
-  if (base::FeatureList::IsEnabled(
-          blink::features::kPreloadingEagerHoverHeuristics)) {
-    // This feature doubles the `kOnPointerHover` calls by adding an `eager`
-    // hover notification in advance of each `moderate` hover.
-    ASSERT_EQ(hosts_[0]->calls_.size(), 2u);
-
-    const MockAnchorElementInteractionHost::Call& eager_hover =
-        hosts_[0]->calls_[0];
-    EXPECT_EQ(eager_hover.url, KURL("https://anchor1.example/"));
-    EXPECT_EQ(eager_hover.type, PointerEventType::kOnPointerHover);
-    EXPECT_TRUE(eager_hover.is_mouse_pointer.value());
-    EXPECT_TRUE(eager_hover.is_eager.value());
-    EXPECT_NEAR(eager_hover.mouse_velocity.value(), 50, 0.5);
-  } else {
-    ASSERT_EQ(hosts_[0]->calls_.size(), 1u);
-  }
-  const MockAnchorElementInteractionHost::Call& moderate_hover =
-      hosts_[0]->calls_.back();
-  EXPECT_EQ(moderate_hover.url, KURL("https://anchor1.example/"));
-  EXPECT_EQ(moderate_hover.type, PointerEventType::kOnPointerHover);
-  EXPECT_TRUE(moderate_hover.is_mouse_pointer.value());
-  EXPECT_FALSE(moderate_hover.is_eager.value());
-  EXPECT_NEAR(moderate_hover.mouse_velocity.value(), 50, 0.5);
+  KURL expected_url = KURL("https://anchor1.com/");
+  EXPECT_EQ(1u, hosts_.size());
+  std::optional<KURL> url_received = hosts_[0]->url_received_;
+  EXPECT_TRUE(url_received.has_value());
+  EXPECT_EQ(expected_url, url_received);
+  EXPECT_EQ(PointerEventType::kOnPointerHover, hosts_[0]->event_type_);
+  EXPECT_TRUE(hosts_[0]->is_mouse_pointer_);
+  EXPECT_NEAR(50.0, hosts_[0]->mouse_velocity_, 0.5);
 }
 
 class AnchorElementInteractionViewportHeuristicsTest
@@ -734,36 +616,21 @@ class AnchorElementInteractionViewportHeuristicsTest
  public:
   AnchorElementInteractionViewportHeuristicsTest() {
     feature_list_.InitWithFeaturesAndParameters(
-        {{features::kNavigationPredictor, GetParamsForNavigationPredictor()},
+        {{features::kNavigationPredictor,
+          {{"random_anchor_sampling_period", "1"},
+           {"intersection_observation_after_fcp_only", "true"},
+           {"post_fcp_observation_delay", "10ms"}}},
          {features::kNavigationPredictorNewViewportFeatures, {}},
-         {features::kPreloadingModerateViewportHeuristics,
+         {features::kPreloadingViewportHeuristics,
           {{"delay", "100ms"},
            {"distance_from_ptr_down_low", "-0.3"},
            {"distance_from_ptr_down_hi", "0"},
-           {"largest_anchor_threshold", "0.5"}}},
-         {features::kPreloadingEagerViewportHeuristics,
-          {{"viewport_present_time", "100ms"}}}},
+           {"largest_anchor_threshold", "0.5"}}}},
         {});
-    config_scope_ =
-        std::make_unique<ModerateViewportHeuristicConfigTestingScope>();
   }
 
   static constexpr int kViewportWidth = 400;
   static constexpr int kViewportHeight = 400;
-
-  std::map<std::string, std::string> GetParamsForNavigationPredictor() {
-    return {{"random_anchor_sampling_period", "1"},
-            {"intersection_observation_after_fcp_only", "true"},
-            {"post_fcp_observation_delay", "10ms"}};
-  }
-
-  static base::TimeDelta EnoughWaitTimeForAllViewportHeuristics() {
-    // Any larger or equal value than max(
-    //   PreloadingModerateViewportHeuristics.delay,
-    //   PreloadingEagerViewportHeuristics.viewport_present_time
-    //   );
-    return base::Milliseconds(200);
-  }
 
   void DispatchPointerDown(gfx::PointF coordinates) {
     GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
@@ -817,10 +684,6 @@ class AnchorElementInteractionViewportHeuristicsTest
     LoadURL(source);
     main_resource.Complete(params.main_resource_body);
 
-    GetDocument().GetAnchorElementInteractionTracker()->SetTaskRunnerForTesting(
-        platform_->test_task_runner(),
-        platform_->test_task_runner()->GetMockTickClock());
-
     Compositor().BeginFrame();
     // The 10ms matches the "post_fcp_observation_delay" param set for
     // kNavigationPredictor.
@@ -829,8 +692,8 @@ class AnchorElementInteractionViewportHeuristicsTest
                                          params.scroll_delta);
     ProcessPositionUpdates();
 
-    // Wait for all activation of viewport heuristics.
-    platform_->RunForPeriod(EnoughWaitTimeForAllViewportHeuristics());
+    // The 100ms matches the delay param set for kPreloadingViewportHeuristic.
+    platform_->RunForPeriod(base::Milliseconds(100));
     base::RunLoop().RunUntilIdle();
   }
 
@@ -877,7 +740,6 @@ class AnchorElementInteractionViewportHeuristicsTest
 
  private:
   base::test::ScopedFeatureList feature_list_;
-  std::unique_ptr<ModerateViewportHeuristicConfigTestingScope> config_scope_;
 };
 
 TEST_F(AnchorElementInteractionViewportHeuristicsTest, BasicTest) {
@@ -892,17 +754,8 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest, BasicTest) {
   RunBasicTestFixture({.main_resource_body = body,
                        .pointer_down_location = gfx::PointF(100, 180),
                        .scroll_delta = -100});
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_.size(), 2u);
-  EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://example.com/foo"));
-  EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kNone);
-  EXPECT_TRUE(hosts_[0]->calls_[0].is_eager.has_value());
-  EXPECT_EQ(hosts_[0]->calls_[1].url, KURL("https://example.com/foo"));
-  EXPECT_EQ(hosts_[0]->calls_[1].type, PointerEventType::kNone);
-  EXPECT_TRUE(hosts_[0]->calls_[1].is_eager.has_value());
-  EXPECT_NE(hosts_[0]->calls_[0].is_eager.value(),
-            hosts_[0]->calls_[1].is_eager.value());
+  EXPECT_EQ(hosts_[0]->event_type_, PointerEventType::kNone);
+  EXPECT_EQ(hosts_[0]->url_received_, KURL("https://example.com/foo"));
 }
 
 // Tests scenario where an anchor's distance_from_pointer_down_ratio after a
@@ -921,13 +774,8 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest,
                        .pointer_down_location = gfx::PointF(100, 350),
                        .scroll_delta = -100});
 
-  // "moderate" viewport heuristic should not be triggered.
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://example.com/foo"));
-  EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kNone);
-  EXPECT_TRUE(hosts_[0]->calls_[0].is_eager.has_value());
-  EXPECT_TRUE(hosts_[0]->calls_[0].is_eager.value());
+  EXPECT_EQ(hosts_[0]->event_type_, PointerEventType::kNone);
+  EXPECT_FALSE(hosts_[0]->url_received_.has_value());
 }
 
 // Test scenario with two anchors where one anchor is < 50% larger than the
@@ -948,17 +796,8 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest,
                        .pointer_down_location = gfx::PointF(100, 200),
                        .scroll_delta = -25});
 
-  // "moderate" viewport heuristic should not be triggered for both anchors.
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_.size(), 2u);
-  EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://example.com/foo"));
-  EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kNone);
-  EXPECT_TRUE(hosts_[0]->calls_[0].is_eager.has_value());
-  EXPECT_TRUE(hosts_[0]->calls_[0].is_eager.value());
-  EXPECT_EQ(hosts_[0]->calls_[1].url, KURL("https://example.com/bar"));
-  EXPECT_EQ(hosts_[0]->calls_[1].type, PointerEventType::kNone);
-  EXPECT_TRUE(hosts_[0]->calls_[1].is_eager.has_value());
-  EXPECT_TRUE(hosts_[0]->calls_[1].is_eager.value());
+  EXPECT_EQ(hosts_[0]->event_type_, PointerEventType::kNone);
+  EXPECT_FALSE(hosts_[0]->url_received_.has_value());
 }
 
 // Test scenario with two anchors where one anchor is > 50% larger than the
@@ -979,19 +818,8 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest,
                        .pointer_down_location = gfx::PointF(100, 150),
                        .scroll_delta = -25});
 
-  // This will also trigger some hover and pointer down calls, but we only care
-  // about the "moderate" viewport one.
-  ASSERT_EQ(hosts_.size(), 1u);
-  ASSERT_GE(hosts_[0]->calls_.size(), 1u);
-  const auto moderate_viewport_call_it = std::ranges::find_if(
-      hosts_[0]->calls_,
-      [](const MockAnchorElementInteractionHost::Call& call) {
-        return call.type == PointerEventType::kNone &&
-               call.is_eager.has_value() && !call.is_eager.value();
-      });
-  EXPECT_NE(moderate_viewport_call_it, hosts_[0]->calls_.end());
-  EXPECT_EQ(moderate_viewport_call_it->url, KURL("https://example.com/foo"));
-  EXPECT_EQ(moderate_viewport_call_it->type, PointerEventType::kNone);
+  EXPECT_EQ(hosts_[0]->event_type_, PointerEventType::kNone);
+  EXPECT_EQ(hosts_[0]->url_received_, KURL("https://example.com/foo"));
 }
 
 TEST_F(AnchorElementInteractionViewportHeuristicsTest, MultipleAnchors) {
@@ -1015,20 +843,10 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest, MultipleAnchors) {
                        .pointer_down_location = gfx::PointF(100, 220),
                        .scroll_delta = -25});
 
+  EXPECT_EQ(hosts_[0]->event_type_, PointerEventType::kNone);
   // One and five are too far away from the ptr down, two is much bigger than
   // three and four.
-  // This will also trigger some hover and pointer down calls, but we only care
-  // about the "moderate" viewport one.
-  ASSERT_EQ(hosts_.size(), 1u);
-  ASSERT_GE(hosts_[0]->calls_.size(), 1u);
-  const auto moderate_viewport_call_it = std::ranges::find_if(
-      hosts_[0]->calls_,
-      [](const MockAnchorElementInteractionHost::Call& call) {
-        return call.type == PointerEventType::kNone &&
-               call.is_eager.has_value() && !call.is_eager.value();
-      });
-  EXPECT_NE(moderate_viewport_call_it, hosts_[0]->calls_.end());
-  EXPECT_EQ(moderate_viewport_call_it->url, KURL("https://example.com/two"));
+  EXPECT_EQ(hosts_[0]->url_received_, KURL("https://example.com/two"));
 }
 
 TEST_F(AnchorElementInteractionViewportHeuristicsTest,
@@ -1042,10 +860,6 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest,
          style="height: 100px; display: block;">link</a>
     <div style="height: 300px"></div>
   )HTML");
-
-  GetDocument().GetAnchorElementInteractionTracker()->SetTaskRunnerForTesting(
-      platform_->test_task_runner(),
-      platform_->test_task_runner()->GetMockTickClock());
 
   Compositor().BeginFrame();
   // The 10ms matches the "post_fcp_observation_delay" param set for
@@ -1063,55 +877,16 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest,
   base::RunLoop().RunUntilIdle();
 
   // Second pointerdown happening during the delay period should prevent the
-  // anchor from being selected from "moderate" viewport heuristics.
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://example.com/foo"));
-  EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kNone);
-  EXPECT_TRUE(hosts_[0]->calls_[0].is_eager.has_value());
-  EXPECT_TRUE(hosts_[0]->calls_[0].is_eager.value());
-}
-
-TEST_F(AnchorElementInteractionViewportHeuristicsTest,
-       EagerHeuristicsTriggerForAnchorsInViewport) {
-  String body = R"HTML(
-    <body style="margin: 0px">
-      <div style="height: 50px"></div>
-      <a href="https://example.com/one"
-        style="display: block; height: 150px;">one</a>
-      <a href="https://example.com/two"
-        style="display: block; height: 200px;">two</a>
-      <a href="https://example.com/three"
-        style="display: block; height: 200px;">three</a>
-      <a href="https://example.com/four"
-        style="display: block; height: 200px;">four</a>
-      <div style="height: 400px"></div>
-    </body>
-  )HTML";
-  RunBasicTestFixture({.main_resource_body = body,
-                       .pointer_down_location = gfx::PointF(100, 10),
-                       .scroll_delta = -400});
-
-  // Only the third and fourth links are in viewport and triggered.
-  ASSERT_EQ(hosts_.size(), 1u);
-  ASSERT_GE(hosts_[0]->calls_.size(), 2u);
-  EXPECT_EQ(hosts_[0]->calls_[0].url, KURL("https://example.com/three"));
-  EXPECT_EQ(hosts_[0]->calls_[0].type, PointerEventType::kNone);
-  EXPECT_TRUE(hosts_[0]->calls_[0].is_eager.has_value());
-  EXPECT_TRUE(hosts_[0]->calls_[0].is_eager.value());
-  EXPECT_EQ(hosts_[0]->calls_[1].url, KURL("https://example.com/four"));
-  EXPECT_EQ(hosts_[0]->calls_[1].type, PointerEventType::kNone);
-  EXPECT_TRUE(hosts_[0]->calls_[1].is_eager.has_value());
-  EXPECT_TRUE(hosts_[0]->calls_[1].is_eager.value());
+  // anchor from being selected.
+  EXPECT_EQ(hosts_[0]->event_type_, PointerEventType::kNone);
+  EXPECT_FALSE(hosts_[0]->url_received_.has_value());
 }
 
 TEST_F(AnchorElementInteractionViewportHeuristicsTest,
        PredictorDisabledIfAllAnchorsNotSampledIn) {
-  std::map<std::string, std::string> params = GetParamsForNavigationPredictor();
-  params["random_anchor_sampling_period"] = "2";
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
-      features::kNavigationPredictor, params);
+      features::kNavigationPredictor, {{"random_anchor_sampling_period", "2"}});
 
   String body = R"HTML(
     <body style="margin: 0px">
@@ -1127,25 +902,8 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest,
 
   // A prediction should not have been made because the sampling rate is not
   // 1 (not all anchors are sampled in).
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_.size(), 0u);
-}
-
-// Regression test for https://crbug.com/458237344.
-TEST_F(AnchorElementInteractionViewportHeuristicsTest,
-       IgnoreSameDocumentNavigation) {
-  String body = R"HTML(
-    <body style="margin: 0px">
-      <div style="height: 50px"></div>
-      <a href="https://example.com/#head" style="height: 50px; display: block;">foo</a>
-    </body>
-  )HTML";
-  RunBasicTestFixture({.main_resource_body = body,
-                       .pointer_down_location = gfx::PointF(100, 150),
-                       .scroll_delta = -25});
-
-  ASSERT_EQ(hosts_.size(), 1u);
-  EXPECT_EQ(hosts_[0]->calls_.size(), 0u);
+  EXPECT_EQ(hosts_[0]->event_type_, PointerEventType::kNone);
+  EXPECT_EQ(hosts_[0]->url_received_, std::nullopt);
 }
 
 }  // namespace

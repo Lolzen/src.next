@@ -5,6 +5,7 @@
 #include "net/base/filename_util.h"
 
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/test_file_util.h"

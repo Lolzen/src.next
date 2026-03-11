@@ -23,8 +23,10 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CSS_STYLE_SHEET_H_
 
 #include "base/gtest_prod_util.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/css_rule.h"
+#include "third_party/blink/renderer/core/css/media_query_evaluator.h"
 #include "third_party/blink/renderer/core/css/media_query_set_owner.h"
 #include "third_party/blink/renderer/core/css/resolver/media_query_result.h"
 #include "third_party/blink/renderer/core/css/style_sheet.h"
@@ -48,12 +50,8 @@ class CSSStyleSheetInit;
 class Document;
 class Element;
 class ExceptionState;
-class InspectorGhostRules;
-class MediaQueryEvaluator;
 class MediaQuerySet;
 class QuietMutationScope;
-template <typename T>
-class ScriptPromise;
 class ScriptState;
 class StyleSheetContents;
 class TreeScope;
@@ -81,7 +79,7 @@ class CORE_EXPORT CSSStyleSheet final : public StyleSheet,
       Node&,
       const KURL&,
       const TextPosition& start_position = TextPosition::MinimumPosition(),
-      const TextEncoding& = TextEncoding());
+      const WTF::TextEncoding& = WTF::TextEncoding());
   static CSSStyleSheet* CreateInline(
       StyleSheetContents*,
       Node& owner_node,
@@ -263,7 +261,6 @@ class CORE_EXPORT CSSStyleSheet final : public StyleSheet,
 
  private:
   friend class QuietMutationScope;
-  friend class InspectorGhostRules;
 
   bool IsAlternate() const;
   bool IsCSSStyleSheet() const override { return true; }

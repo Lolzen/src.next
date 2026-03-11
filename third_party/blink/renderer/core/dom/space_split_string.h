@@ -89,8 +89,6 @@ class CORE_EXPORT SpaceSplitString {
  private:
   class CORE_EXPORT Data : public GarbageCollected<Data> {
    public:
-    using value_type = AtomicString;
-
     static Data* Create(const AtomicString&);
     static Data* CreateUnique(const Data&);
 

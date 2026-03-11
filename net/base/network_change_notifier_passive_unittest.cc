@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/test/task_environment.h"
@@ -54,18 +55,15 @@ class NetworkChangeNotifierPassiveTest : public testing::Test {
 
 class MockIPAddressObserver : public NetworkChangeNotifier::IPAddressObserver {
  public:
-  MOCK_METHOD1(OnIPAddressChanged,
-               void(NetworkChangeNotifier::IPAddressChangeType));
+  MOCK_METHOD0(OnIPAddressChanged, void());
 };
 
 TEST_F(NetworkChangeNotifierPassiveTest, OnIPAddressChanged) {
   testing::StrictMock<MockIPAddressObserver> observer;
   NetworkChangeNotifier::AddIPAddressObserver(&observer);
 
-  EXPECT_CALL(observer, OnIPAddressChanged(
-                            NetworkChangeNotifier::IP_ADDRESS_CHANGE_NORMAL));
-  notifier()->OnIPAddressChanged(
-      NetworkChangeNotifier::IP_ADDRESS_CHANGE_NORMAL);
+  EXPECT_CALL(observer, OnIPAddressChanged());
+  notifier()->OnIPAddressChanged();
   FastForwardUntilIdle();
 
   NetworkChangeNotifier::RemoveIPAddressObserver(&observer);

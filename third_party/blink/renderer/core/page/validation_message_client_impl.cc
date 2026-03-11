@@ -75,8 +75,7 @@ void ValidationMessageClientImpl::ShowValidationMessage(
   String message = original_message;
   if (original_message.length() > kMaxValidationStringLength &&
       anchor.GetDocument().GetFrame()->IsCrossOriginToOutermostMainFrame()) {
-    message = StrCat(
-        {StringView(original_message, 0, kMaxValidationStringLength), "..."});
+    message = original_message.Substring(0, kMaxValidationStringLength) + "...";
   }
 
   if (current_anchor_)
@@ -97,7 +96,17 @@ void ValidationMessageClientImpl::ShowValidationMessage(
   overlay_ =
       MakeGarbageCollected<FrameOverlay>(target_frame, std::move(delegate));
   overlay_delegate_->CreatePage(*overlay_);
-  ValidationMessageVisibilityChanged(anchor);
+  if (RuntimeEnabledFeatures::ValidationBubbleNoForcedLayoutEnabled()) {
+    ValidationMessageVisibilityChanged(anchor);
+  } else {
+    bool success = target_frame->View()->UpdateAllLifecyclePhasesExceptPaint(
+        DocumentUpdateReason::kOverlay);
+    ValidationMessageVisibilityChanged(anchor);
+    // The lifecycle update should always succeed, because this is not inside
+    // of a throttling scope.
+    DCHECK(success);
+    LayoutOverlay();
+  }
 }
 
 void ValidationMessageClientImpl::HideValidationMessage(const Element& anchor) {

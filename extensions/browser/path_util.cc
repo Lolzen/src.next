@@ -4,7 +4,6 @@
 
 #include "extensions/browser/path_util.h"
 
-#include "base/byte_size.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/path_service.h"
@@ -20,7 +19,8 @@
 #include "base/apple/scoped_cftyperef.h"
 #endif
 
-namespace extensions::path_util {
+namespace extensions {
+namespace path_util {
 
 namespace {
 #if BUILDFLAG(IS_MAC)
@@ -52,13 +52,12 @@ void OnDirectorySizeCalculated(
     int message_id,
     base::OnceCallback<void(const std::u16string&)> callback,
     int64_t size_in_bytes) {
-  base::ByteSize size =
-      base::ByteSize(base::checked_cast<uint64_t>(size_in_bytes));
+  const int one_mebibyte_in_bytes = 1024 * 1024;
   std::u16string response =
-      size < base::MiBU(1)
+      size_in_bytes < one_mebibyte_in_bytes
           ? l10n_util::GetStringUTF16(message_id)
-          : ui::FormatBytesWithUnits(size, ui::DataUnits::kMebibyte,
-                                     /*show_units=*/true);
+          : ui::FormatBytesWithUnits(size_in_bytes, ui::DATA_UNITS_MEBIBYTE,
+                                     true);
 
   std::move(callback).Run(response);
 }
@@ -148,4 +147,5 @@ base::FilePath ResolveHomeDirectory(const base::FilePath& path) {
 #endif
 }
 
-}  // namespace extensions::path_util
+}  // namespace path_util
+}  // namespace extensions

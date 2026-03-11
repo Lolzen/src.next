@@ -9,6 +9,7 @@
 #include "base/containers/heap_array.h"
 #include "base/numerics/safe_conversions.h"
 #include "third_party/blink/renderer/core/style/shadow_list.h"
+#include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 
 namespace blink {
 
@@ -26,8 +27,9 @@ sk_sp<PaintFilter> MakeOneTextShadowFilter(
   }
   const gfx::Vector2dF& offset = shadow.Offset();
 
-  const float sigma = shadow.BlurAsSigma();
-  DCHECK_GE(sigma, 0);
+  const float blur = shadow.Blur();
+  DCHECK_GE(blur, 0);
+  const auto sigma = BlurRadiusToStdDev(blur);
   return sk_make_sp<DropShadowPaintFilter>(offset.x(), offset.y(), sigma, sigma,
                                            color.toSkColor4f(), shadow_mode,
                                            nullptr);

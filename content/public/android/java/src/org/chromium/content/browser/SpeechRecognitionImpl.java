@@ -24,8 +24,8 @@ import org.jni_zero.CalledByNative;
 import org.jni_zero.JNINamespace;
 import org.jni_zero.NativeMethods;
 
+import org.chromium.base.BuildInfo;
 import org.chromium.base.ContextUtils;
-import org.chromium.base.DeviceInfo;
 import org.chromium.base.Log;
 import org.chromium.base.PackageUtils;
 import org.chromium.build.annotations.NullMarked;
@@ -80,7 +80,8 @@ public class SpeechRecognitionImpl {
             if (mNativeSpeechRecognizerImplAndroid == 0) return;
 
             mState = STATE_CAPTURING_SPEECH;
-            SpeechRecognitionImplJni.get().onSoundStart(mNativeSpeechRecognizerImplAndroid);
+            SpeechRecognitionImplJni.get()
+                    .onSoundStart(mNativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl.this);
         }
 
         @Override
@@ -95,10 +96,12 @@ public class SpeechRecognitionImpl {
             // event is to trigger it when the last result is received or the session is aborted.
             if (!mContinuous) {
                 if (mNativeSpeechRecognizerImplAndroid == 0) return;
-                SpeechRecognitionImplJni.get().onSoundEnd(mNativeSpeechRecognizerImplAndroid);
+                SpeechRecognitionImplJni.get()
+                        .onSoundEnd(mNativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl.this);
                 // Since Android doesn't have a dedicated event for when audio capture is finished,
                 // we fire it after speech has ended.
-                SpeechRecognitionImplJni.get().onAudioEnd(mNativeSpeechRecognizerImplAndroid);
+                SpeechRecognitionImplJni.get()
+                        .onAudioEnd(mNativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl.this);
                 mState = STATE_IDLE;
             }
         }
@@ -151,7 +154,8 @@ public class SpeechRecognitionImpl {
             if (mNativeSpeechRecognizerImplAndroid == 0) return;
 
             mState = STATE_AWAITING_SPEECH;
-            SpeechRecognitionImplJni.get().onAudioStart(mNativeSpeechRecognizerImplAndroid);
+            SpeechRecognitionImplJni.get()
+                    .onAudioStart(mNativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl.this);
         }
 
         @Override
@@ -182,7 +186,11 @@ public class SpeechRecognitionImpl {
 
             SpeechRecognitionImplJni.get()
                     .onRecognitionResults(
-                            mNativeSpeechRecognizerImplAndroid, results, scores, provisional);
+                            mNativeSpeechRecognizerImplAndroid,
+                            SpeechRecognitionImpl.this,
+                            results,
+                            scores,
+                            provisional);
         }
     }
 
@@ -204,7 +212,7 @@ public class SpeechRecognitionImpl {
     /** Returns null if there is no Google LLC provided RecognitionService available on device. */
     private static @Nullable ComponentName createRecognitionProvider() {
         if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                || DeviceInfo.isAutomotive()) {
+                || BuildInfo.getInstance().isAutomotive) {
             return getComponent(SSBG_PACKAGE_NAME, -1);
         } else {
             return getComponent(AGSA_PACKAGE_NAME, AGSA_MIN_VERSION);
@@ -265,15 +273,18 @@ public class SpeechRecognitionImpl {
 
         if (mState != STATE_IDLE) {
             if (mState == STATE_CAPTURING_SPEECH) {
-                SpeechRecognitionImplJni.get().onSoundEnd(mNativeSpeechRecognizerImplAndroid);
+                SpeechRecognitionImplJni.get()
+                        .onSoundEnd(mNativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl.this);
             }
-            SpeechRecognitionImplJni.get().onAudioEnd(mNativeSpeechRecognizerImplAndroid);
+            SpeechRecognitionImplJni.get()
+                    .onAudioEnd(mNativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl.this);
             mState = STATE_IDLE;
         }
 
         if (error != SpeechRecognitionErrorCode.NONE) {
             SpeechRecognitionImplJni.get()
-                    .onRecognitionError(mNativeSpeechRecognizerImplAndroid, error);
+                    .onRecognitionError(
+                            mNativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl.this, error);
         }
 
         try {
@@ -285,7 +296,8 @@ public class SpeechRecognitionImpl {
             Log.w(TAG, "Destroy threw exception " + mRecognizer, e);
         }
         mRecognizer = null;
-        SpeechRecognitionImplJni.get().onRecognitionEnd(mNativeSpeechRecognizerImplAndroid);
+        SpeechRecognitionImplJni.get()
+                .onRecognitionEnd(mNativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl.this);
         mNativeSpeechRecognizerImplAndroid = 0;
     }
 
@@ -331,22 +343,24 @@ public class SpeechRecognitionImpl {
     @NativeMethods
     interface Natives {
         // Native JNI calls to content/browser/speech/speech_recognizer_impl_android.cc
-        void onAudioStart(long nativeSpeechRecognizerImplAndroid);
+        void onAudioStart(long nativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl caller);
 
-        void onSoundStart(long nativeSpeechRecognizerImplAndroid);
+        void onSoundStart(long nativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl caller);
 
-        void onSoundEnd(long nativeSpeechRecognizerImplAndroid);
+        void onSoundEnd(long nativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl caller);
 
-        void onAudioEnd(long nativeSpeechRecognizerImplAndroid);
+        void onAudioEnd(long nativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl caller);
 
         void onRecognitionResults(
                 long nativeSpeechRecognizerImplAndroid,
+                SpeechRecognitionImpl caller,
                 String[] results,
                 float @Nullable [] scores,
                 boolean provisional);
 
-        void onRecognitionError(long nativeSpeechRecognizerImplAndroid, int error);
+        void onRecognitionError(
+                long nativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl caller, int error);
 
-        void onRecognitionEnd(long nativeSpeechRecognizerImplAndroid);
+        void onRecognitionEnd(long nativeSpeechRecognizerImplAndroid, SpeechRecognitionImpl caller);
     }
 }

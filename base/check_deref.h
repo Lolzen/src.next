@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <utility>
-
 #include "base/check.h"
 #include "base/compiler_specific.h"
 
@@ -16,15 +14,21 @@
 
 namespace logging {
 
-// Dereferences the pointer-like object `val` if `val` doesn't test `false`, or
-// dies if it does.
+// Returns a reference to pointee of `ptr` if `ptr` is not null, or dies if
+// `ptr` is null.
 //
 // It is useful in initializers and direct assignments, where a direct `CHECK`
 // call can't be used:
 //
-//   MyType& type_ref = CHECK_DEREF(MethodReturningAPointerLikeObject());
+//   MyType& type_ref = CHECK_DEREF(MethodReturningAPointer());
 //
-#define CHECK_DEREF(ptr) ::logging::CheckDeref(ptr, "*" #ptr)
+// If your raw pointer is stored in a wrapped type like `unique_ptr` or
+// `raw_ptr`, you should use their `.get()` methods to get the raw pointer
+// before calling `CHECK_DEREF()`:
+//
+//   MyType& type_ref = CHECK_DEREF(your_wrapped_pointer.get());
+//
+#define CHECK_DEREF(ptr) ::logging::CheckDeref(ptr, #ptr " != nullptr")
 
 template <typename T>
 [[nodiscard]] T& CheckDeref(
@@ -43,25 +47,6 @@ template <typename T>
 #endif  // !CHECK_WILL_STREAM()
   }
   return *ptr;
-}
-
-template <typename T>
-[[nodiscard]] decltype(auto) CheckDeref(
-    T&& val LIFETIME_BOUND,
-    const char* message,
-    const base::Location& location = base::Location::Current()) {
-  // Note: we can't just call `CHECK(val)` here, as that would cause the error
-  // to be reported from this header, and we want the error to be reported at
-  // the file and line of the caller.
-  if (!val) [[unlikely]] {
-#if CHECK_WILL_STREAM()
-    // `CheckNoreturnError` will die with a fatal error in its destructor.
-    CheckNoreturnError::Check(message, location);
-#else
-    CheckFailure();
-#endif  // !CHECK_WILL_STREAM()
-  }
-  return *std::forward<T>(val);
 }
 
 }  // namespace logging

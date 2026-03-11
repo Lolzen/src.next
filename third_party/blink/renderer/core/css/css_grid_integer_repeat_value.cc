@@ -49,9 +49,5 @@ wtf_size_t CSSGridIntegerRepeatValue::ClampRepetitions(
   return repetitions;
 }
 
-bool CSSGridIntegerRepeatValue::HasRandomFunctions() const {
-  return repetitions_ && repetitions_->HasRandomFunctions();
-}
-
 }  // namespace cssvalue
 }  // namespace blink

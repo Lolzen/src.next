@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/android/path_utils.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/android/android_theme_resources.h"
@@ -19,7 +20,7 @@
 #include "ui/android/window_android.h"
 #include "ui/base/l10n/l10n_util.h"
 
-using base::android::JavaRef;
+using base::android::JavaParamRef;
 
 OpenDownloadDialogBridgeDelegate::OpenDownloadDialogBridgeDelegate()
     : open_download_dialog_bridge_(
@@ -34,7 +35,7 @@ OpenDownloadDialogBridgeDelegate::~OpenDownloadDialogBridgeDelegate() {
 void OpenDownloadDialogBridgeDelegate::CreateDialog(
     download::DownloadItem* download_item) {
   // Don't shown duplicate dialog again if it is already showing.
-  if (std::ranges::contains(download_items_, download_item)) {
+  if (base::Contains(download_items_, download_item)) {
     return;
   }
   download_item->AddObserver(this);

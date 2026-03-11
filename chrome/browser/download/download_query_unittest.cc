@@ -145,7 +145,7 @@ void DownloadQueryTest::AddFilter(DownloadQuery::FilterType name,
 template <>
 void DownloadQueryTest::AddFilter(DownloadQuery::FilterType name,
                                   std::vector<std::u16string> cpp_value) {
-  base::ListValue list;
+  base::Value::List list;
   for (const auto& value : cpp_value)
     list.Append(value);
   CHECK(query_.AddFilter(name, base::Value(std::move(list))));
@@ -153,7 +153,7 @@ void DownloadQueryTest::AddFilter(DownloadQuery::FilterType name,
 
 template<> void DownloadQueryTest::AddFilter(
     DownloadQuery::FilterType name, std::vector<std::string> cpp_value) {
-  base::ListValue list;
+  base::Value::List list;
   for (const auto& value : cpp_value)
     list.Append(std::move(value));
   CHECK(query_.AddFilter(name, base::Value(std::move(list))));

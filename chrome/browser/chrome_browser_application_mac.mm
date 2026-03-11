@@ -39,6 +39,12 @@ void RegisterBrowserCrApp() {
   CHECK([NSApp isKindOfClass:[BrowserCrApplication class]]);
 }
 
+void InitializeHeadlessMode() {
+  // In headless mode the browser window exists but is always hidden, so there
+  // is no point in showing dock icon and menu bar.
+  NSApp.activationPolicy = NSApplicationActivationPolicyAccessory;
+}
+
 void Terminate() {
   [NSApp terminate:nil];
 }
@@ -209,6 +215,9 @@ std::string DescriptionForNSEvent(NSEvent* event) {
 
     if ([newValueNumber isKindOfClass:[NSNumber class]]) {
       [self voiceOverStateChanged:[newValueNumber boolValue]];
+      content::BrowserAccessibilityState* browser_ax_state =
+          content::BrowserAccessibilityState::GetInstance();
+      browser_ax_state->SetScreenReaderAppActive([newValueNumber boolValue]);
     }
 
     return;
@@ -448,8 +457,7 @@ std::string DescriptionForNSEvent(NSEvent* event) {
       _scoped_accessibility_mode_voiceover =
           content::BrowserAccessibilityState::GetInstance()
               ->CreateScopedModeForProcess(ui::kAXModeComplete |
-                                           ui::AXMode::kFromPlatform |
-                                           ui::AXMode::kScreenReader);
+                                           ui::AXMode::kFromPlatform);
     }
   } else {
     _scoped_accessibility_mode_voiceover.reset();

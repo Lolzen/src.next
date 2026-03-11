@@ -20,7 +20,6 @@ import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.toolbar.MenuBuilderHelper;
 import org.chromium.chrome.browser.toolbar.R;
 import org.chromium.components.browser_ui.widget.BrowserUiListMenuUtils;
-import org.chromium.components.browser_ui.widget.ListItemBuilder;
 import org.chromium.ui.listmenu.BasicListMenu;
 import org.chromium.ui.listmenu.ListMenu;
 import org.chromium.ui.listmenu.ListMenuButton;
@@ -28,7 +27,6 @@ import org.chromium.ui.listmenu.ListMenuDelegate;
 import org.chromium.ui.listmenu.ListMenuItemProperties;
 import org.chromium.ui.modelutil.MVCListAdapter.ModelList;
 import org.chromium.ui.widget.RectProvider;
-import org.chromium.ui.widget.Toast;
 
 /** Coordinator for the Adaptive Button action menu, responsible for creating a popup menu. */
 @NullMarked
@@ -58,32 +56,18 @@ public class AdaptiveButtonActionMenuCoordinator {
                         (ListMenuButton) view,
                         buildMenuItems(),
                         id -> onItemClicked.onResult(id));
-            } else {
-                return showAnchoredToastInternal(view, view.getContentDescription());
             }
             return true;
         };
     }
 
     /**
-     * Shows an anchored toast.
-     *
-     * @param anchorView The view to anchor the toast to.
-     * @param text The text to show in the toast.
-     * @return True if the toast was shown, false otherwise.
-     */
-    @VisibleForTesting
-    public boolean showAnchoredToastInternal(View anchorView, CharSequence text) {
-        return Toast.showAnchoredToast(anchorView.getContext(), anchorView, text);
-    }
-
-    /**
      * Created and display the tab switcher action menu anchored to the specified view.
      *
-     * @param context The context of the adaptive button.
-     * @param anchorView The anchor {@link View} of the {@link PopupWindow}.
-     * @param listItems The menu item models.
-     * @param onItemClicked The clicked listener handling clicks on TabSwitcherActionMenu.
+     * @param context        The context of the adaptive button.
+     * @param anchorView     The anchor {@link View} of the {@link PopupWindow}.
+     * @param listItems      The menu item models.
+     * @param onItemClicked  The clicked listener handling clicks on TabSwitcherActionMenu.
      */
     @VisibleForTesting
     public void displayMenu(
@@ -96,7 +80,7 @@ public class AdaptiveButtonActionMenuCoordinator {
                 BrowserUiListMenuUtils.getBasicListMenu(
                         context,
                         listItems,
-                        (model, view) -> {
+                        (model) -> {
                             onItemClicked.onResult(model.get(ListMenuItemProperties.MENU_ITEM_ID));
                         });
 
@@ -132,18 +116,15 @@ public class AdaptiveButtonActionMenuCoordinator {
     public ModelList buildMenuItems() {
         ModelList itemList = new ModelList();
         itemList.add(
-                new ListItemBuilder()
-                        .withTitleRes(R.string.adaptive_toolbar_menu_edit_shortcut)
-                        .withMenuId(R.id.customize_adaptive_button_menu_id)
-                        .build());
+                BrowserUiListMenuUtils.buildMenuListItem(
+                        R.string.adaptive_toolbar_menu_edit_shortcut,
+                        R.id.customize_adaptive_button_menu_id,
+                        /* startIconId= */ 0,
+                        /* enabled= */ true));
         return itemList;
     }
 
     public View getContentViewForTesting() {
         return assumeNonNull(mListMenu).getContentView();
-    }
-
-    public @Nullable BasicListMenu getListMenuForTesting() {
-        return mListMenu;
     }
 }

@@ -29,18 +29,13 @@ namespace {
 
 ScrollOffset CalculateSnappedScrollPosition(
     const ScrollableArea* scrollable_area,
-    ScrollDirectionPhysical direction) {
+    gfx::Vector2dF scaled_delta) {
   gfx::PointF current_position = scrollable_area->ScrollPosition();
   std::unique_ptr<cc::SnapSelectionStrategy> strategy =
-      scrollable_area->PageScrollSnapStrategy(direction);
-  gfx::Vector2dF displacement = ToScrollDelta(direction, 1);
-  displacement.Scale(
-      scrollable_area->ScrollStep(ui::ScrollGranularity::kScrollByPage,
-                                  kHorizontalScrollbar),
-      scrollable_area->ScrollStep(ui::ScrollGranularity::kScrollByPage,
-                                  kVerticalScrollbar));
-
-  current_position += displacement;
+      cc::SnapSelectionStrategy::CreateForEndAndDirection(
+          current_position, scaled_delta,
+          RuntimeEnabledFeatures::FractionalScrollOffsetsEnabled());
+  current_position += scaled_delta;
   if (std::optional<cc::SnapPositionData> snap_position =
           scrollable_area->GetSnapPosition(*strategy)) {
     if (snap_position->type != cc::SnapPositionData::Type::kNone) {
@@ -59,50 +54,13 @@ ScrollButtonPseudoElement::ScrollButtonPseudoElement(
     Element* originating_element,
     PseudoId pseudo_id)
     : PseudoElement(originating_element, pseudo_id),
-      PostLayoutSnapshotClient(originating_element->GetDocument().GetFrame()) {
+      ScrollSnapshotClient(originating_element->GetDocument().GetFrame()) {
   SetTabIndexExplicitly();
   UseCounter::Count(GetDocument(), WebFeature::kScrollButtonPseudoElement);
 }
 
 void ScrollButtonPseudoElement::Trace(Visitor* v) const {
   PseudoElement::Trace(v);
-}
-
-void ScrollButtonPseudoElement::HandleButtonActivation() {
-  Element& scrolling_element = UltimateOriginatingElement();
-  LayoutBox* scroller = scrolling_element.GetLayoutBox();
-  PaintLayerScrollableArea* scrollable_area =
-      scroller->IsDocumentElement() ? scroller->GetFrameView()->LayoutViewport()
-                                    : scroller->GetScrollableArea();
-  // Future proof in case of possibility to activate scroll button
-  // without an appropriate scroller via a click event from JS.
-  if (!scrollable_area) {
-    return;
-  }
-
-  LogicalToPhysical<bool> mapping(
-      scrolling_element.GetComputedStyle()->GetWritingDirection(),
-      GetPseudoId() == kPseudoIdScrollButtonInlineStart,
-      GetPseudoId() == kPseudoIdScrollButtonInlineEnd,
-      GetPseudoId() == kPseudoIdScrollButtonBlockStart,
-      GetPseudoId() == kPseudoIdScrollButtonBlockEnd);
-  std::optional<ScrollDirectionPhysical> direction;
-  if (mapping.Top()) {
-    direction = ScrollDirectionPhysical::kScrollUp;
-  } else if (mapping.Bottom()) {
-    direction = ScrollDirectionPhysical::kScrollDown;
-  } else if (mapping.Left()) {
-    direction = ScrollDirectionPhysical::kScrollLeft;
-  } else if (mapping.Right()) {
-    direction = ScrollDirectionPhysical::kScrollRight;
-  }
-  if (direction) {
-    scrollable_area->ScrollByPageWithSnap(*direction);
-  }
-  GetDocument().SetFocusedElement(this,
-                                  FocusParams(SelectionBehaviorOnFocus::kNone,
-                                              mojom::blink::FocusType::kNone,
-                                              /*capabilities=*/nullptr));
 }
 
 void ScrollButtonPseudoElement::DefaultEventHandler(Event& event) {
@@ -113,43 +71,75 @@ void ScrollButtonPseudoElement::DefaultEventHandler(Event& event) {
   bool is_enter_or_space =
       is_key_down && (To<KeyboardEvent>(event).keyCode() == VKEY_RETURN ||
                       To<KeyboardEvent>(event).keyCode() == VKEY_SPACE);
-  bool should_intercept =
-      event.RawTarget() == this && (is_click || is_enter_or_space);
+
+  Element& scrolling_element = UltimateOriginatingElement();
+  auto* scroller = DynamicTo<LayoutBox>(scrolling_element.GetLayoutObject());
+
+  bool is_originating_element_scroller =
+      scroller &&
+      (scroller->IsScrollContainer() || scroller->IsDocumentElement());
+  bool should_intercept = is_originating_element_scroller &&
+                          event.target() == this &&
+                          (is_click || is_enter_or_space);
   if (should_intercept) {
-    HandleButtonActivation();
+    PaintLayerScrollableArea* scrollable_area =
+        scroller->IsDocumentElement()
+            ? scroller->GetFrameView()->LayoutViewport()
+            : scroller->GetScrollableArea();
+    CHECK(scrollable_area);
+
+    LogicalToPhysical<bool> mapping(
+        scrolling_element.GetComputedStyle()->GetWritingDirection(),
+        GetPseudoId() == kPseudoIdScrollButtonInlineStart,
+        GetPseudoId() == kPseudoIdScrollButtonInlineEnd,
+        GetPseudoId() == kPseudoIdScrollButtonBlockStart,
+        GetPseudoId() == kPseudoIdScrollButtonBlockEnd);
+    gfx::Vector2dF displacement;
+    if (mapping.Top()) {
+      displacement.set_y(-scrollable_area->ScrollStep(
+          ui::ScrollGranularity::kScrollByPage, kVerticalScrollbar));
+    } else if (mapping.Bottom()) {
+      displacement.set_y(scrollable_area->ScrollStep(
+          ui::ScrollGranularity::kScrollByPage, kVerticalScrollbar));
+    } else if (mapping.Left()) {
+      displacement.set_x(-scrollable_area->ScrollStep(
+          ui::ScrollGranularity::kScrollByPage, kHorizontalScrollbar));
+    } else if (mapping.Right()) {
+      displacement.set_x(scrollable_area->ScrollStep(
+          ui::ScrollGranularity::kScrollByPage, kHorizontalScrollbar));
+    }
+    if (!displacement.IsZero()) {
+      gfx::PointF current_position = scrollable_area->ScrollPosition();
+      std::unique_ptr<cc::SnapSelectionStrategy> strategy =
+          cc::SnapSelectionStrategy::CreateForEndAndDirection(
+              current_position, displacement,
+              RuntimeEnabledFeatures::FractionalScrollOffsetsEnabled());
+      gfx::PointF new_position =
+          scrollable_area->GetSnapPositionAndSetTarget(*strategy).value_or(
+              current_position + displacement);
+      scrollable_area->ScrollToAbsolutePosition(
+          new_position, mojom::blink::ScrollBehavior::kAuto);
+    }
+    GetDocument().SetFocusedElement(this,
+                                    FocusParams(SelectionBehaviorOnFocus::kNone,
+                                                mojom::blink::FocusType::kNone,
+                                                /*capabilities=*/nullptr));
     event.SetDefaultHandled();
   }
   PseudoElement::DefaultEventHandler(event);
 }
 
-FocusableState ScrollButtonPseudoElement::SupportsFocus(
-    UpdateBehavior update_behavior) const {
-  if (IsDisabledFormControl()) {
-    return FocusableState::kNotFocusable;
-  }
-  return PseudoElement::SupportsFocus(update_behavior);
-}
-
-bool ScrollButtonPseudoElement::UpdateSnapshot() {
+bool ScrollButtonPseudoElement::UpdateSnapshotInternal() {
   // Note: we can hit it here, since we don't unsubscribe from
   // scroll snapshot client (maybe we should).
   if (!isConnected()) {
-    return false;
+    return true;
   }
   LayoutBox* scroller =
       DynamicTo<LayoutBox>(UltimateOriginatingElement().GetLayoutObject());
   if (!scroller ||
       (!scroller->IsScrollContainer() && !scroller->IsDocumentElement())) {
-    // Make sure the scroll button is disabled if the originating element
-    // is not an appropriate scroller.
-    if (enabled_) {
-      enabled_ = false;
-      SetNeedsStyleRecalc(
-          StyleChangeType::kLocalStyleChange,
-          StyleChangeReasonForTracing::Create(style_change_reason::kControl));
-      return true;
-    }
-    return false;
+    return true;
   }
   ScrollableArea* scrollable_area =
       scroller->IsDocumentElement() ? scroller->GetFrameView()->LayoutViewport()
@@ -171,31 +161,53 @@ bool ScrollButtonPseudoElement::UpdateSnapshot() {
   if (mapping.Top()) {
     enabled_ = current_position.y() >
                CalculateSnappedScrollPosition(
-                   scrollable_area, ScrollDirectionPhysical::kScrollUp)
+                   scrollable_area,
+                   gfx::Vector2dF(0, -scrollable_area->ScrollStep(
+                                         ui::ScrollGranularity::kScrollByPage,
+                                         kVerticalScrollbar)))
                    .y();
   } else if (mapping.Bottom()) {
     enabled_ = current_position.y() <
                CalculateSnappedScrollPosition(
-                   scrollable_area, ScrollDirectionPhysical::kScrollDown)
+                   scrollable_area,
+                   gfx::Vector2dF(0, scrollable_area->ScrollStep(
+                                         ui::ScrollGranularity::kScrollByPage,
+                                         kVerticalScrollbar)))
                    .y();
   } else if (mapping.Left()) {
     enabled_ = current_position.x() >
                CalculateSnappedScrollPosition(
-                   scrollable_area, ScrollDirectionPhysical::kScrollLeft)
+                   scrollable_area,
+                   gfx::Vector2dF(-scrollable_area->ScrollStep(
+                                      ui::ScrollGranularity::kScrollByPage,
+                                      kHorizontalScrollbar),
+                                  0))
                    .x();
   } else if (mapping.Right()) {
     enabled_ = current_position.x() <
                CalculateSnappedScrollPosition(
-                   scrollable_area, ScrollDirectionPhysical::kScrollRight)
+                   scrollable_area,
+                   gfx::Vector2dF(scrollable_area->ScrollStep(
+                                      ui::ScrollGranularity::kScrollByPage,
+                                      kHorizontalScrollbar),
+                                  0))
                    .x();
   }
   if (enabled != enabled_) {
     SetNeedsStyleRecalc(
         StyleChangeType::kLocalStyleChange,
         StyleChangeReasonForTracing::Create(style_change_reason::kControl));
-    return true;
+    return false;
   }
-  return false;
+  return true;
+}
+
+void ScrollButtonPseudoElement::UpdateSnapshot() {
+  UpdateSnapshotInternal();
+}
+
+bool ScrollButtonPseudoElement::ValidateSnapshot() {
+  return UpdateSnapshotInternal();
 }
 
 bool ScrollButtonPseudoElement::ShouldScheduleNextService() {

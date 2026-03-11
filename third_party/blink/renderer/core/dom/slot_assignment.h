@@ -34,7 +34,7 @@ class SlotAssignment final : public GarbageCollected<SlotAssignment> {
   // Instead, provide alternative, HTMLSlotElement::hasAssignedNodesSlow()
   // so that slotchange can be detected.
 
-  HeapVector<Member<HTMLSlotElement>>& Slots();
+  const HeapVector<Member<HTMLSlotElement>>& Slots();
 
   void DidAddSlot(HTMLSlotElement&);
   void DidRemoveSlot(HTMLSlotElement&);

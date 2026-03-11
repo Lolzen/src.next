@@ -9,7 +9,6 @@
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/skia/include/core/SkPath.h"
-#include "third_party/skia/include/core/SkPathBuilder.h"
 
 namespace blink {
 
@@ -62,21 +61,19 @@ TEST_F(OutlinePainterTest, OutlineWidthLessThanOne) {
 }
 
 TEST_F(OutlinePainterTest, IterateCollapsedPath) {
-  const SkPath path = SkPathBuilder()
-                          .moveTo(8, 12)
-                          .lineTo(8, 4)
-                          .lineTo(9, 4)
-                          .lineTo(9, 0)
-                          .lineTo(9, 0)
-                          .lineTo(9, 4)
-                          .lineTo(8, 4)
-                          .close()
-                          .detach();
-
+  SkPath path;
+  path.moveTo(8, 12);
+  path.lineTo(8, 4);
+  path.lineTo(9, 4);
+  path.lineTo(9, 0);
+  path.lineTo(9, 0);
+  path.lineTo(9, 4);
+  path.lineTo(8, 4);
+  path.close();
   // Collapsed contour should not cause crash and should be ignored.
   OutlinePainter::IterateRightAnglePathForTesting(
-      path,
-      BindRepeating([](const Vector<OutlinePainter::Line>&) { NOTREACHED(); }));
+      path, WTF::BindRepeating(
+                [](const Vector<OutlinePainter::Line>&) { NOTREACHED(); }));
 }
 
 }  // namespace blink

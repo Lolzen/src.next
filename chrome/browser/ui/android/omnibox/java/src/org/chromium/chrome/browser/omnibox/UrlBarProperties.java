@@ -4,7 +4,6 @@
 
 package org.chromium.chrome.browser.omnibox;
 
-import android.util.Range;
 import android.view.ActionMode;
 import android.view.View;
 
@@ -14,6 +13,7 @@ import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.omnibox.UrlBar.ScrollType;
 import org.chromium.chrome.browser.omnibox.UrlBar.UrlBarDelegate;
 import org.chromium.chrome.browser.omnibox.UrlBar.UrlBarTextContextMenuDelegate;
+import org.chromium.chrome.browser.omnibox.UrlBarCoordinator.SelectionState;
 import org.chromium.ui.modelutil.PropertyKey;
 import org.chromium.ui.modelutil.PropertyModel.WritableBooleanPropertyKey;
 import org.chromium.ui.modelutil.PropertyModel.WritableIntPropertyKey;
@@ -39,31 +39,30 @@ class UrlBarProperties {
         public int scrollToIndex;
 
         /** Specifies how the text should be selected in the focused state. */
-        public final Range<Integer> selection;
+        public final @SelectionState int selectionState;
 
         public UrlBarTextState(
                 CharSequence text,
                 CharSequence textForAutofillServices,
                 @ScrollType int scrollType,
                 int scrollToIndex,
-                Range<Integer> selection) {
+                @SelectionState int selectionState) {
             this.text = text;
             this.textForAutofillServices = textForAutofillServices;
             this.scrollType = scrollType;
             this.scrollToIndex = scrollToIndex;
-            this.selection = selection;
+            this.selectionState = selectionState;
         }
 
         @Override
         public String toString() {
             return String.format(
                     Locale.US,
-                    "%s: text: %s; scrollType: %d; selectionState: [%d-%d)",
+                    "%s: text: %s; scrollType: %d; selectionState: %d",
                     getClass().getSimpleName(),
                     text,
                     scrollType,
-                    selection.getLower(),
-                    selection.getUpper());
+                    selectionState);
         }
     }
 
@@ -81,31 +80,23 @@ class UrlBarProperties {
          */
         public final @Nullable String additionalText;
 
-        /** The site search label. */
-        public final @Nullable String siteSearchLabel;
-
         public AutocompleteText(
                 String userText,
                 @Nullable String autocompleteText,
-                @Nullable String additionalText,
-                @Nullable String siteSearchLabel) {
+                @Nullable String additionalText) {
             this.userText = userText;
             this.autocompleteText = autocompleteText;
             this.additionalText = additionalText;
-            this.siteSearchLabel = siteSearchLabel;
         }
 
         @Override
         public String toString() {
             return String.format(
                     Locale.US,
-                    "%s: user text: %s; autocomplete text: %s; additional text: %s; site search"
-                            + " label: %s",
+                    "%s: user text: %s; autocomplete text: %s",
                     getClass().getSimpleName(),
                     userText,
-                    autocompleteText,
-                    additionalText,
-                    siteSearchLabel);
+                    autocompleteText);
         }
     }
 
@@ -115,6 +106,9 @@ class UrlBarProperties {
 
     /** Whether focus should be allowed on the view. */
     public static final WritableBooleanPropertyKey ALLOW_FOCUS = new WritableBooleanPropertyKey();
+
+    /** Whether UrlBar is running in Cct. */
+    public static final WritableBooleanPropertyKey IS_IN_CCT = new WritableBooleanPropertyKey();
 
     /** Specified the autocomplete text to be shown to the user. */
     public static final WritableObjectPropertyKey<AutocompleteText> AUTOCOMPLETE_TEXT =
@@ -128,13 +122,39 @@ class UrlBarProperties {
     public static final WritableObjectPropertyKey<Callback<Boolean>> FOCUS_CHANGE_CALLBACK =
             new WritableObjectPropertyKey<>();
 
-    /** Specifies whether suggestions are showing below the URL bar. */
-    public static final WritableBooleanPropertyKey HAS_URL_SUGGESTIONS =
-            new WritableBooleanPropertyKey();
+    /** Whether the cursor should be shown in the view. */
+    public static final WritableBooleanPropertyKey SHOW_CURSOR = new WritableBooleanPropertyKey();
 
-    /** Specifies the url bar hint text. */
-    public static final WritableObjectPropertyKey<String> HINT_TEXT =
+    /** Delegate that provides additional functionality to the textual context actions. */
+    public static final WritableObjectPropertyKey<UrlBarTextContextMenuDelegate>
+            TEXT_CONTEXT_MENU_DELEGATE = new WritableObjectPropertyKey<>();
+
+    /** The primary text state for what is shown in the view. */
+    public static final WritableObjectPropertyKey<UrlBarTextState> TEXT_STATE =
             new WritableObjectPropertyKey<>();
+
+    /** The listener to be notified of URL direction changes. */
+    public static final WritableObjectPropertyKey<Callback<Integer>> URL_DIRECTION_LISTENER =
+            new WritableObjectPropertyKey<>();
+
+    /** The callback to be notified on url text changes. */
+    public static final WritableObjectPropertyKey<Callback<String>> TEXT_CHANGE_LISTENER =
+            new WritableObjectPropertyKey<>();
+
+    /** The callback to be notified when user begins typing. */
+    public static final WritableObjectPropertyKey<Runnable> TYPING_STARTED_LISTENER =
+            new WritableObjectPropertyKey<>();
+
+    /** The callback to be notified on url key events. */
+    public static final WritableObjectPropertyKey<View.OnKeyListener> KEY_DOWN_LISTENER =
+            new WritableObjectPropertyKey<>();
+
+    /** Specifies the color for url bar text. */
+    public static final WritableIntPropertyKey TEXT_COLOR = new WritableIntPropertyKey();
+
+    /** Whether the url bar should use a small text size. */
+    public static final WritableBooleanPropertyKey USE_SMALL_TEXT =
+            new WritableBooleanPropertyKey();
 
     /** Specifies the color for url bar hint text. */
     public static final WritableIntPropertyKey HINT_TEXT_COLOR = new WritableIntPropertyKey();
@@ -146,83 +166,43 @@ class UrlBarProperties {
     public static final WritableBooleanPropertyKey INCOGNITO_COLORS_ENABLED =
             new WritableBooleanPropertyKey();
 
-    /** Whether UrlBar is running in Cct. */
-    public static final WritableBooleanPropertyKey IS_IN_CCT = new WritableBooleanPropertyKey();
-
-    /** The callback to be notified on url key events. */
-    public static final WritableObjectPropertyKey<View.OnKeyListener> KEY_DOWN_LISTENER =
-            new WritableObjectPropertyKey<>();
-
-    /** Handler receiving long-click events for the url bar. */
-    public static final WritableObjectPropertyKey<View.OnLongClickListener> LONG_CLICK_LISTENER =
-            new WritableObjectPropertyKey<>();
+    /** Specifies whether suggestions are showing below the URL bar. */
+    public static final WritableBooleanPropertyKey HAS_URL_SUGGESTIONS =
+            new WritableBooleanPropertyKey();
 
     /** Specifies whether the text should be selected when the URL bar is focused. */
     public static final WritableBooleanPropertyKey SELECT_ALL_ON_FOCUS =
             new WritableBooleanPropertyKey();
 
-    /** Whether the cursor should be shown in the view. */
-    public static final WritableBooleanPropertyKey SHOW_CURSOR = new WritableBooleanPropertyKey();
-
-    /** Whether the hint text should be shown in the view. */
-    public static final WritableBooleanPropertyKey SHOW_HINT_TEXT =
-            new WritableBooleanPropertyKey();
-
-    /** The callback to be notified on url text changes. */
-    public static final WritableObjectPropertyKey<Callback<String>> TEXT_CHANGE_LISTENER =
+    /** Handler receiving long-click events for the url bar. */
+    public static final WritableObjectPropertyKey<View.OnLongClickListener> LONG_CLICK_LISTENER =
             new WritableObjectPropertyKey<>();
 
-    /** Specifies the color for url bar text. */
-    public static final WritableIntPropertyKey TEXT_COLOR = new WritableIntPropertyKey();
-
-    /** Delegate that provides additional functionality to the textual context actions. */
-    public static final WritableObjectPropertyKey<UrlBarTextContextMenuDelegate>
-            TEXT_CONTEXT_MENU_DELEGATE = new WritableObjectPropertyKey<>();
-
-    /** The primary text state for what is shown in the view. */
-    public static final WritableObjectPropertyKey<UrlBarTextState> TEXT_STATE =
-            new WritableObjectPropertyKey<>();
-
-    /** The callback to be notified when the url text wraps. */
-    public static final WritableObjectPropertyKey<Callback<Boolean>> TEXT_WRAPPED_CALLBACK =
-            new WritableObjectPropertyKey<>();
-
-    /** The callback to be notified when user begins typing. */
-    public static final WritableObjectPropertyKey<Runnable> TYPING_STARTED_LISTENER =
-            new WritableObjectPropertyKey<>();
-
-    /** The listener to be notified of URL direction changes. */
-    public static final WritableObjectPropertyKey<Callback<Integer>> URL_DIRECTION_LISTENER =
-            new WritableObjectPropertyKey<>();
-
-    /** Whether the url bar should use a small text size. */
-    public static final WritableBooleanPropertyKey USE_SMALL_TEXT =
-            new WritableBooleanPropertyKey();
+    /** Specifies the resource ID for the url bar hint text. */
+    public static final WritableIntPropertyKey HINT_TEXT = new WritableIntPropertyKey();
 
     public static final PropertyKey[] ALL_KEYS =
             new PropertyKey[] {
                 ACTION_MODE_CALLBACK,
                 ALLOW_FOCUS,
+                IS_IN_CCT,
                 AUTOCOMPLETE_TEXT,
                 DELEGATE,
                 FOCUS_CHANGE_CALLBACK,
-                HAS_URL_SUGGESTIONS,
-                HINT_TEXT,
-                HINT_TEXT_COLOR,
-                INCOGNITO_COLORS_ENABLED,
-                IS_IN_CCT,
-                KEY_DOWN_LISTENER,
-                LONG_CLICK_LISTENER,
-                SELECT_ALL_ON_FOCUS,
                 SHOW_CURSOR,
-                SHOW_HINT_TEXT,
-                TEXT_CHANGE_LISTENER,
-                TEXT_COLOR,
                 TEXT_CONTEXT_MENU_DELEGATE,
                 TEXT_STATE,
-                TEXT_WRAPPED_CALLBACK,
-                TYPING_STARTED_LISTENER,
                 URL_DIRECTION_LISTENER,
-                USE_SMALL_TEXT
+                TEXT_CHANGE_LISTENER,
+                TYPING_STARTED_LISTENER,
+                KEY_DOWN_LISTENER,
+                INCOGNITO_COLORS_ENABLED,
+                HAS_URL_SUGGESTIONS,
+                TEXT_COLOR,
+                USE_SMALL_TEXT,
+                HINT_TEXT_COLOR,
+                SELECT_ALL_ON_FOCUS,
+                LONG_CLICK_LISTENER,
+                HINT_TEXT
             };
 }

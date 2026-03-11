@@ -7,7 +7,7 @@
 
 namespace content {
 
-enum class BtmTriggeringAction { kNone, kBounce };
+enum class BtmTriggeringAction { kNone, kStorage, kBounce, kStatefulBounce };
 
 }  // namespace content
 

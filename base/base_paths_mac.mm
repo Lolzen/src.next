@@ -13,6 +13,7 @@
 #include "base/apple/foundation_util.h"
 #include "base/base_paths_apple.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/notreached.h"
 #include "base/path_service.h"
 

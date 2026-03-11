@@ -13,6 +13,10 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "extensions/buildflags/buildflags.h"
 
+#if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/download/download_shelf_controller.h"
+#endif
+
 class ChromeDownloadManagerDelegate;
 class DownloadHistory;
 class DownloadUIController;
@@ -39,7 +43,7 @@ class DownloadCoreServiceImpl : public DownloadCoreService {
   // DownloadCoreService
   ChromeDownloadManagerDelegate* GetDownloadManagerDelegate() override;
   DownloadHistory* GetDownloadHistory() override;
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+#if BUILDFLAG(ENABLE_EXTENSIONS)
   extensions::ExtensionDownloadsEventRouter* GetExtensionEventRouter() override;
 #endif
   bool HasCreatedDownloadManager() override;
@@ -52,9 +56,6 @@ class DownloadCoreServiceImpl : public DownloadCoreService {
   DownloadUIController* GetDownloadUIController() override;
   void SetDownloadHistoryForTesting(
       std::unique_ptr<DownloadHistory> download_history) override;
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
-  void SetDownloadUiEnabledForTest(bool enabled) override;
-#endif
 
   // KeyedService
   void Shutdown() override;
@@ -77,11 +78,15 @@ class DownloadCoreServiceImpl : public DownloadCoreService {
   // should be destroyed before the latter.
   std::unique_ptr<DownloadUIController> download_ui_;
 
+#if !BUILDFLAG(IS_ANDROID)
+  std::unique_ptr<DownloadShelfController> download_shelf_controller_;
+#endif
+
 // On Android, GET downloads are not handled by the DownloadManager.
 // Once we have extensions on android, we probably need the EventRouter
 // in ContentViewDownloadDelegate which knows about both GET and POST
 // downloads.
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+#if BUILDFLAG(ENABLE_EXTENSIONS)
   // The ExtensionDownloadsEventRouter dispatches download creation, change, and
   // erase events to extensions. Like ChromeDownloadManagerDelegate, it's a
   // chrome-level concept and its lifetime should match DownloadManager. There
@@ -90,10 +95,6 @@ class DownloadCoreServiceImpl : public DownloadCoreService {
   // off-record profiles, so ExtensionSystem cannot own the EDER.
   std::unique_ptr<extensions::ExtensionDownloadsEventRouter>
       extension_event_router_;
-
-  // Simulates an extension enabling or disabling the downloads UI via
-  // chrome.download.setUiOptions().
-  std::optional<bool> is_download_ui_enabled_for_test_;
 #endif
 };
 

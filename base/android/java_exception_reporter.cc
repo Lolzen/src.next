@@ -9,8 +9,8 @@
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/no_destructor.h"
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "base/base_minimal_jni/JavaExceptionReporter_jni.h"
@@ -27,10 +27,8 @@ JavaExceptionCallback g_java_exception_callback;
 using JavaExceptionFilter =
     base::RepeatingCallback<bool(const JavaRef<jthrowable>&)>;
 
-JavaExceptionFilter& GetJavaExceptionFilter() {
-  static base::NoDestructor<JavaExceptionFilter> java_exception_filter;
-  return *java_exception_filter;
-}
+LazyInstance<JavaExceptionFilter>::Leaky g_java_exception_filter =
+    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -48,9 +46,6 @@ void InitJavaExceptionReporter() {
 }
 
 void InitJavaExceptionReporterForChildProcess() {
-  if (!base::android::IsJavaAvailable()) {
-    return;
-  }
   JNIEnv* env = jni_zero::AttachCurrentThread();
   constexpr bool crash_after_report = true;
   SetJavaExceptionFilter(
@@ -59,7 +54,7 @@ void InitJavaExceptionReporterForChildProcess() {
 }
 
 void SetJavaExceptionFilter(JavaExceptionFilter java_exception_filter) {
-  GetJavaExceptionFilter() = std::move(java_exception_filter);
+  g_java_exception_filter.Get() = std::move(java_exception_filter);
 }
 
 void SetJavaExceptionCallback(JavaExceptionCallback callback) {
@@ -79,12 +74,12 @@ void SetJavaException(const char* exception) {
   }
 }
 
-static void JNI_JavaExceptionReporter_ReportJavaException(
+void JNI_JavaExceptionReporter_ReportJavaException(
     JNIEnv* env,
-    bool crash_after_report,
+    jboolean crash_after_report,
     const JavaRef<jthrowable>& e) {
   std::string exception_info = base::android::GetJavaExceptionInfo(env, e);
-  bool should_report_exception = GetJavaExceptionFilter().Run(e);
+  bool should_report_exception = g_java_exception_filter.Get().Run(e);
   if (should_report_exception) {
     SetJavaException(exception_info.c_str());
   }
@@ -98,9 +93,8 @@ static void JNI_JavaExceptionReporter_ReportJavaException(
   }
 }
 
-static void JNI_JavaExceptionReporter_ReportJavaStackTrace(
-    JNIEnv* env,
-    std::string& stack_trace) {
+void JNI_JavaExceptionReporter_ReportJavaStackTrace(JNIEnv* env,
+                                                    std::string& stack_trace) {
   SetJavaException(stack_trace.c_str());
   base::debug::DumpWithoutCrashing();
   SetJavaException(nullptr);
@@ -109,4 +103,4 @@ static void JNI_JavaExceptionReporter_ReportJavaStackTrace(
 }  // namespace android
 }  // namespace base
 
-DEFINE_JNI(JavaExceptionReporter)
+DEFINE_JNI_FOR_JavaExceptionReporter()

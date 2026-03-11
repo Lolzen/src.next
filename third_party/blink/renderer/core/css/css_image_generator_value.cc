@@ -25,6 +25,7 @@
 
 #include "third_party/blink/renderer/core/css/css_image_generator_value.h"
 
+#include "base/containers/contains.h"
 #include "third_party/blink/renderer/core/css/css_gradient_value.h"
 #include "third_party/blink/renderer/core/css/css_paint_value.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource_observer.h"
@@ -42,7 +43,7 @@ Image* GeneratedImageCache::GetImage(const gfx::SizeF& size) const {
     return nullptr;
   }
 
-  DCHECK(sizes_.Contains(size));
+  DCHECK(base::Contains(sizes_, size));
   GeneratedImageMap::const_iterator image_iter = images_.find(size);
   if (image_iter == images_.end()) {
     return nullptr;
@@ -63,10 +64,10 @@ void GeneratedImageCache::AddSize(const gfx::SizeF& size) {
 
 void GeneratedImageCache::RemoveSize(const gfx::SizeF& size) {
   DCHECK(!size.IsEmpty());
-  SECURITY_DCHECK(sizes_.Contains(size));
+  SECURITY_DCHECK(base::Contains(sizes_, size));
   bool fully_erased = sizes_.erase(size);
   if (fully_erased) {
-    DCHECK(images_.Contains(size));
+    DCHECK(base::Contains(images_, size));
     images_.erase(images_.find(size));
   }
 }
@@ -142,26 +143,26 @@ void CSSImageGeneratorValue::PutImage(const gfx::SizeF& size,
 
 scoped_refptr<Image> CSSImageGeneratorValue::GetImage(
     const ImageResourceObserver& client,
-    const Node& node,
+    const Document& document,
     const ComputedStyle& style,
     const ContainerSizes& container_sizes,
     const gfx::SizeF& target_size) {
   switch (GetClassType()) {
     case kLinearGradientClass:
       return To<CSSLinearGradientValue>(this)->GetImage(
-          client, node, style, container_sizes, target_size);
+          client, document, style, container_sizes, target_size);
     case kPaintClass:
-      return To<CSSPaintValue>(this)->GetImage(client, node, style,
+      return To<CSSPaintValue>(this)->GetImage(client, document, style,
                                                target_size);
     case kRadialGradientClass:
       return To<CSSRadialGradientValue>(this)->GetImage(
-          client, node, style, container_sizes, target_size);
+          client, document, style, container_sizes, target_size);
     case kConicGradientClass:
       return To<CSSConicGradientValue>(this)->GetImage(
-          client, node, style, container_sizes, target_size);
+          client, document, style, container_sizes, target_size);
     case kConstantGradientClass:
       return To<CSSConstantGradientValue>(this)->GetImage(
-          client, node, style, container_sizes, target_size);
+          client, document, style, container_sizes, target_size);
     default:
       NOTREACHED();
   }

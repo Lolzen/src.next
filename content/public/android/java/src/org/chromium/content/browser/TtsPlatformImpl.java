@@ -51,14 +51,14 @@ class TtsPlatformImpl {
     }
 
     private static class PendingUtterance {
-        final TtsPlatformImpl mImpl;
-        final int mUtteranceId;
-        final String mText;
-        final String mLang;
-        final String mEngineId;
-        final float mRate;
-        final float mPitch;
-        final float mVolume;
+        TtsPlatformImpl mImpl;
+        int mUtteranceId;
+        String mText;
+        String mLang;
+        String mEngineId;
+        float mRate;
+        float mPitch;
+        float mVolume;
 
         private PendingUtterance(
                 TtsPlatformImpl impl,
@@ -85,7 +85,7 @@ class TtsPlatformImpl {
     }
 
     private static class TtsEngine {
-        private final TextToSpeech mTextToSpeech;
+        private TextToSpeech mTextToSpeech;
         private @Nullable List<TtsVoice> mVoices;
         private boolean mInitialized;
         private @Nullable String mCurrentLanguage;

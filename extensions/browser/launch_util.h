@@ -20,13 +20,13 @@ class Extension;
 class ExtensionPrefs;
 
 // Gets the launch type preference. If no preference is set, returns
-// LaunchType::kDefault.
-// Returns LaunchType::kWindow if there's no preference and
+// LAUNCH_TYPE_DEFAULT.
+// Returns LAUNCH_TYPE_WINDOW if there's no preference and
 // bookmark apps are enabled.
 LaunchType GetLaunchType(const ExtensionPrefs* prefs,
                          const Extension* extension);
 
-// Returns the LaunchType that is set in the prefs. Returns LaunchType::kInvalid
+// Returns the LaunchType that is set in the prefs. Returns LAUNCH_TYPE_INVALID
 // if no value is set in prefs.
 LaunchType GetLaunchTypePrefValue(const ExtensionPrefs* prefs,
                                   const std::string& extension_id);

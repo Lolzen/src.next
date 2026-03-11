@@ -163,16 +163,6 @@ bool EasySelectorChecker::MatchOne(const CSSSelector* selector,
              tag_q_name.NamespaceURI() == g_star_atom;
     }
     case CSSSelector::kClass:
-      if (!element->CouldHaveClass(selector->Value())) {
-#if DCHECK_IS_ON()
-        DCHECK(!element->HasClass() ||
-               !element->ClassNames().Contains(selector->Value()))
-            << element << " should have matched class " << selector->Value()
-            << ", Bloom bits on element are "
-            << element->AttributeOrClassBloomFilter();
-#endif
-        return false;
-      }
       return element->HasClass() &&
              element->ClassNames().Contains(selector->Value());
     case CSSSelector::kId:
@@ -231,7 +221,7 @@ bool EasySelectorChecker::AttributeMatches(const Element& element,
       DCHECK(element.CouldHaveAttribute(attr))
           << element << " should have contained attribute " << attr
           << ", Bloom bits on element are "
-          << element.AttributeOrClassBloomFilter();
+          << element.AttributeBloomFilterForDebug();
 #endif
       return attribute_item.Value() == value ||
              (case_insensitive &&

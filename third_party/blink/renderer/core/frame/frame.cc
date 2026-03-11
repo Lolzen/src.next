@@ -33,7 +33,6 @@
 #include <memory>
 
 #include "base/metrics/histogram_functions.h"
-#include "base/strings/strcat.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/fenced_frame/fenced_frame.mojom-blink.h"
 #include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
@@ -156,8 +155,7 @@ bool Frame::Detach(FrameDetachType type) {
     // In the case of a swap, detach is carefully coordinated with `Swap()`.
     // Intentionally avoid clearing the opener with `SetOpener(nullptr)` here,
     // since `Swap()` needs the original value to clone to the new frame.
-    DCHECK(type == FrameDetachType::kSwapForLocal ||
-           type == FrameDetachType::kSwapForRemote);
+    DCHECK_EQ(FrameDetachType::kSwap, type);
 
     // Clearing the window proxies can call back into `LocalFrameClient`, so
     // this must be done before nulling out `client_` below.
@@ -649,12 +647,13 @@ base::OnceClosure Frame::ScheduleFormSubmission(
   form_submission->NotifyInspector();
   form_submit_navigation_task_ = PostCancellableTask(
       *scheduler->GetTaskRunner(TaskType::kDOMManipulation), FROM_HERE,
-      BindOnce(&FormSubmission::Navigate, WrapPersistent(form_submission)));
+      WTF::BindOnce(&FormSubmission::Navigate,
+                    WrapPersistent(form_submission)));
   form_submit_navigation_task_version_++;
 
-  return BindOnce(&Frame::CancelFormSubmissionWithVersion,
-                  WrapWeakPersistent(this),
-                  form_submit_navigation_task_version_);
+  return WTF::BindOnce(&Frame::CancelFormSubmissionWithVersion,
+                       WrapWeakPersistent(this),
+                       form_submit_navigation_task_version_);
 }
 
 void Frame::CancelFormSubmission() {
@@ -671,15 +670,11 @@ bool Frame::IsFormSubmissionPending() {
 }
 
 void Frame::FocusPage(LocalFrame* originating_frame) {
-  // To prevent unexpected focus stealing, only allow the focus to move to the
-  // |originating_frame|'s page if the request is initiated by a user
-  // gesture (has transient user activation) or if the |originating_frame|
-  // is specially permitted to change focus without user interaction.
+  // We only allow focus to move to the |frame|'s page when the request comes
+  // from a user gesture. (See https://bugs.webkit.org/show_bug.cgi?id=33389.)
   if (originating_frame &&
-      (LocalFrame::HasTransientUserActivation(originating_frame) ||
-       originating_frame->GetSettings()
-           ->GetAllowWindowFocusWithoutUserGesture())) {
-    // Ask the browser process to focus the page.
+      LocalFrame::HasTransientUserActivation(originating_frame)) {
+    // Ask the broswer process to focus the page.
     GetPage()->GetChromeClient().FocusPage();
 
     // Tattle on the frame that called |window.focus()|.
@@ -790,13 +785,10 @@ bool Frame::SwapImpl(
                                *parent_local_frame->GetDocument())
                          : nullptr;
 
-  const FrameDetachType swap_type = new_web_frame->IsWebLocalFrame()
-                                        ? FrameDetachType::kSwapForLocal
-                                        : FrameDetachType::kSwapForRemote;
   // Unload the current Document in this frame: this calls unload handlers,
   // detaches child frames, etc. Since this runs script, make sure this frame
   // wasn't detached before continuing with the swap.
-  if (!Detach(swap_type)) {
+  if (!Detach(FrameDetachType::kSwap)) {
     // If the Swap() fails, it should be because the frame has been detached
     // already. Otherwise the caller will not detach the frame when we return
     // false, and the browser and renderer will disagree about the destruction
@@ -932,11 +924,11 @@ bool Frame::SwapImpl(
         CHECK(!DynamicTo<RemoteFrame>(new_page->MainFrame())
                    ->IsRemoteFrameHostRemoteBound());
         // Trigger the detachment of the new page's placeholder main
-        // RemoteFrame. Note that we also use `FrameDetachType::kSwapForLocal`
-        // here instead of kRemove to avoid triggering destructive action on the
-        // new Page and the provisional LocalFrame that will be swapped in (e.g.
+        // RemoteFrame. Note that we also use `FrameDetachType::kSwap` here
+        // instead of kRemove to avoid triggering destructive action on the new
+        // Page and the provisional LocalFrame that will be swapped in (e.g.
         // clearing the opener, or detaching the provisional frame).
-        new_page->MainFrame()->Detach(FrameDetachType::kSwapForLocal);
+        new_page->MainFrame()->Detach(FrameDetachType::kSwap);
       }
 
       // Set the provisioanl LocalFrame to become the new page's main frame.
@@ -1025,6 +1017,29 @@ void Frame::DetachFromParent() {
     }
   }
   Parent()->RemoveChild(this);
+}
+
+HeapVector<Member<Resource>> Frame::AllResourcesUnderFrame() {
+  DCHECK(base::FeatureList::IsEnabled(features::kMemoryCacheStrongReference));
+
+  HeapVector<Member<Resource>> resources;
+  if (IsLocalFrame()) {
+    if (auto* this_local_frame = DynamicTo<LocalFrame>(this)) {
+      HeapHashSet<Member<Resource>> local_frame_resources =
+          this_local_frame->GetDocument()
+              ->Fetcher()
+              ->MoveResourceStrongReferences();
+      for (Resource* resource : local_frame_resources) {
+        resources.push_back(resource);
+      }
+    }
+  }
+
+  for (Frame* child = Tree().FirstChild(); child;
+       child = child->Tree().NextSibling()) {
+    resources.AppendVector(child->AllResourcesUnderFrame());
+  }
+  return resources;
 }
 
 void Frame::AdjustOffsetByAncestorFrames(gfx::Point* origin_point) {

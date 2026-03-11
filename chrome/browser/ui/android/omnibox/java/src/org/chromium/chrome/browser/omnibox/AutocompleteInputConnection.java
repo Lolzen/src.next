@@ -6,7 +6,6 @@ package org.chromium.chrome.browser.omnibox;
 
 import android.os.Bundle;
 import android.text.Editable;
-import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.inputmethod.CompletionInfo;
 import android.view.inputmethod.CorrectionInfo;
@@ -148,7 +147,7 @@ class AutocompleteInputConnection extends InputConnectionWrapper {
         if (DEBUG) Log.i(TAG, "commitAutocomplete");
         if (!mInputDelegate.hasAutocomplete()) return;
 
-        String autocompleteText = mInputDelegate.getCurrentState().getAutocompleteText();
+        String autocompleteText = mInputDelegate.getCurrentState().getAutocompleteText().get();
 
         mInputDelegate.getCurrentState().commitAutocompleteText();
         // Invalidate previous state.
@@ -161,9 +160,7 @@ class AutocompleteInputConnection extends InputConnectionWrapper {
             decrementBatchEditCount();
         } else {
             // We have already removed span in the onBeginImeCommand(), just append the text.
-            if (autocompleteText != null) {
-                mInputDelegate.getAutocompleteEditTextModelBaseDelegate().append(autocompleteText);
-            }
+            mInputDelegate.getAutocompleteEditTextModelBaseDelegate().append(autocompleteText);
         }
     }
 
@@ -234,17 +231,6 @@ class AutocompleteInputConnection extends InputConnectionWrapper {
                     mInputDelegate.getPreviouslySetState(),
                     mInputDelegate.getCurrentState());
         }
-
-        mInputDelegate
-                .getAutocompleteEditTextModelBaseDelegate()
-                .setInputIsMultilineEligible(
-                        TextUtils.indexOf(
-                                        OmniboxFeatures.sWrapAutocompleteText.getValue()
-                                                ? mInputDelegate.getCurrentState().getText()
-                                                : mInputDelegate.getCurrentState().getUserText(),
-                                        ' ')
-                                >= 0);
-
         if (!mInputDelegate.getCurrentState().isCursorAtEndOfUserText()) return false;
 
         if (mInputDelegate
@@ -279,7 +265,7 @@ class AutocompleteInputConnection extends InputConnectionWrapper {
             // Update selection first such that keyboard app gets what it expects.
             boolean retVal = decrementBatchEditCount();
 
-            if (mPreBatchEditState.getAutocompleteText() != null) {
+            if (mPreBatchEditState.getAutocompleteText().isPresent()) {
                 // Undo delete to retain the last character and only remove autocomplete text.
                 restoreBackspacedText(diff);
             }

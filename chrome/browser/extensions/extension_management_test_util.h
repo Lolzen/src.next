@@ -46,7 +46,6 @@ class ExtensionManagementPrefUpdaterBase {
   void SetIndividualExtensionAutoInstalled(const ExtensionId& id,
                                            const std::string& update_url,
                                            bool forced);
-  void SetIndividualExtensionRemoved(const ExtensionId& id);
 
   // Helper functions for 'install_sources' manipulation.
   void UnsetInstallSources();
@@ -60,7 +59,7 @@ class ExtensionManagementPrefUpdaterBase {
   void AddAllowedType(const std::string& allowed_type);
   void RemoveAllowedType(const std::string& allowed_type);
 
-  // Helper functions for 'blocked_permissions' manipulation. `prefix` can be
+  // Helper functions for 'blocked_permissions' manipulation. |prefix| can be
   // kWildCard or a valid extension ID.
   void UnsetBlockedPermissions(const std::string& prefix);
   void ClearBlockedPermissions(const std::string& prefix);
@@ -70,11 +69,11 @@ class ExtensionManagementPrefUpdaterBase {
                                const std::string& permission);
 
   // Helper function for 'blocked_install_message' manipulation.
-  // `id` is extension ID.
+  // |id| is extension ID.
   void SetBlockedInstallMessage(const ExtensionId& id,
                                 const std::string& custom_error);
 
-  // Helper functions for 'runtime_blocked_hosts' manipulation. `prefix` can be
+  // Helper functions for 'runtime_blocked_hosts' manipulation. |prefix| can be
   // kWildCard or a valid extension ID.
   void UnsetPolicyBlockedHosts(const std::string& prefix);
   void ClearPolicyBlockedHosts(const std::string& prefix);
@@ -82,7 +81,7 @@ class ExtensionManagementPrefUpdaterBase {
   void RemovePolicyBlockedHost(const std::string& prefix,
                                const std::string& host);
 
-  // Helper functions for 'runtime_allowed_hosts' manipulation. `prefix` can be
+  // Helper functions for 'runtime_allowed_hosts' manipulation. |prefix| can be
   // kWildCard or a valid extension ID.
   void UnsetPolicyAllowedHosts(const std::string& prefix);
   void ClearPolicyAllowedHosts(const std::string& prefix);
@@ -90,7 +89,7 @@ class ExtensionManagementPrefUpdaterBase {
   void RemovePolicyAllowedHost(const std::string& prefix,
                                const std::string& host);
 
-  // Helper functions for 'allowed_permissions' manipulation. `id` must be a
+  // Helper functions for 'allowed_permissions' manipulation. |id| must be a
   // valid extension ID.
   void UnsetAllowedPermissions(const std::string& id);
   void ClearAllowedPermissions(const std::string& id);
@@ -99,24 +98,24 @@ class ExtensionManagementPrefUpdaterBase {
   void RemoveAllowedPermission(const std::string& id,
                                const std::string& permission);
 
-  // Helper functions for 'minimum_version_required' manipulation. `id` must be
+  // Helper functions for 'minimum_version_required' manipulation. |id| must be
   // a valid extension ID.
   void SetMinimumVersionRequired(const std::string& id,
                                  const std::string& version);
   void UnsetMinimumVersionRequired(const std::string& id);
 
   // Expose a read-only preference to user.
-  const base::DictValue* GetPref();
+  const base::Value::Dict* GetPref();
 
  protected:
-  // Set the preference with `pref`, pass the ownership of it as well.
+  // Set the preference with |pref|, pass the ownership of it as well.
   // This function must be called before accessing publicly exposed functions,
   // for example in constructor of subclass.
-  void SetPref(base::DictValue pref);
+  void SetPref(base::Value::Dict pref);
 
   // Take the preference. This function must be called after accessing publicly
   // exposed functions, for example in destructor of subclass.
-  base::DictValue TakePref();
+  base::Value::Dict TakePref();
 
  private:
   // Helper functions for manipulating sub properties like list of strings.
@@ -124,7 +123,7 @@ class ExtensionManagementPrefUpdaterBase {
   void AddStringToList(const std::string& path, const std::string& str);
   void RemoveStringFromList(const std::string& path, const std::string& str);
 
-  base::DictValue pref_;
+  base::Value::Dict pref_;
 };
 
 // A helper class to manipulate the extension management preference in unit
@@ -137,7 +136,7 @@ class ExtensionManagementPrefUpdater
       : service_(service) {
     const base::Value* pref_value =
         service_->GetManagedPref(pref_names::kExtensionManagement);
-    base::DictValue dict;
+    base::Value::Dict dict;
     if (pref_value && pref_value->is_dict()) {
       dict = pref_value->GetDict().Clone();
     }

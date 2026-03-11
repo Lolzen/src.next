@@ -47,8 +47,7 @@ TEST(MutationObserverTest, DisconnectCrash) {
   auto* root =
       To<HTMLElement>(document->CreateRawElement(html_names::kHTMLTag));
   document->AppendChild(root);
-  root->SetInnerHTMLWithoutTrustedTypes(
-      "<head><title>\n</title></head><body></body>");
+  root->setInnerHTML("<head><title>\n</title></head><body></body>");
   Node* head = root->firstChild()->firstChild();
   DCHECK(head);
   Persistent<MutationObserver> observer = MutationObserver::Create(

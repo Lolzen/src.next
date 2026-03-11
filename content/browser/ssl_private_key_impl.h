@@ -9,7 +9,7 @@
 
 #include <vector>
 
-#include "base/memory/scoped_refptr.h"
+#include "base/memory/ref_counted.h"
 #include "net/base/net_errors.h"
 #include "net/ssl/ssl_private_key.h"
 #include "services/network/public/mojom/url_loader_network_service_observer.mojom.h"
@@ -31,9 +31,9 @@ class SSLPrivateKeyImpl : public network::mojom::SSLPrivateKey {
             network::mojom::SSLPrivateKey::SignCallback callback) override;
 
  private:
-  static void Callback(network::mojom::SSLPrivateKey::SignCallback callback,
-                       net::Error net_error,
-                       const std::vector<uint8_t>& signature);
+  void Callback(network::mojom::SSLPrivateKey::SignCallback callback,
+                net::Error net_error,
+                const std::vector<uint8_t>& signature);
 
   scoped_refptr<net::SSLPrivateKey> ssl_private_key_;
 };

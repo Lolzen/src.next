@@ -46,7 +46,7 @@ class RendererStartupHelper : public KeyedService,
                               public content::RenderProcessHostObserver,
                               public mojom::RendererHost {
  public:
-  // This class sends messages to all renderers started for `browser_context`.
+  // This class sends messages to all renderers started for |browser_context|.
   explicit RendererStartupHelper(content::BrowserContext* browser_context);
 
   RendererStartupHelper(const RendererStartupHelper&) = delete;
@@ -56,8 +56,6 @@ class RendererStartupHelper : public KeyedService,
 
   // content::RenderProcessHostCreationObserver:
   void OnRenderProcessHostCreated(
-      content::RenderProcessHost* process_host) override;
-  void OnRenderProcessLaunched(
       content::RenderProcessHost* process_host) override;
 
   // content::RenderProcessHostObserver:
@@ -69,22 +67,22 @@ class RendererStartupHelper : public KeyedService,
   // mojom::RendererHost:
   void AddAPIActionToActivityLog(const std::optional<ExtensionId>& extension_id,
                                  const std::string& call_name,
-                                 base::ListValue args,
+                                 base::Value::List args,
                                  const std::string& extra) override;
   void AddEventToActivityLog(const std::optional<ExtensionId>& extension_id,
                              const std::string& call_name,
-                             base::ListValue args,
+                             base::Value::List args,
                              const std::string& extra) override;
   void AddDOMActionToActivityLog(const ExtensionId& extension_id,
                                  const std::string& call_name,
-                                 base::ListValue args,
+                                 base::Value::List args,
                                  const GURL& url,
                                  const std::u16string& url_title,
                                  int32_t call_type) override;
   void GetMessageBundle(const ExtensionId& extension_id,
                         GetMessageBundleCallback callback) override;
 
-  // Sends a message to the specified `process` activating the given extension
+  // Sends a message to the specified |process| activating the given extension
   // once the process is initialized. OnExtensionLoaded should have already been
   // called for the extension.
   void ActivateExtensionInProcess(const Extension& extension,
@@ -116,9 +114,9 @@ class RendererStartupHelper : public KeyedService,
       const Extension& extension,
       const std::optional<std::string>& world_id);
 
-  // Returns mojom::Renderer* corresponding to `process`. This would return
-  // nullptr when it's called before `process` is inserted to
-  // `process_mojo_map_` or after it's deleted. Note that the callers should
+  // Returns mojom::Renderer* corresponding to |process|. This would return
+  // nullptr when it's called before |process| is inserted to
+  // |process_mojo_map_| or after it's deleted. Note that the callers should
   // pass a valid content::RenderProcessHost*.
   mojom::Renderer* GetRenderer(content::RenderProcessHost* process);
 
@@ -137,10 +135,6 @@ class RendererStartupHelper : public KeyedService,
  private:
   friend class RendererStartupHelperTest;
   friend class RendererStartupHelperInterceptor;
-
-  // Registers a render process for extension communication by creating a Mojo
-  // remote and adding this instance as an observer.
-  void RegisterProcess(content::RenderProcessHost* process);
 
   // Initializes the specified process, informing it of system state and loaded
   // extensions.

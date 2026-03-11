@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -17,6 +18,10 @@
 #include "net/base/net_export.h"
 
 struct addrinfo;
+
+namespace base {
+class Value;
+}
 
 namespace net {
 
@@ -52,7 +57,11 @@ class NET_EXPORT AddressList {
   // Returns a copy of `list` with port on each element set to |port|.
   static AddressList CopyWithPort(const AddressList& list, uint16_t port);
 
-  friend bool operator==(const AddressList&, const AddressList&) = default;
+  bool operator==(const AddressList& other) const {
+    return std::tie(endpoints_, dns_aliases_) ==
+           std::tie(other.endpoints_, other.dns_aliases_);
+  }
+  bool operator!=(const AddressList& other) const { return !(*this == other); }
 
   // Sets the first entry of `dns_aliases_` to the literal of the first IP
   // address on the list. Assumes that `dns_aliases_` is empty.
@@ -67,14 +76,13 @@ class NET_EXPORT AddressList {
 
   // Creates a value representation of the address list, appropriate for
   // inclusion in a NetLog.
-  base::DictValue NetLogParams() const;
+  base::Value::Dict NetLogParams() const;
 
   // Deduplicates the stored addresses while otherwise preserving their order.
   void Deduplicate();
 
   using iterator = std::vector<IPEndPoint>::iterator;
   using const_iterator = std::vector<IPEndPoint>::const_iterator;
-  using value_type = IPEndPoint;
 
   size_t size() const { return endpoints_.size(); }
   bool empty() const { return endpoints_.empty(); }

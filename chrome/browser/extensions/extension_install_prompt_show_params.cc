@@ -10,17 +10,14 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/web_contents.h"
-#include "extensions/buildflags/buildflags.h"
 
 #if !BUILDFLAG(IS_ANDROID)
-#include "ui/native_window_tracker/native_window_tracker.h"
+#include "ui/views/native_window_tracker.h"
 #endif
 
 #if defined(USE_AURA)
 #include "ui/aura/window.h"
 #endif
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace {
 
@@ -68,7 +65,7 @@ ExtensionInstallPromptShowParams::ExtensionInstallPromptShowParams(
   DCHECK(!parent_window) << "Android does not support a parent window.";
 #else
   if (parent_window_) {
-    native_window_tracker_ = ui::NativeWindowTracker::Create(parent_window_);
+    native_window_tracker_ = views::NativeWindowTracker::Create(parent_window_);
   }
 #endif
 }

@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_DOWNLOAD_ANDROID_DOWNLOAD_CALLBACK_VALIDATOR_H_
 #define CHROME_BROWSER_DOWNLOAD_ANDROID_DOWNLOAD_CALLBACK_VALIDATOR_H_
 
-#include <cstdint>
 #include <set>
 
 // Helper class used to validate callbacks that passed to Java

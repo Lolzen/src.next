@@ -13,12 +13,9 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
-import static org.chromium.chrome.browser.tabmodel.TabGroupTitleUtils.UNSET_TAB_GROUP_TITLE;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -37,10 +34,6 @@ import org.robolectric.annotation.Config;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Token;
 import org.chromium.base.test.BaseRobolectricTestRunner;
-import org.chromium.chrome.browser.tab.Tab;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /** Tests for {@link TabGroupTitleUtils}. */
 @RunWith(BaseRobolectricTestRunner.class)
@@ -49,6 +42,7 @@ public class TabGroupTitleUtilsUnitTest {
     private static final String TAB_GROUP_TITLES_FILE_NAME = "tab_group_titles";
 
     private static final int TAB_ID = 456;
+    private static final int ROOT_ID = 12;
     private static final Token TAB_GROUP_ID = new Token(34789L, 3784L);
     private static final String TAB_TITLE = "Tab";
 
@@ -59,9 +53,6 @@ public class TabGroupTitleUtilsUnitTest {
     @Mock SharedPreferences.Editor mPutStringEditor;
     @Mock SharedPreferences.Editor mRemoveEditor;
     @Mock TabGroupModelFilter mTabGroupModelFilter;
-    @Mock Tab mTab1;
-    @Mock Tab mTab2;
-    @Mock Tab mTab3;
 
     Context mContext;
 
@@ -79,7 +70,7 @@ public class TabGroupTitleUtilsUnitTest {
 
     @Test
     public void testDeleteTabGroupTitle() {
-        TabGroupVisualDataStore.deleteTabGroupTitle(TAB_ID);
+        TabGroupTitleUtils.deleteTabGroupTitle(TAB_ID);
 
         verify(mEditor).remove(eq(String.valueOf(TAB_ID)));
         verify(mRemoveEditor).apply();
@@ -88,15 +79,14 @@ public class TabGroupTitleUtilsUnitTest {
     @Test
     public void testGetTabGroupTitle() {
         // Mock that we have a stored tab group title with reference to TAB_ID.
-        when(mSharedPreferences.getString(String.valueOf(TAB_ID), UNSET_TAB_GROUP_TITLE))
-                .thenReturn(TAB_TITLE);
+        when(mSharedPreferences.getString(String.valueOf(TAB_ID), null)).thenReturn(TAB_TITLE);
 
-        assertThat(TabGroupVisualDataStore.getTabGroupTitle(TAB_ID), equalTo(TAB_TITLE));
+        assertThat(TabGroupTitleUtils.getTabGroupTitle(TAB_ID), equalTo(TAB_TITLE));
     }
 
     @Test
     public void testStoreTabGroupTitle() {
-        TabGroupVisualDataStore.storeTabGroupTitle(TAB_ID, TAB_TITLE);
+        TabGroupTitleUtils.storeTabGroupTitle(TAB_ID, TAB_TITLE);
 
         verify(mEditor).putString(eq(String.valueOf(TAB_ID)), eq(TAB_TITLE));
         verify(mPutStringEditor).apply();
@@ -104,7 +94,15 @@ public class TabGroupTitleUtilsUnitTest {
 
     @Test
     public void testStoreTabGroupTitle_Empty() {
-        TabGroupVisualDataStore.storeTabGroupTitle(TAB_ID, "");
+        TabGroupTitleUtils.storeTabGroupTitle(TAB_ID, "");
+
+        verify(mEditor).remove(eq(String.valueOf(TAB_ID)));
+        verify(mRemoveEditor).apply();
+    }
+
+    @Test
+    public void testStoreTabGroupTitle_Null() {
+        TabGroupTitleUtils.storeTabGroupTitle(TAB_ID, null);
 
         verify(mEditor).remove(eq(String.valueOf(TAB_ID)));
         verify(mRemoveEditor).apply();
@@ -135,8 +133,8 @@ public class TabGroupTitleUtilsUnitTest {
     @Test
     public void testGetDisplayableTitle_Explicit() {
         String title = "t1";
-        when(mTabGroupModelFilter.tabGroupExists(TAB_GROUP_ID)).thenReturn(true);
-        when(mTabGroupModelFilter.getTabGroupTitle(TAB_GROUP_ID)).thenReturn(title);
+        when(mTabGroupModelFilter.getRootIdFromTabGroupId(TAB_GROUP_ID)).thenReturn(ROOT_ID);
+        when(mTabGroupModelFilter.getTabGroupTitle(ROOT_ID)).thenReturn(title);
         assertEquals(
                 title,
                 TabGroupTitleUtils.getDisplayableTitle(
@@ -146,92 +144,12 @@ public class TabGroupTitleUtilsUnitTest {
     @Test
     public void testGetDisplayableTitle_Fallback() {
         int tabCount = 4567;
-        when(mTabGroupModelFilter.tabGroupExists(TAB_GROUP_ID)).thenReturn(true);
-        when(mTabGroupModelFilter.getTabGroupTitle(TAB_GROUP_ID)).thenReturn("");
-
-        List<Tab> tabs = new ArrayList<>();
-        for (int i = 0; i < tabCount; i++) {
-            Tab tab = mock(Tab.class);
-            when(tab.isClosing()).thenReturn(false);
-            tabs.add(tab);
-        }
-        when(mTabGroupModelFilter.getTabsInGroup(TAB_GROUP_ID)).thenReturn(tabs);
-
+        when(mTabGroupModelFilter.getRootIdFromTabGroupId(TAB_GROUP_ID)).thenReturn(ROOT_ID);
+        when(mTabGroupModelFilter.getTabGroupTitle(ROOT_ID)).thenReturn("");
+        when(mTabGroupModelFilter.getTabCountForGroup(TAB_GROUP_ID)).thenReturn(tabCount);
         String title =
                 TabGroupTitleUtils.getDisplayableTitle(
                         mContext, mTabGroupModelFilter, TAB_GROUP_ID);
         assertTrue(title.contains(String.valueOf(tabCount)));
-    }
-
-    @Test
-    public void testGetDisplayableTitle_FallbackNoClosingTabs() {
-        when(mTabGroupModelFilter.tabGroupExists(TAB_GROUP_ID)).thenReturn(true);
-        when(mTabGroupModelFilter.getTabGroupTitle(TAB_GROUP_ID)).thenReturn(UNSET_TAB_GROUP_TITLE);
-        List<Tab> tabs = new ArrayList<>();
-        tabs.add(mTab1);
-        tabs.add(mTab2);
-        when(mTab1.isClosing()).thenReturn(false);
-        when(mTab2.isClosing()).thenReturn(false);
-        when(mTabGroupModelFilter.getTabsInGroup(TAB_GROUP_ID)).thenReturn(tabs);
-
-        String title =
-                TabGroupTitleUtils.getDisplayableTitle(
-                        mContext, mTabGroupModelFilter, TAB_GROUP_ID);
-
-        assertTrue(title.contains("2"));
-    }
-
-    @Test
-    public void testGetDisplayableTitle_FallbackSomeClosingTabs() {
-        when(mTabGroupModelFilter.tabGroupExists(TAB_GROUP_ID)).thenReturn(true);
-        when(mTabGroupModelFilter.getTabGroupTitle(TAB_GROUP_ID)).thenReturn(UNSET_TAB_GROUP_TITLE);
-        List<Tab> tabs = new ArrayList<>();
-        tabs.add(mTab1);
-        tabs.add(mTab2);
-        tabs.add(mTab3);
-        when(mTab1.isClosing()).thenReturn(false);
-        when(mTab2.isClosing()).thenReturn(true);
-        when(mTab3.isClosing()).thenReturn(false);
-        when(mTabGroupModelFilter.getTabsInGroup(TAB_GROUP_ID)).thenReturn(tabs);
-
-        String title =
-                TabGroupTitleUtils.getDisplayableTitle(
-                        mContext, mTabGroupModelFilter, TAB_GROUP_ID);
-
-        assertTrue(title.contains("2"));
-        assertFalse(title.contains("3"));
-    }
-
-    @Test
-    public void testGetDisplayableTitle_FallbackAllClosingTabs() {
-        when(mTabGroupModelFilter.tabGroupExists(TAB_GROUP_ID)).thenReturn(true);
-        when(mTabGroupModelFilter.getTabGroupTitle(TAB_GROUP_ID)).thenReturn(UNSET_TAB_GROUP_TITLE);
-        List<Tab> tabs = new ArrayList<>();
-        tabs.add(mTab1);
-        tabs.add(mTab2);
-        when(mTab1.isClosing()).thenReturn(true);
-        when(mTab2.isClosing()).thenReturn(true);
-        when(mTabGroupModelFilter.getTabsInGroup(TAB_GROUP_ID)).thenReturn(tabs);
-
-        String title =
-                TabGroupTitleUtils.getDisplayableTitle(
-                        mContext, mTabGroupModelFilter, TAB_GROUP_ID);
-
-        assertTrue(title.contains("0"));
-        assertFalse(title.contains("2"));
-    }
-
-    @Test
-    public void testGetDisplayableTitle_FallbackNoTabs() {
-        when(mTabGroupModelFilter.tabGroupExists(TAB_GROUP_ID)).thenReturn(true);
-        when(mTabGroupModelFilter.getTabGroupTitle(TAB_GROUP_ID)).thenReturn(UNSET_TAB_GROUP_TITLE);
-        List<Tab> tabs = new ArrayList<>();
-        when(mTabGroupModelFilter.getTabsInGroup(TAB_GROUP_ID)).thenReturn(tabs);
-
-        String title =
-                TabGroupTitleUtils.getDisplayableTitle(
-                        mContext, mTabGroupModelFilter, TAB_GROUP_ID);
-
-        assertTrue(title.contains("0"));
     }
 }

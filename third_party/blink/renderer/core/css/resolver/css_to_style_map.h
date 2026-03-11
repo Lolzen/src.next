@@ -69,6 +69,7 @@ class CSSToStyleMap {
 
   static Timing::Delay MapAnimationDelayStart(StyleResolverState&,
                                               const CSSValue&);
+  static Timing::Delay MapAnimationDelayEnd(const CSSValue&);
   static Timing::Delay MapAnimationDelayEnd(StyleResolverState&,
                                             const CSSValue&);
   static Timing::PlaybackDirection MapAnimationDirection(StyleResolverState&,
@@ -117,33 +118,20 @@ class CSSToStyleMap {
   static void MapNinePieceImageRepeat(StyleResolverState&,
                                       const CSSValue&,
                                       NinePieceImage&);
-  static EAnimationTriggerBehavior MapAnimationTriggerBehavior(
+  static EAnimationTriggerType MapAnimationTriggerType(StyleResolverState&,
+                                                       const CSSValue&);
+  static StyleTimeline MapAnimationTriggerTimeline(StyleResolverState&,
+                                                   const CSSValue&);
+  static std::optional<TimelineOffset> MapAnimationTriggerRangeStart(
       StyleResolverState&,
       const CSSValue&);
-  static const ScopedCSSName* MapAnimationTimelineTriggerName(
+  static std::optional<TimelineOffset> MapAnimationTriggerRangeEnd(
       StyleResolverState&,
       const CSSValue&);
-  static EAnimationTriggerBehavior MapAnimationTimelineTriggerBehavior(
+  static TimelineOffsetOrAuto MapAnimationTriggerExitRangeStart(
       StyleResolverState&,
       const CSSValue&);
-  static std::optional<TimelineOffset>
-  MapAnimationTimelineTriggerActivationRangeStart(StyleResolverState&,
-                                                  const CSSValue&);
-  static std::optional<TimelineOffset>
-  MapAnimationTimelineTriggerActivationRangeEnd(StyleResolverState&,
-                                                const CSSValue&);
-  static TimelineOffsetOrAuto MapAnimationTimelineTriggerActiveRangeStart(
-      StyleResolverState&,
-      const CSSValue&);
-  static TimelineOffsetOrAuto MapAnimationTimelineTriggerActiveRangeEnd(
-      StyleResolverState&,
-      const CSSValue&);
-  static StyleTimeline MapAnimationTimelineTriggerSource(StyleResolverState&,
-                                                         const CSSValue&);
-  static std::optional<Vector<AtomicString>> MapAnimationTriggerNames(
-      StyleResolverState&,
-      const CSSValue&);
-  static Member<StyleTriggerAttachmentVector> MapAnimationTriggerAttachments(
+  static TimelineOffsetOrAuto MapAnimationTriggerExitRangeEnd(
       StyleResolverState&,
       const CSSValue&);
 };

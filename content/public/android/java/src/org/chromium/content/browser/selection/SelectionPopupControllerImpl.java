@@ -7,14 +7,12 @@ package org.chromium.content.browser.selection;
 import static org.chromium.build.NullUtil.assumeNonNull;
 
 import android.app.Activity;
-import android.app.ActivityOptions;
-import android.app.PendingIntent;
-import android.app.RemoteAction;
 import android.app.SearchManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Handler;
 import android.provider.Browser;
@@ -39,18 +37,14 @@ import org.jni_zero.CalledByNative;
 import org.jni_zero.JNINamespace;
 import org.jni_zero.NativeMethods;
 
-import org.chromium.base.ApiCompatibilityUtils;
-import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
 import org.chromium.base.PackageManagerUtils;
 import org.chromium.base.ResettersForTesting;
-import org.chromium.base.SelectionActionMenuClientWrapper.MenuType;
 import org.chromium.base.UserData;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.metrics.RecordUserAction;
-import org.chromium.base.supplier.NonNullObservableSupplier;
-import org.chromium.base.supplier.ObservableSuppliers;
-import org.chromium.base.supplier.SettableNonNullObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplierImpl;
 import org.chromium.build.annotations.EnsuresNonNullIf;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
@@ -61,34 +55,28 @@ import org.chromium.content.browser.PopupController.HideablePopup;
 import org.chromium.content.browser.WindowEventObserver;
 import org.chromium.content.browser.WindowEventObserverManager;
 import org.chromium.content.browser.input.ImeAdapterImpl;
-import org.chromium.content.browser.selection.SelectActionMenuHelper.TextSelectionCapabilitiesDelegate;
+import org.chromium.content.browser.selection.SelectActionMenuHelper.SelectActionMenuDelegate;
+import org.chromium.content.browser.selection.SelectActionMenuHelper.TextProcessingIntentHandler;
 import org.chromium.content.browser.webcontents.WebContentsImpl;
 import org.chromium.content_public.browser.ActionModeCallback;
 import org.chromium.content_public.browser.ActionModeCallbackHelper;
-import org.chromium.content_public.browser.ContentFeatureMap;
 import org.chromium.content_public.browser.ImeEventObserver;
-import org.chromium.content_public.browser.PendingSelectionMenu;
 import org.chromium.content_public.browser.RenderFrameHost;
 import org.chromium.content_public.browser.SelectAroundCaretResult;
 import org.chromium.content_public.browser.SelectionClient;
+import org.chromium.content_public.browser.SelectionMenuGroup;
 import org.chromium.content_public.browser.SelectionMenuItem;
 import org.chromium.content_public.browser.SelectionPopupController;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContents.UserDataFactory;
 import org.chromium.content_public.browser.selection.SelectionActionMenuDelegate;
 import org.chromium.content_public.browser.selection.SelectionDropdownMenuDelegate;
-import org.chromium.content_public.common.ContentFeatures;
 import org.chromium.ui.base.Clipboard;
 import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.base.ViewAndroidDelegate;
 import org.chromium.ui.base.ViewAndroidDelegate.ContainerViewObserver;
 import org.chromium.ui.base.WindowAndroid;
-import org.chromium.ui.hierarchicalmenu.HierarchicalMenuController;
-import org.chromium.ui.listmenu.ListMenuSubmenuItemProperties;
-import org.chromium.ui.listmenu.ListMenuUtils;
-import org.chromium.ui.listmenu.MenuModelBridge;
 import org.chromium.ui.modelutil.MVCListAdapter;
-import org.chromium.ui.modelutil.MVCListAdapter.ListItem;
 import org.chromium.ui.mojom.MenuSourceType;
 import org.chromium.ui.touch_selection.SelectionEventType;
 import org.chromium.ui.touch_selection.TouchSelectionDraggableType;
@@ -96,7 +84,10 @@ import org.chromium.ui.touch_selection.TouchSelectionDraggableType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.SortedSet;
 
 /** Implementation of the interface {@link SelectionPopupController}. */
 @JNINamespace("content")
@@ -108,7 +99,7 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
                 HideablePopup,
                 ContainerViewObserver,
                 UserData,
-                TextSelectionCapabilitiesDelegate {
+                SelectActionMenuDelegate {
     private static final String TAG = "SelectionPopupCtlr"; // 20 char limit
     private static final boolean DEBUG = false;
 
@@ -125,8 +116,6 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
     // selection change response will be asynchronous. 300ms should accomodate
     // most such trailing, async delays.
     private static final int SHOW_DELAY_MS = 300;
-
-    private static final String USED_CACHED_MENU_HISTOGRAM = "Android.SelectionMenu.UsedCachedMenu";
 
     // A flag to determine if we should get readback view from WindowAndroid.
     // The readback view could be the ContainerView, which WindowAndroid has no control on that.
@@ -156,27 +145,27 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
     private final Handler mHandler;
     private @Nullable Context mContext;
     private @Nullable WindowAndroid mWindowAndroid;
-    private final WebContentsImpl mWebContents;
+    private WebContentsImpl mWebContents;
     private @Nullable ActionModeCallback mCallback;
     private @Nullable RenderFrameHost mRenderFrameHost;
     private long mNativeSelectionPopupController;
 
-    private final SelectionClient.ResultCallback mResultCallback;
+    private SelectionClient.ResultCallback mResultCallback;
 
     // Selection rectangle in DIP.
     private final Rect mSelectionRect = new Rect();
 
     // Self-repeating task that repeatedly hides the ActionMode. This is
     // required because ActionMode only exposes a temporary hide routine.
-    private final Runnable mRepeatingHideRunnable;
+    private Runnable mRepeatingHideRunnable;
 
     // Can be null temporarily when switching between WindowAndroid.
     private @Nullable View mView;
     private @Nullable ActionMode mActionMode;
 
     // Supplier of whether action bar is showing now.
-    private final SettableNonNullObservableSupplier<Boolean> mIsActionBarShowingSupplier =
-            ObservableSuppliers.createNonNull(false);
+    private final ObservableSupplierImpl<Boolean> mIsActionBarShowingSupplier =
+            new ObservableSupplierImpl<>();
 
     // Bit field for mappings from menu item to a flag indicating it is allowed.
     private int mAllowedMenuItems;
@@ -237,8 +226,8 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
     // Cached selection menu items to check against new selections.
     private @Nullable SelectionMenuCachedResult mSelectionMenuCachedResult;
 
-    /** Menu model bridge used to display extra items. */
-    private @Nullable MenuModelBridge mMenuModelBridge;
+    /** Custom {@link android.view.View.OnClickListener} map for ActionMode menu items. */
+    private final Map<MenuItem, View.OnClickListener> mCustomActionMenuItemClickListeners;
 
     /** An interface for getting {@link View} for readback. */
     public interface ReadbackViewCallback {
@@ -264,7 +253,6 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
      * @return {@link SelectionPopupController} object. {@code null} if not available because {@link
      *     #create()} is not called yet.
      */
-    @CalledByNative
     public static @Nullable SelectionPopupControllerImpl fromWebContents(WebContents webContents) {
         return webContents.getOrSetUserData(
                 SelectionPopupControllerImpl.class, UserDataFactoryLazyHolder.INSTANCE);
@@ -357,13 +345,15 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
         }
         if (initializeNative) {
             mNativeSelectionPopupController =
-                    SelectionPopupControllerImplJni.get().init(this, mWebContents);
+                    SelectionPopupControllerImplJni.get()
+                            .init(SelectionPopupControllerImpl.this, mWebContents);
             ImeAdapterImpl imeAdapter = ImeAdapterImpl.fromWebContents(mWebContents);
             if (imeAdapter != null) imeAdapter.addEventObserver(this);
         }
 
         mResultCallback = new SmartSelectionCallback();
         mLastSelectedText = "";
+        mCustomActionMenuItemClickListeners = new HashMap<>();
         getPopupController().registerPopup(this);
     }
 
@@ -393,7 +383,7 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
     // ViewAndroidDelegate.ContainerViewObserver
 
     @Override
-    public void onUpdateContainerView(@Nullable ViewGroup containerView) {
+    public void onUpdateContainerView(ViewGroup containerView) {
         // Cleans up action mode before switching to a new container view.
         if (isActionModeValid()) finishActionMode();
         mUnselectAllOnDismiss = true;
@@ -530,11 +520,11 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
             boolean canRichlyEdit,
             boolean shouldSuggest,
             int sourceType,
-            RenderFrameHost renderFrameHost,
-            MenuModelBridge menuModelBridge) {
-        mMenuModelBridge = menuModelBridge;
+            RenderFrameHost renderFrameHost) {
         RecordHistogram.recordEnumeratedHistogram(
-                "Android.ShowSelectionMenuSourceType", sourceType, MenuSourceType.MAX_VALUE);
+                "Android.ShowSelectionMenuSourceType",
+                sourceType,
+                MenuSourceType.MAX_VALUE);
 
         int offsetBottom = bottom;
         offsetBottom += handleHeight;
@@ -666,14 +656,11 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
             SelectionDropdownMenuDelegate delegate) {
         return item -> {
             assumeNonNull(mCallback);
-            SelectionMenuItem menuItem = delegate.getMinimalMenuItem(item);
-            logSelectionAction(menuItem.groupId, menuItem.id);
-            boolean isSubmenuParent = item.containsKey(ListMenuSubmenuItemProperties.SUBMENU_ITEMS);
-            View.OnClickListener clickListener = delegate.getClickListener(item);
-            if (!mCallback.onDropdownItemClicked(menuItem, !isSubmenuParent)
-                    && clickListener != null) {
-                clickListener.onClick(null);
-            }
+            final int groupId = delegate.getGroupId(item);
+            final int id = delegate.getItemId(item);
+            logSelectionAction(groupId, id);
+            mCallback.onDropdownItemClicked(
+                    groupId, id, delegate.getItemIntent(item), delegate.getClickListener(item));
         };
     }
 
@@ -681,8 +668,57 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
         MVCListAdapter.ModelList items = new MVCListAdapter.ModelList();
         if (mDropdownMenuDelegate != null) {
             assumeNonNull(mContext);
-            PendingSelectionMenu pendingMenu = getPendingSelectionMenu(MenuType.DROPDOWN);
-            items = pendingMenu.getMenuAsDropdown(mDropdownMenuDelegate);
+            SortedSet<SelectionMenuGroup> allItemGroups = getMenuItems();
+
+            int groupIndex = 0;
+            for (SelectionMenuGroup group : allItemGroups) {
+                // First determine if any item in the group contains an icon. Given
+                // there will always be a small amount of items in the menu it is
+                // okay to run this loop twice. This property will be used later on when
+                // rendering the items to determine title spacing.
+                boolean groupContainsIcon = false;
+                for (SelectionMenuItem item : group.items) {
+                    groupContainsIcon = item.isEnabled && item.getIcon(mContext) != null;
+
+                    // Exit early if there is an icon found.
+                    if (groupContainsIcon) {
+                        break;
+                    }
+                }
+
+                // Add a divider above the new group.
+                final boolean addDivider = groupIndex > 0;
+
+                int itemIndexInGroup = 0;
+                // Populate the items from the group.
+                for (SelectionMenuItem item : group.items) {
+                    if (!item.isEnabled) {
+                        // We will only add items if they are enabled.
+                        continue;
+                    }
+                    if (itemIndexInGroup++ == 0 && addDivider) {
+                        items.add(mDropdownMenuDelegate.getDivider());
+                    }
+
+                    CharSequence title = item.getTitle(mContext);
+                    CharSequence contentDescription = item.contentDescription;
+                    items.add(
+                            mDropdownMenuDelegate.getMenuItem(
+                                    title != null ? title.toString() : null,
+                                    contentDescription != null
+                                            ? contentDescription.toString()
+                                            : null,
+                                    group.id,
+                                    item.id,
+                                    item.getIcon(mContext),
+                                    item.isIconTintable,
+                                    groupContainsIcon,
+                                    true,
+                                    item.clickListener,
+                                    item.intent));
+                }
+                groupIndex++;
+            }
         }
         return items;
     }
@@ -718,22 +754,9 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
                                 + mWebContents.getRenderCoordinates().getContentOffsetYPix()));
 
         MVCListAdapter.ModelList items = getDropdownItems();
-        if (mMenuModelBridge != null) {
-            for (ListItem listItem : mMenuModelBridge.getListItems()) {
-                items.add(listItem);
-            }
-        }
-
-        assumeNonNull(mContext);
-        HierarchicalMenuController hierarchicalMenuController =
-                ListMenuUtils.createHierarchicalMenuController(mContext);
-        hierarchicalMenuController.setupCallbacksRecursively(
-                /* headerModelList= */ null, items, this::dismissMenu);
-
         SelectionDropdownMenuDelegate.ItemClickListener itemClickListener =
                 getDropdownItemClickListener(mDropdownMenuDelegate);
-        mDropdownMenuDelegate.show(
-                mContext, mView, items, itemClickListener, hierarchicalMenuController, x, y);
+        mDropdownMenuDelegate.show(mContext, mView, items, itemClickListener, x, y);
     }
 
     // HideablePopup implementation
@@ -780,7 +803,6 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
                 destroyDropdownMenu();
                 break;
         }
-        mMenuModelBridge = null;
     }
 
     /**
@@ -909,13 +931,28 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
     @Override
     public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
         assumeNonNull(mContext);
-        PendingSelectionMenu pendingMenu = getPendingSelectionMenu(MenuType.FLOATING);
-        pendingMenu.getMenuAsActionMode(menu);
+        SortedSet<SelectionMenuGroup> menuItems = getMenuItems();
+
+        SelectActionMenuHelper.removeAllAddedGroupsFromMenu(menu);
+        mCustomActionMenuItemClickListeners.clear();
+        initializeActionMenu(
+                mContext,
+                menuItems,
+                menu,
+                mCustomActionMenuItemClickListeners,
+                item -> {
+                    logSelectionAction(item.getGroupId(), item.getItemId());
+                    return false;
+                });
+
         return true;
     }
 
     @VisibleForTesting
-    public PendingSelectionMenu getPendingSelectionMenu(@MenuType int menuType) {
+    public SortedSet<SelectionMenuGroup> getMenuItems() {
+        TextProcessingIntentHandler textProcessingIntentHandler =
+                isSelectActionModeAllowed(MENU_ITEM_PROCESS_TEXT) ? this::processText : null;
+
         // If the menu items haven't been cached, process new menu and cache it.
         if (mSelectionMenuCachedResult == null
                 || !mSelectionMenuCachedResult.canReuseResult(
@@ -923,44 +960,100 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
                         isSelectionPassword(),
                         !isFocusedNodeEditable(),
                         getSelectedText(),
-                        menuType,
                         mSelectionActionMenuDelegate)) {
             assert mContext != null;
-            PendingSelectionMenu pendingMenu = new PendingSelectionMenu(mContext);
-            SelectActionMenuHelper.populateMenuItems(
-                    this,
-                    pendingMenu,
-                    mContext,
-                    mClassificationResult,
-                    menuType,
-                    isSelectionPassword(),
-                    !isFocusedNodeEditable(),
-                    getSelectedText(),
-                    isSelectActionModeAllowed(MENU_ITEM_PROCESS_TEXT),
-                    mSelectionActionMenuDelegate);
-            if (ContentFeatureMap.isEnabled(ContentFeatures.NO_SELECTION_MENU_CACHING)) {
-                return pendingMenu;
-            }
-            // Record this after the feature flag check as otherwise clients in the enabled group
-            // will skew the data.
-            RecordHistogram.recordBooleanHistogram(USED_CACHED_MENU_HISTOGRAM, false);
             mSelectionMenuCachedResult =
                     new SelectionMenuCachedResult(
                             mClassificationResult,
                             isSelectionPassword(),
                             !isFocusedNodeEditable(),
                             getSelectedText(),
-                            menuType,
-                            pendingMenu);
-        } else {
-            RecordHistogram.recordBooleanHistogram(USED_CACHED_MENU_HISTOGRAM, true);
+                            SelectActionMenuHelper.getMenuItems(
+                                    this,
+                                    mContext,
+                                    mClassificationResult,
+                                    isSelectionPassword(),
+                                    !isFocusedNodeEditable(),
+                                    getSelectedText(),
+                                    textProcessingIntentHandler,
+                                    mSelectionActionMenuDelegate));
         }
 
         // Return the cached menu items for this selection.
         return mSelectionMenuCachedResult.getResult();
     }
 
-    // TextSelectionCapabilitiesDelegate overrides
+    /**
+     * Initializes the action menu.
+     *
+     * @param customMenuItemClickListeners map to populate any custom click listeners for menu
+     *     items.
+     * @param additionalMenuItemClickListener executes after every menu item is clicked.
+     */
+    public static void initializeActionMenu(
+            Context context,
+            SortedSet<SelectionMenuGroup> menuGroups,
+            Menu menu,
+            Map<MenuItem, View.OnClickListener> customMenuItemClickListeners,
+            MenuItem.@Nullable OnMenuItemClickListener additionalMenuItemClickListener) {
+        for (SelectionMenuGroup group : menuGroups) {
+            addMenuItemsToActionMenu(
+                    context,
+                    group,
+                    menu,
+                    customMenuItemClickListeners,
+                    additionalMenuItemClickListener);
+        }
+    }
+
+    /**
+     * Adds the menu items from the {@link SelectionMenuGroup} to the action menu.
+     *
+     * @param additionalMenuItemClickListener executes after every menu item is clicked.
+     */
+    private static void addMenuItemsToActionMenu(
+            Context context,
+            SelectionMenuGroup group,
+            Menu menu,
+            Map<MenuItem, View.OnClickListener> customMenuItemClickListeners,
+            MenuItem.@Nullable OnMenuItemClickListener additionalMenuItemClickListener) {
+        // All menu items and groups are sorted already at this point, so this is just passing
+        // 1-indexed value as order.
+        int menuItemCount = menu.size();
+        for (SelectionMenuItem item : group.items) {
+            if (!item.isEnabled) {
+                // We will only add items if they are enabled. This will prevent us from
+                // needing to remove them.
+                continue;
+            }
+            MenuItem menuItem =
+                    menu.add(group.id, item.id, ++menuItemCount, item.getTitle(context))
+                            .setShowAsActionFlags(item.showAsActionFlags);
+            @Nullable Drawable icon = item.getIcon(context);
+            if (icon != null) {
+                menuItem.setIcon(icon);
+            }
+            @Nullable Character alphabeticShortcut = item.alphabeticShortcut;
+            if (alphabeticShortcut != null) {
+                menuItem.setAlphabeticShortcut(alphabeticShortcut);
+            }
+            @Nullable CharSequence contentDescription = item.contentDescription;
+            if (contentDescription != null) {
+                menuItem.setContentDescription(contentDescription);
+            }
+            if (item.clickListener != null) {
+                customMenuItemClickListeners.put(menuItem, item.clickListener);
+            }
+            menuItem.setOnMenuItemClickListener(
+                    clickedMenuItem -> {
+                        if (additionalMenuItemClickListener != null) {
+                            additionalMenuItemClickListener.onMenuItemClick(clickedMenuItem);
+                        }
+                        return false;
+                    });
+            menuItem.setIntent(item.intent);
+        }
+    }
 
     /** Checks if copy action is available. */
     @Override
@@ -1017,8 +1110,6 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
         return Clipboard.getInstance().hasHTMLOrStyledText();
     }
 
-    // End of TextSelectionCapabilitiesDelegate overrides.
-
     /** Testing use only. Initialize the menu items for processing text, if there is any. */
     /* package */ void initializeTextProcessingMenuForTesting(ActionMode mode, Menu menu) {
         if (!isSelectActionModeAllowed(MENU_ITEM_PROCESS_TEXT)) {
@@ -1026,19 +1117,12 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
         }
         assert mContext != null;
 
-        List<SelectionMenuItem> textProcessingItems =
+        SelectionMenuGroup textProcessingItems =
                 SelectActionMenuHelper.getTextProcessingItems(
-                        mContext,
-                        MenuType.FLOATING,
-                        false,
-                        false,
-                        "test",
-                        true,
-                        mSelectionActionMenuDelegate);
-        if (textProcessingItems != null && !textProcessingItems.isEmpty()) {
-            PendingSelectionMenu pendingMenu = new PendingSelectionMenu(mContext);
-            pendingMenu.addAll(textProcessingItems);
-            pendingMenu.getMenuAsActionMode(menu);
+                        mContext, false, false, this::processText, mSelectionActionMenuDelegate);
+        if (!textProcessingItems.items.isEmpty()) {
+            addMenuItemsToActionMenu(
+                    mContext, textProcessingItems, menu, mCustomActionMenuItemClickListeners, null);
         }
     }
 
@@ -1049,13 +1133,15 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
         if (!isActionModeValid()) return true;
 
         int itemId = item.getItemId();
-        handleMenuItemClick(
-                new SelectionMenuItem.Builder(item.getTitle())
-                        .setId(item.getItemId())
-                        .setGroupId(item.getGroupId())
-                        .setIntent(item.getIntent())
-                        .setOrder(item.getOrder())
-                        .build());
+        // Check to see if this menu item has a custom click listener to handle it.
+        View.OnClickListener customMenuItemClickListener =
+                mCustomActionMenuItemClickListeners.get(item);
+        if (customMenuItemClickListener != null) {
+            customMenuItemClickListener.onClick(mView);
+            if (isPasteActionModeValid()) mode.finish();
+        } else {
+            handleMenuItemClick(itemId);
+        }
 
         // We don't dismiss the action menu for select all action.
         if (itemId != R.id.select_action_menu_select_all) {
@@ -1065,46 +1151,30 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
     }
 
     @Override
-    public boolean onDropdownItemClicked(SelectionMenuItem item, boolean closeMenu) {
-        boolean handled = handleMenuItemClick(item);
-        if (item.id != R.id.select_action_menu_select_all) {
+    public boolean onDropdownItemClicked(
+            int groupId,
+            int id,
+            @Nullable Intent intent,
+            View.@Nullable OnClickListener clickListener) {
+        // Use the click listener for the item if it has one.
+        if (clickListener != null) {
+            clickListener.onClick(null);
+        } else {
+            handleMenuItemClick(id);
+        }
+        if (id != R.id.select_action_menu_select_all) {
             // We will clear the selection for all actions other
             // than select all.
             clearSelection();
         }
-        if (closeMenu) destroyDropdownMenu();
-        return handled;
+        destroyDropdownMenu();
+        return true;
     }
 
-    private boolean handleMenuItemClick(SelectionMenuItem item) {
-        if (item.groupId == R.id.select_action_menu_default_items) {
-            return handleDefaultMenuItemClick(item.id);
-        } else if (item.groupId == R.id.select_action_menu_assist_items) {
-            return handlePrimaryAssistMenuItemClick();
-        } else if (item.groupId == R.id.select_action_menu_text_processing_items) {
-            return handleTextProcessingMenuItemClick(item.intent);
-        } else if (item.groupId == R.id.select_action_menu_delegate_items) {
-            return mSelectionActionMenuDelegate != null
-                    && mSelectionActionMenuDelegate.handleMenuItemClick(item, mWebContents, mView);
-        } else if (item.groupId == android.R.id.textAssist) {
-            return handleAssistMenuItemClick(item.order);
-        }
-        return false;
-    }
-
-    private boolean handlePrimaryAssistMenuItemClick() {
-        if (mClassificationResult == null
-                || mClassificationResult.textClassification == null
-                || mClassificationResult.textClassification.getActions().isEmpty()) {
-            return false;
-        }
-        // Primary assist action is always the first action in the list.
-        RemoteAction action = mClassificationResult.textClassification.getActions().get(0);
-        return handleRemoteAction(action);
-    }
-
-    private boolean handleDefaultMenuItemClick(int id) {
-        if (id == R.id.select_action_menu_cut) {
+    private void handleMenuItemClick(@IdRes final int id) {
+        if (id == R.id.select_action_menu_select_all) {
+            selectAll();
+        } else if (id == R.id.select_action_menu_cut) {
             cut();
         } else if (id == R.id.select_action_menu_copy) {
             copy();
@@ -1116,54 +1186,9 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
             if (isPasteActionModeValid()) dismissTextHandles();
         } else if (id == R.id.select_action_menu_share) {
             share();
-        } else if (id == R.id.select_action_menu_select_all) {
-            selectAll();
         } else if (id == R.id.select_action_menu_web_search) {
             search();
-        } else {
-            return false;
         }
-        return true;
-    }
-
-    private boolean handleAssistMenuItemClick(int order) {
-        // Primary assist action is always the first action in the list so offset by 1.
-        int index = 1 + order - SelectionMenuItem.ItemGroupOffset.SECONDARY_ASSIST_ITEMS;
-        if (mClassificationResult == null
-                || mClassificationResult.textClassification == null
-                || mClassificationResult.textClassification.getActions().size() <= index) {
-            return false;
-        }
-        RemoteAction action = mClassificationResult.textClassification.getActions().get(index);
-        return handleRemoteAction(action);
-    }
-
-    private boolean handleTextProcessingMenuItemClick(@Nullable Intent intent) {
-        if (!isSelectActionModeAllowed(MENU_ITEM_PROCESS_TEXT) || intent == null) {
-            return false;
-        }
-        processText(intent);
-        return true;
-    }
-
-    private boolean handleRemoteAction(RemoteAction action) {
-        try {
-            ActivityOptions options = ActivityOptions.makeBasic();
-            ApiCompatibilityUtils.setActivityOptionsBackgroundActivityStartAllowAlways(options);
-            action.getActionIntent()
-                    .send(
-                            ContextUtils.getApplicationContext(),
-                            0,
-                            null,
-                            null,
-                            null,
-                            null,
-                            options.toBundle());
-            return true;
-        } catch (PendingIntent.CanceledException e) {
-            Log.e(TAG, "Error Handling action for menu item with title: " + action.getTitle(), e);
-        }
-        return false;
     }
 
     @Override
@@ -1320,7 +1345,7 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
                     intent,
                     new WindowAndroid.IntentCallback() {
                         @Override
-                        public void onIntentCompleted(int resultCode, @Nullable Intent data) {
+                        public void onIntentCompleted(int resultCode, Intent data) {
                             if (resultCode != Activity.RESULT_OK || data == null) return;
                             CharSequence value =
                                     data.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT);
@@ -1398,7 +1423,7 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
      * @return true if the menu item action is allowed. Otherwise, the menu item should be removed
      *     from the menu.
      */
-    @VisibleForTesting
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     public boolean isSelectActionModeAllowed(int actionModeItem) {
         boolean isAllowedByClient = (mAllowedMenuItems & actionModeItem) != 0;
         if (actionModeItem == MENU_ITEM_SHARE) {
@@ -1451,13 +1476,15 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
     private void setTextHandlesHiddenForDropdownMenu(boolean hide) {
         if (mNativeSelectionPopupController == 0) return;
         SelectionPopupControllerImplJni.get()
-                .setTextHandlesHiddenForDropdownMenu(mNativeSelectionPopupController, hide);
+                .setTextHandlesHiddenForDropdownMenu(
+                        mNativeSelectionPopupController, SelectionPopupControllerImpl.this, hide);
     }
 
     private void setTextHandlesTemporarilyHidden(boolean hide) {
         if (mNativeSelectionPopupController == 0) return;
         SelectionPopupControllerImplJni.get()
-                .setTextHandlesTemporarilyHidden(mNativeSelectionPopupController, hide);
+                .setTextHandlesTemporarilyHidden(
+                        mNativeSelectionPopupController, SelectionPopupControllerImpl.this, hide);
     }
 
     @CalledByNative
@@ -1478,8 +1505,8 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
 
     @CalledByNative
     private void renderWidgetHostViewChanged() {
-        if (getMagnifierAnimator(/* createIfNull= */ false) != null) {
-            getMagnifierAnimator(/* createIfNull= */ false).handleDragStopped();
+        if (getMagnifierAnimator() != null) {
+            getMagnifierAnimator().handleDragStopped();
         }
     }
 
@@ -1547,8 +1574,8 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
 
             case SelectionEventType.SELECTION_HANDLE_DRAG_STOPPED:
                 showContextMenuAtTouchHandle(left, bottom);
-                if (getMagnifierAnimator(/* createIfNull= */ false) != null) {
-                    getMagnifierAnimator(/* createIfNull= */ false).handleDragStopped();
+                if (getMagnifierAnimator() != null) {
+                    getMagnifierAnimator().handleDragStopped();
                 }
                 mIsInHandleDragging = false;
 
@@ -1602,8 +1629,8 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
                     showContextMenuAtTouchHandle(mSelectionRect.left, mSelectionRect.bottom);
                 }
                 mWasPastePopupShowingOnInsertionDragStart = false;
-                if (getMagnifierAnimator(/* createIfNull= */ false) != null) {
-                    getMagnifierAnimator(/* createIfNull= */ false).handleDragStopped();
+                if (getMagnifierAnimator() != null) {
+                    getMagnifierAnimator().handleDragStopped();
                 }
                 mIsInHandleDragging = false;
                 break;
@@ -1669,13 +1696,13 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
             return;
         }
 
-        if (getMagnifierAnimator(/* createIfNull= */ true) != null) {
+        if (getMagnifierAnimator() != null) {
             final float deviceScale = getDeviceScaleFactor();
             x *= deviceScale;
             // The selection coordinates are relative to the content viewport, but we need
             // coordinates relative to the containing View, so adding getContentOffsetYPix().
             y = y * deviceScale + mWebContents.getRenderCoordinates().getContentOffsetYPix();
-            getMagnifierAnimator(/* createIfNull= */ true).handleDragStartedOrMoved(x, y);
+            getMagnifierAnimator().handleDragStartedOrMoved(x, y);
         }
     }
 
@@ -1758,9 +1785,8 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
         mMagnifierAnimator = magnifierAnimator;
     }
 
-    private @Nullable MagnifierAnimator getMagnifierAnimator(boolean createIfNull) {
+    private @Nullable MagnifierAnimator getMagnifierAnimator() {
         if (mMagnifierAnimator != null) return mMagnifierAnimator;
-        if (!createIfNull) return null;
         if (sDisableMagnifierForTesting || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             return null;
         }
@@ -1912,7 +1938,7 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
     }
 
     @Override
-    public NonNullObservableSupplier<Boolean> isSelectActionBarShowingSupplier() {
+    public ObservableSupplier<Boolean> isSelectActionBarShowingSupplier() {
         return mIsActionBarShowingSupplier;
     }
 
@@ -1949,11 +1975,6 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
         return new Rect(x, y, right, bottom);
     }
 
-    @CalledByNative
-    private long getNativePtr() {
-        return mNativeSelectionPopupController;
-    }
-
     /**
      * Gets the current touch handle rects.
      *
@@ -1963,20 +1984,27 @@ public class SelectionPopupControllerImpl extends ActionModeCallbackHelper
     Object @Nullable [] getTouchHandleRects() {
         if (mNativeSelectionPopupController == 0) return null;
         return SelectionPopupControllerImplJni.get()
-                .getTouchHandleRects(mNativeSelectionPopupController);
+                .getTouchHandleRects(
+                        mNativeSelectionPopupController, SelectionPopupControllerImpl.this);
     }
 
     @NativeMethods
     interface Natives {
         boolean isMagnifierWithSurfaceControlSupported();
 
-        long init(SelectionPopupControllerImpl self, WebContents webContents);
+        long init(SelectionPopupControllerImpl caller, WebContents webContents);
 
-        void setTextHandlesTemporarilyHidden(long nativeSelectionPopupController, boolean hidden);
+        void setTextHandlesTemporarilyHidden(
+                long nativeSelectionPopupController,
+                SelectionPopupControllerImpl caller,
+                boolean hidden);
 
         void setTextHandlesHiddenForDropdownMenu(
-                long nativeSelectionPopupController, boolean hidden);
+                long nativeSelectionPopupController,
+                SelectionPopupControllerImpl caller,
+                boolean hidden);
 
-        Object[] getTouchHandleRects(long nativeSelectionPopupController);
+        Object[] getTouchHandleRects(
+                long nativeSelectionPopupController, SelectionPopupControllerImpl caller);
     }
 }

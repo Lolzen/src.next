@@ -222,30 +222,19 @@ enum class AppLaunchSource {
 // application.
 // Do not remove items or re-order this enum as it is used in preferences
 // and histograms.
-// TODO(crbug.com/420858216): Add add "class" to declaration.
 enum LaunchType {
-  kInvalid = -1,
-  kFirst = 0,
-  kPinned = kFirst,
-  kRegular = 1,
-  kFullscreen = 2,
-  kWindow = 3,
-  kNumLaunchTypes,
+  LAUNCH_TYPE_INVALID = -1,
+  LAUNCH_TYPE_FIRST = 0,
+  LAUNCH_TYPE_PINNED = LAUNCH_TYPE_FIRST,
+  LAUNCH_TYPE_REGULAR = 1,
+  LAUNCH_TYPE_FULLSCREEN = 2,
+  LAUNCH_TYPE_WINDOW = 3,
+  NUM_LAUNCH_TYPES,
 
   // Launch an app in the in the way a click on the NTP would,
   // if no user pref were set.  Update this constant to change
   // the default for the NTP and chrome.management.launchApp().
-  kDefault = kRegular,
-
-  // TODO(crbug.com/420858216): Remove these legacy values/names.
-  LAUNCH_TYPE_INVALID = kInvalid,
-  LAUNCH_TYPE_FIRST = kFirst,
-  LAUNCH_TYPE_PINNED = kPinned,
-  LAUNCH_TYPE_REGULAR = kRegular,
-  LAUNCH_TYPE_FULLSCREEN = kFullscreen,
-  LAUNCH_TYPE_WINDOW = kWindow,
-  NUM_LAUNCH_TYPES = kNumLaunchTypes,
-  LAUNCH_TYPE_DEFAULT = kDefault
+  LAUNCH_TYPE_DEFAULT = LAUNCH_TYPE_REGULAR
 };
 
 }  // namespace extensions
@@ -284,11 +273,9 @@ inline constexpr char kChromeVoxExtensionId[] =
 // The extension id of the PDF extension.
 inline constexpr char kPdfExtensionId[] = "mhjfbmdgcfjbbpaeojofohoefgiehjai";
 
-#if BUILDFLAG(IS_CHROMEOS)
 // The extension id of the Office Viewer component extension.
 inline constexpr char kQuickOfficeComponentExtensionId[] =
     "bpmcpldpdmajfigpchkicefoigmkfalc";
-#endif
 
 // The extension id of the Office Viewer extension on the internal webstore.
 inline constexpr char kQuickOfficeInternalExtensionId[] =
@@ -305,17 +292,11 @@ inline constexpr char kMimeHandlerPrivateTestExtensionId[] =
 // The extension id of the Files Manager application.
 inline constexpr char kFilesManagerAppId[] = "hhaomjibdihmijegdhdafkllkbggdgoj";
 
-// The extension id of the Files Manager SWA.
-inline constexpr char kFilesManagerSWAId[] = "fkiggjmkendpmbegkagpmagjepfkpmeb";
-
 // The extension id of the Calculator application.
 inline constexpr char kCalculatorAppId[] = "joodangkbfjnajiiifokapkpmhfnpleo";
 
 // The extension id of the demo Calendar application.
 inline constexpr char kCalendarDemoAppId[] = "fpgfohogebplgnamlafljlcidjedbdeb";
-
-// The extension id of the Camera application.
-inline constexpr char kCameraAppId[] = "njfbnohfdkmbmnjapinfcopialeghnmh";
 
 // The extension id of the GMail application.
 inline constexpr char kGmailAppId[] = "pjkljhegncpnkpknbcohdijeoejaedia";
@@ -368,23 +349,13 @@ inline constexpr char kClipchampAppId[] = "pfepfhbcedkbjdkanpimmmdjfgoddhkg";
 // The extension id of the GeForce NOW PWA.
 inline constexpr char kGeForceNowAppId[] = "egmafekfmcnknbdlbfbhafbllplmjlhn";
 
-// The extension id of the Zoom PWA. We used to have
-// jldpdkiafafcejhceeincjmlkmibemgj for Zoom with its old url https://zoom.us/.
-// However, nowadays, it always redirect to https://www.zoom.com/ so its
-// extension id becomes ddamjdmghnhnicfnliimfobemngigiom.
-inline constexpr char kZoomAppId[] = "ddamjdmghnhnicfnliimfobemngigiom";
+// The extension id of the Zoom PWA.
+inline constexpr char kZoomAppId[] = "jldpdkiafafcejhceeincjmlkmibemgj";
 
 // The extension id of the Sumo PWA.
-inline constexpr char kSumoAppId[] = "genadphlobhbpdnafiphnppelkagmghm";
+inline constexpr char kSumoAppId[] = "mfknjekfflbfdchhohffdpkokgfbfmdc";
 
-// The extension id of Gemini App if installed manually.
-inline constexpr char kGeminiAppId[] = "caidcmannjgahlnbpmidmiecjcoiiigg";
-
-// The extension id of Gemini App if added by policy.
-inline constexpr char kGeminiAppByPolicyId[] =
-    "gdfaincndogidkdcdkhapmbffkckdkhn";
-
-// The extension id of the Adobe Spark PWA.
+// The extension id of the Sumo PWA.
 inline constexpr char kAdobeSparkAppId[] = "magefboookdoiehjohjmbjmkepngibhm";
 
 // The extension id of the Google Docs application.
@@ -470,9 +441,6 @@ inline constexpr char kNewAttractLoopAppId[] =
 // The extension id of 2022 Demo Mode screensaver app.
 inline constexpr char kNewHighlightsAppId[] =
     "enchmnkoajljphdmahljlebfmpkkbnkj";
-
-// The extension id of 2024 Demo Mode App.
-inline constexpr char kDemoModeSWA[] = "bmpphkbpdoljalglilnffmikoggpdolg";
 
 // Returns true if this app is one of Demo Mode Chrome Apps, including
 // attract loop and highlights apps.

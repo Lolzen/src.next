@@ -31,7 +31,6 @@
 #include "components/prefs/pref_value_map.h"
 #include "components/strings/grit/components_strings.h"
 #include "extensions/browser/pref_names.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/url_pattern.h"
 #include "url/gurl.h"
@@ -39,8 +38,6 @@
 #if BUILDFLAG(IS_WIN)
 #include "base/enterprise_util.h"
 #endif
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 namespace {
@@ -93,7 +90,7 @@ bool ExtensionListPolicyHandler::CheckListEntry(const base::Value& value) {
   return crx_file::id_util::IdIsValid(str);
 }
 
-void ExtensionListPolicyHandler::ApplyList(base::ListValue filtered_list,
+void ExtensionListPolicyHandler::ApplyList(base::Value::List filtered_list,
                                            PrefValueMap* prefs) {
   prefs->SetValue(pref_path_, base::Value(std::move(filtered_list)));
 }
@@ -125,7 +122,7 @@ void ExtensionInstallForceListPolicyHandler::ApplyPolicySettings(
 
 bool ExtensionInstallForceListPolicyHandler::ParseList(
     const base::Value* policy_value,
-    base::DictValue* extension_dict,
+    base::Value::Dict* extension_dict,
     policy::PolicyErrorMap* errors) {
   if (!policy_value) {
     return true;
@@ -190,11 +187,11 @@ bool ExtensionInstallForceListPolicyHandler::ParseList(
   return true;
 }
 
-std::optional<base::DictValue>
+std::optional<base::Value::Dict>
 ExtensionInstallForceListPolicyHandler::GetPolicyDict(
     const policy::PolicyMap& policies) {
   const base::Value* value = nullptr;
-  base::DictValue dict;
+  base::Value::Dict dict;
   if (CheckAndGetValue(policies, nullptr, &value) && value &&
       ParseList(value, &dict, nullptr)) {
     return dict;
@@ -224,6 +221,9 @@ void ExtensionInstallBlockListPolicyHandler::ApplyPolicySettings(
   list_handler_.ApplyPolicySettings(policies, prefs);
 }
 
+// TODO(crbug.com/394876083): Support more extension policy handlers on desktop
+// Android.
+#if !BUILDFLAG(IS_ANDROID)
 // ExtensionURLPatternListPolicyHandler implementation -------------------------
 
 ExtensionURLPatternListPolicyHandler::ExtensionURLPatternListPolicyHandler(
@@ -287,6 +287,7 @@ void ExtensionURLPatternListPolicyHandler::ApplyPolicySettings(
     prefs->SetValue(pref_path_, value->Clone());
   }
 }
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 // ExtensionSettingsPolicyHandler implementation  ------------------------------
 
@@ -319,7 +320,7 @@ void ExtensionSettingsPolicyHandler::SanitizePolicySettings(
     DCHECK(policy.is_dict());
 
     // Extracts sub dictionary.
-    const base::DictValue& sub_dict = policy.GetDict();
+    const base::Value::Dict& sub_dict = policy.GetDict();
 
     const std::string* installation_mode =
         sub_dict.FindString(schema_constants::kInstallationMode);
@@ -358,7 +359,7 @@ void ExtensionSettingsPolicyHandler::SanitizePolicySettings(
     const int extension_scheme_mask =
         URLPattern::GetValidSchemeMaskForExtensions();
     for (const char* key : host_keys) {
-      const base::ListValue* unparsed_urls = sub_dict.FindList(key);
+      const base::Value::List* unparsed_urls = sub_dict.FindList(key);
       if (unparsed_urls != nullptr) {
         for (const auto& url_value : *unparsed_urls) {
           const std::string& unparsed_url = url_value.GetString();
@@ -394,7 +395,7 @@ void ExtensionSettingsPolicyHandler::SanitizePolicySettings(
       }
     }
 
-    const base::ListValue* runtime_blocked_hosts =
+    const base::Value::List* runtime_blocked_hosts =
         sub_dict.FindList(schema_constants::kPolicyBlockedHosts);
     if (runtime_blocked_hosts != nullptr &&
         runtime_blocked_hosts->size() >
@@ -409,7 +410,7 @@ void ExtensionSettingsPolicyHandler::SanitizePolicySettings(
       }
     }
 
-    const base::ListValue* runtime_allowed_hosts =
+    const base::Value::List* runtime_allowed_hosts =
         sub_dict.FindList(schema_constants::kPolicyAllowedHosts);
     if (runtime_allowed_hosts != nullptr &&
         runtime_allowed_hosts->size() >

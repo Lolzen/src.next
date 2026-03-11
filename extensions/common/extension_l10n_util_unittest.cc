@@ -6,13 +6,14 @@
 
 #include <memory>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/json/json_reader.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension_paths.h"
@@ -22,8 +23,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/zlib/google/compression_utils.h"
 #include "ui/base/l10n/l10n_util.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using extension_l10n_util::GzippedMessagesPermission;
 
@@ -46,12 +45,12 @@ TEST(ExtensionL10nUtil, ValidateLocalesWithBadLocale) {
   std::string data = "{ \"name\":";
   ASSERT_TRUE(base::WriteFile(messages_file, data));
 
-  auto manifest = base::DictValue().Set(keys::kDefaultLocale, "en");
-  std::u16string error;
+  auto manifest = base::Value::Dict().Set(keys::kDefaultLocale, "en");
+  std::string error;
   EXPECT_FALSE(extension_l10n_util::ValidateExtensionLocales(temp.GetPath(),
                                                              manifest, &error));
   EXPECT_THAT(
-      base::UTF16ToUTF8(error),
+      error,
       testing::HasSubstr(base::UTF16ToUTF8(messages_file.LossyDisplayName())));
 }
 
@@ -97,26 +96,33 @@ TEST(ExtensionL10nUtil, ValidateLocalesWithErroneousLocalizations) {
   const std::string fr_data = R"({ "name": { } })";
   ASSERT_TRUE(base::WriteFile(fr_messages_file, fr_data));
 
-  const auto manifest = base::DictValue().Set(keys::kDefaultLocale, "en");
-  std::u16string error;
+  const auto manifest = base::Value::Dict().Set(keys::kDefaultLocale, "en");
+  std::string error;
   EXPECT_FALSE(extension_l10n_util::ValidateExtensionLocales(temp.GetPath(),
                                                              manifest, &error));
-  EXPECT_FALSE(error.contains(sr_messages_file.LossyDisplayName()));
-  EXPECT_THAT(base::UTF16ToUTF8(error),
-              testing::HasSubstr(ErrorUtils::FormatErrorMessage(
-                  errors::kLocalesInvalidLocale,
-                  base::UTF16ToUTF8(de_messages_file.LossyDisplayName()),
-                  "Variable $VAR$ used but not defined.")));
-  EXPECT_THAT(base::UTF16ToUTF8(error),
-              testing::HasSubstr(ErrorUtils::FormatErrorMessage(
-                  errors::kLocalesInvalidLocale,
-                  base::UTF16ToUTF8(es_messages_file.LossyDisplayName()),
-                  "expected value at line 1 column 24")));
-  EXPECT_THAT(base::UTF16ToUTF8(error),
-              testing::HasSubstr(ErrorUtils::FormatErrorMessage(
-                  errors::kLocalesInvalidLocale,
-                  base::UTF16ToUTF8(fr_messages_file.LossyDisplayName()),
-                  "There is no \"message\" element for key name.")));
+  EXPECT_FALSE(base::Contains(
+      error, base::UTF16ToUTF8(sr_messages_file.LossyDisplayName())));
+  EXPECT_THAT(error, testing::HasSubstr(ErrorUtils::FormatErrorMessage(
+                         errors::kLocalesInvalidLocale,
+                         base::UTF16ToUTF8(de_messages_file.LossyDisplayName()),
+                         "Variable $VAR$ used but not defined.")));
+  if (base::JSONReader::UsingRust()) {
+    EXPECT_THAT(error,
+                testing::HasSubstr(ErrorUtils::FormatErrorMessage(
+                    errors::kLocalesInvalidLocale,
+                    base::UTF16ToUTF8(es_messages_file.LossyDisplayName()),
+                    "expected value at line 1 column 24")));
+  } else {
+    EXPECT_THAT(error,
+                testing::HasSubstr(ErrorUtils::FormatErrorMessage(
+                    errors::kLocalesInvalidLocale,
+                    base::UTF16ToUTF8(es_messages_file.LossyDisplayName()),
+                    "Line: 1, column: 24, Unexpected token.")));
+  }
+  EXPECT_THAT(error, testing::HasSubstr(ErrorUtils::FormatErrorMessage(
+                         errors::kLocalesInvalidLocale,
+                         base::UTF16ToUTF8(fr_messages_file.LossyDisplayName()),
+                         "There is no \"message\" element for key name.")));
 }
 
 TEST(ExtensionL10nUtil, GetValidLocalesEmptyLocaleFolder) {
@@ -170,8 +176,8 @@ TEST(ExtensionL10nUtil, GetValidLocalesWithUnsupportedLocale) {
   EXPECT_TRUE(extension_l10n_util::GetValidLocales(src_path, &locales, &error));
 
   EXPECT_FALSE(locales.empty());
-  EXPECT_TRUE(locales.contains("sr"));
-  EXPECT_FALSE(locales.contains("xxx_yyy"));
+  EXPECT_TRUE(base::Contains(locales, "sr"));
+  EXPECT_FALSE(base::Contains(locales, "xxx_yyy"));
 }
 
 TEST(ExtensionL10nUtil, GetValidLocalesWithValidLocalesAndMessagesFile) {
@@ -185,9 +191,9 @@ TEST(ExtensionL10nUtil, GetValidLocalesWithValidLocalesAndMessagesFile) {
   EXPECT_TRUE(
       extension_l10n_util::GetValidLocales(install_dir, &locales, &error));
   EXPECT_EQ(3U, locales.size());
-  EXPECT_TRUE(locales.contains("sr"));
-  EXPECT_TRUE(locales.contains("en"));
-  EXPECT_TRUE(locales.contains("en_US"));
+  EXPECT_TRUE(base::Contains(locales, "sr"));
+  EXPECT_TRUE(base::Contains(locales, "en"));
+  EXPECT_TRUE(base::Contains(locales, "en_US"));
 }
 
 TEST(ExtensionL10nUtil, LoadMessageCatalogsValidFallback) {
@@ -271,11 +277,19 @@ TEST(ExtensionL10nUtil, LoadMessageCatalogsBadJSONFormat) {
   std::string error;
   EXPECT_FALSE(extension_l10n_util::LoadMessageCatalogs(
       src_path, "en_US", GzippedMessagesPermission::kDisallow, &error));
-  EXPECT_NE(std::string::npos,
-            error.find(ErrorUtils::FormatErrorMessage(
-                errors::kLocalesInvalidLocale,
-                base::UTF16ToUTF8(messages_file.LossyDisplayName()),
-                "EOF while parsing a value at line 1 column 9")));
+  if (base::JSONReader::UsingRust()) {
+    EXPECT_NE(std::string::npos,
+              error.find(ErrorUtils::FormatErrorMessage(
+                  errors::kLocalesInvalidLocale,
+                  base::UTF16ToUTF8(messages_file.LossyDisplayName()),
+                  "EOF while parsing a value at line 1 column 9")));
+  } else {
+    EXPECT_NE(std::string::npos,
+              error.find(ErrorUtils::FormatErrorMessage(
+                  errors::kLocalesInvalidLocale,
+                  base::UTF16ToUTF8(messages_file.LossyDisplayName()),
+                  "Line: 1, column: 10,")));
+  }
 }
 
 TEST(ExtensionL10nUtil, LoadMessageCatalogsDuplicateKeys) {
@@ -366,51 +380,51 @@ TEST(ExtensionL10nUtil, LoadMessageCatalogsCompressed) {
 
 // Caller owns the returned object.
 MessageBundle* CreateManifestBundle() {
-  base::DictValue catalog;
+  base::Value::Dict catalog;
 
-  base::DictValue name_tree;
+  base::Value::Dict name_tree;
   name_tree.Set("message", "name");
   catalog.Set("name", std::move(name_tree));
 
-  base::DictValue short_name_tree;
+  base::Value::Dict short_name_tree;
   short_name_tree.Set("message", "short_name");
   catalog.Set("short_name", std::move(short_name_tree));
 
-  base::DictValue description_tree;
+  base::Value::Dict description_tree;
   description_tree.Set("message", "description");
   catalog.Set("description", std::move(description_tree));
 
-  base::DictValue action_title_tree;
+  base::Value::Dict action_title_tree;
   action_title_tree.Set("message", "action title");
   catalog.Set("title", std::move(action_title_tree));
 
-  base::DictValue omnibox_keyword_tree;
+  base::Value::Dict omnibox_keyword_tree;
   omnibox_keyword_tree.Set("message", "omnibox keyword");
   catalog.Set("omnibox_keyword", std::move(omnibox_keyword_tree));
 
-  base::DictValue file_handler_title_tree;
+  base::Value::Dict file_handler_title_tree;
   file_handler_title_tree.Set("message", "file handler title");
   catalog.Set("file_handler_title", std::move(file_handler_title_tree));
 
-  base::DictValue launch_local_path_tree;
+  base::Value::Dict launch_local_path_tree;
   launch_local_path_tree.Set("message", "main.html");
   catalog.Set("launch_local_path", std::move(launch_local_path_tree));
 
-  base::DictValue launch_web_url_tree;
+  base::Value::Dict launch_web_url_tree;
   launch_web_url_tree.Set("message", "http://www.google.com/");
   catalog.Set("launch_web_url", std::move(launch_web_url_tree));
 
-  base::DictValue first_command_description_tree;
+  base::Value::Dict first_command_description_tree;
   first_command_description_tree.Set("message", "first command");
   catalog.Set("first_command_description",
               std::move(first_command_description_tree));
 
-  base::DictValue second_command_description_tree;
+  base::Value::Dict second_command_description_tree;
   second_command_description_tree.Set("message", "second command");
   catalog.Set("second_command_description",
               std::move(second_command_description_tree));
 
-  base::DictValue url_country_tree;
+  base::Value::Dict url_country_tree;
   url_country_tree.Set("message", "de");
   catalog.Set("country", std::move(url_country_tree));
 
@@ -426,7 +440,7 @@ MessageBundle* CreateManifestBundle() {
 }
 
 TEST(ExtensionL10nUtil, LocalizeEmptyManifest) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   std::string error;
   std::unique_ptr<MessageBundle> messages(CreateManifestBundle());
 
@@ -436,7 +450,7 @@ TEST(ExtensionL10nUtil, LocalizeEmptyManifest) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithoutNameMsgAndEmptyDescription) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kName, "no __MSG");
   std::string error;
   std::unique_ptr<MessageBundle> messages(CreateManifestBundle());
@@ -454,7 +468,7 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithoutNameMsgAndEmptyDescription) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithNameMsgAndEmptyDescription) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kName, "__MSG_name__");
   std::string error;
   std::unique_ptr<MessageBundle> messages(CreateManifestBundle());
@@ -472,7 +486,7 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithNameMsgAndEmptyDescription) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithLocalLaunchURL) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kName, "name");
   manifest.SetByDottedPath(keys::kLaunchLocalPath, "__MSG_launch_local_path__");
   std::string error;
@@ -490,7 +504,7 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithLocalLaunchURL) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithHostedLaunchURL) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.SetByDottedPath(keys::kName, "name");
   manifest.SetByDottedPath(keys::kLaunchWebURL, "__MSG_launch_web_url__");
   std::string error;
@@ -508,7 +522,7 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithHostedLaunchURL) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithBadNameMsg) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kName, "__MSG_name_is_bad__");
   manifest.Set(keys::kDescription, "__MSG_description__");
   std::string error;
@@ -529,7 +543,7 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithBadNameMsg) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithNameDescriptionDefaultTitleMsgs) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kName, "__MSG_name__");
   manifest.Set(keys::kDescription, "__MSG_description__");
   std::string action_title(keys::kBrowserAction);
@@ -559,7 +573,7 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithNameDescriptionDefaultTitleMsgs) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithNameDescriptionOmniboxMsgs) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kName, "__MSG_name__");
   manifest.Set(keys::kDescription, "__MSG_description__");
   manifest.SetByDottedPath(keys::kOmniboxKeyword, "__MSG_omnibox_keyword__");
@@ -586,13 +600,13 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithNameDescriptionOmniboxMsgs) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithNameDescriptionFileHandlerTitle) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kName, "__MSG_name__");
   manifest.Set(keys::kDescription, "__MSG_description__");
 
-  base::DictValue handler;
+  base::Value::Dict handler;
   handler.Set(keys::kActionDefaultTitle, "__MSG_file_handler_title__");
-  base::ListValue handlers;
+  base::Value::List handlers;
   handlers.Append(std::move(handler));
   manifest.Set(keys::kFileBrowserHandlers, std::move(handlers));
 
@@ -610,10 +624,11 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithNameDescriptionFileHandlerTitle) {
   ASSERT_TRUE(result);
   EXPECT_EQ("description", *result);
 
-  base::ListValue* handlers_raw = manifest.FindList(keys::kFileBrowserHandlers);
+  base::Value::List* handlers_raw =
+      manifest.FindList(keys::kFileBrowserHandlers);
   ASSERT_TRUE(handlers_raw);
   ASSERT_EQ(handlers_raw->size(), 1u);
-  base::DictValue* handler_raw = (*handlers_raw)[0].GetIfDict();
+  base::Value::Dict* handler_raw = (*handlers_raw)[0].GetIfDict();
   result = handler_raw->FindString(keys::kActionDefaultTitle);
   ASSERT_TRUE(result);
   EXPECT_EQ("file handler title", *result);
@@ -622,16 +637,16 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithNameDescriptionFileHandlerTitle) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithNameDescriptionCommandDescription) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kName, "__MSG_name__");
   manifest.Set(keys::kDescription, "__MSG_description__");
-  base::DictValue commands;
+  base::Value::Dict commands;
 
-  base::DictValue first_command;
+  base::Value::Dict first_command;
   first_command.Set(keys::kDescription, "__MSG_first_command_description__");
   commands.Set("first_command", std::move(first_command));
 
-  base::DictValue second_command;
+  base::Value::Dict second_command;
   second_command.Set(keys::kDescription, "__MSG_second_command_description__");
   commands.Set("second_command", std::move(second_command));
   manifest.Set(keys::kCommands, std::move(commands));
@@ -664,7 +679,7 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithNameDescriptionCommandDescription) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithShortName) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kName, "extension name");
   manifest.Set(keys::kShortName, "__MSG_short_name__");
 
@@ -681,7 +696,7 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithShortName) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithBadShortName) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kName, "extension name");
   manifest.Set(keys::kShortName, "__MSG_short_name_bad__");
 
@@ -698,11 +713,11 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithBadShortName) {
 }
 
 TEST(ExtensionL10nUtil, LocalizeManifestWithSearchProviderMsgs) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kName, "__MSG_name__");
   manifest.Set(keys::kDescription, "__MSG_description__");
 
-  base::DictValue search_provider;
+  base::Value::Dict search_provider;
   search_provider.Set("name", "__MSG_country__");
   search_provider.Set("keyword", "__MSG_omnibox_keyword__");
   search_provider.Set("search_url", "http://www.foo.__MSG_country__");
@@ -714,7 +729,7 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithSearchProviderMsgs) {
   manifest.SetByDottedPath(keys::kOverrideHomepage,
                            "http://www.foo.__MSG_country__");
 
-  base::ListValue startup_pages;
+  base::Value::List startup_pages;
   startup_pages.Append("http://www.foo.__MSG_country__");
   manifest.SetByDottedPath(keys::kOverrideStartupPage,
                            std::move(startup_pages));
@@ -759,7 +774,7 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithSearchProviderMsgs) {
   ASSERT_TRUE(result);
   EXPECT_EQ("http://www.foo.de", *result);
 
-  base::ListValue* startup_pages_raw =
+  base::Value::List* startup_pages_raw =
       manifest.FindListByDottedPath(keys::kOverrideStartupPage);
   ASSERT_TRUE(startup_pages_raw);
   ASSERT_FALSE(startup_pages_raw->empty());
@@ -771,13 +786,13 @@ TEST(ExtensionL10nUtil, LocalizeManifestWithSearchProviderMsgs) {
 
 // Tests that we don't relocalize with default and current locales missing.
 TEST(ExtensionL10nUtil, ShouldRelocalizeManifestEmptyManifest) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   EXPECT_FALSE(extension_l10n_util::ShouldRelocalizeManifest(manifest));
 }
 
 // Tests that we relocalize without a current locale.
 TEST(ExtensionL10nUtil, ShouldRelocalizeManifestWithDefaultLocale) {
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kDefaultLocale, "en_US");
   EXPECT_TRUE(extension_l10n_util::ShouldRelocalizeManifest(manifest));
 }
@@ -785,7 +800,7 @@ TEST(ExtensionL10nUtil, ShouldRelocalizeManifestWithDefaultLocale) {
 // Tests that we don't relocalize without a default locale.
 TEST(ExtensionL10nUtil, ShouldRelocalizeManifestWithCurrentLocale) {
   extension_l10n_util::ScopedLocaleForTest scoped_locale("en-US");
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kCurrentLocale, "en_US");
   EXPECT_FALSE(extension_l10n_util::ShouldRelocalizeManifest(manifest));
 }
@@ -793,7 +808,7 @@ TEST(ExtensionL10nUtil, ShouldRelocalizeManifestWithCurrentLocale) {
 // Tests that we don't relocalize with same current_locale as system locale.
 TEST(ExtensionL10nUtil, ShouldRelocalizeManifestSameCurrentLocale) {
   extension_l10n_util::ScopedLocaleForTest scoped_locale("en-US");
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kDefaultLocale, "en_US");
   manifest.Set(keys::kCurrentLocale, "en_US");
   EXPECT_FALSE(extension_l10n_util::ShouldRelocalizeManifest(manifest));
@@ -802,7 +817,7 @@ TEST(ExtensionL10nUtil, ShouldRelocalizeManifestSameCurrentLocale) {
 // Tests that we relocalize with a different current_locale.
 TEST(ExtensionL10nUtil, ShouldRelocalizeManifestDifferentCurrentLocale) {
   extension_l10n_util::ScopedLocaleForTest scoped_locale("en-US");
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kDefaultLocale, "en_US");
   manifest.Set(keys::kCurrentLocale, "sr");
   EXPECT_TRUE(extension_l10n_util::ShouldRelocalizeManifest(manifest));
@@ -812,7 +827,7 @@ TEST(ExtensionL10nUtil, ShouldRelocalizeManifestDifferentCurrentLocale) {
 // locale.
 TEST(ExtensionL10nUtil, ShouldRelocalizeManifestSameCurrentLocaleAsPreferred) {
   extension_l10n_util::ScopedLocaleForTest scoped_locale("en-GB", "en-CA");
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kDefaultLocale, "en_US");
   manifest.Set(keys::kCurrentLocale, "en_CA");
 
@@ -825,7 +840,7 @@ TEST(ExtensionL10nUtil, ShouldRelocalizeManifestSameCurrentLocaleAsPreferred) {
 TEST(ExtensionL10nUtil,
      ShouldRelocalizeManifestDifferentCurrentLocaleThanPreferred) {
   extension_l10n_util::ScopedLocaleForTest scoped_locale("en-GB", "en-CA");
-  base::DictValue manifest;
+  base::Value::Dict manifest;
   manifest.Set(keys::kDefaultLocale, "en_US");
   manifest.Set(keys::kCurrentLocale, "en_GB");
 

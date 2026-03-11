@@ -111,7 +111,8 @@ String GenerateBaseTagDeclaration(const String& base_target) {
   // TODO(yosin) We should call |FrameSerializer::baseTagDeclarationOf()|.
   if (base_target.empty())
     return String("<base href=\".\">");
-  return StrCat({"<base href=\".\" target=\"", base_target, "\">"});
+  String base_string = "<base href=\".\" target=\"" + base_target + "\">";
+  return base_string;
 }
 
 }  // namespace
@@ -123,7 +124,7 @@ static const unsigned kDataBufferCapacity = 65536;
 
 WebFrameSerializerImpl::SerializeDomParam::SerializeDomParam(
     const KURL& url,
-    const TextEncoding& text_encoding,
+    const WTF::TextEncoding& text_encoding,
     Document* document)
     : url(url),
       text_encoding(text_encoding),
@@ -178,7 +179,7 @@ String WebFrameSerializerImpl::PreActionBeforeSerializeOpenTag(
       if (xml_encoding.empty())
         xml_encoding = param->document->EncodingName();
       if (xml_encoding.empty())
-        xml_encoding = Utf8Encoding().GetName();
+        xml_encoding = UTF8Encoding().GetName();
       result.Append("<?xml version=\"");
       result.Append(param->document->xmlVersion());
       result.Append("\" encoding=\"");
@@ -283,8 +284,8 @@ void WebFrameSerializerImpl::EncodeAndFlushBuffer(
   String content = data_buffer_.ToString();
   data_buffer_.Clear();
 
-  std::string encoded_content = param->text_encoding.Encode(
-      content, UnencodableHandling::kEntitiesForUnencodables);
+  std::string encoded_content =
+      param->text_encoding.Encode(content, WTF::kEntitiesForUnencodables);
 
   // Send result to the client.
   client_->DidSerializeDataForFrame(base::ToVector(encoded_content), status);
@@ -517,8 +518,8 @@ bool WebFrameSerializerImpl::Serialize() {
   if (url.IsValid()) {
     did_serialization = true;
 
-    const TextEncoding& text_encoding =
-        document->Encoding().IsValid() ? document->Encoding() : Utf8Encoding();
+    const WTF::TextEncoding& text_encoding =
+        document->Encoding().IsValid() ? document->Encoding() : UTF8Encoding();
     if (text_encoding.IsNonByteBasedEncoding()) {
       const UChar kByteOrderMark = 0xFEFF;
       data_buffer_.Append(kByteOrderMark);

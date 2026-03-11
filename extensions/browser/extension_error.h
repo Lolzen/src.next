@@ -34,7 +34,7 @@ class ExtensionError {
 
   virtual std::string GetDebugString() const;
 
-  // Return true if this error and `rhs` are considered equal, and should be
+  // Return true if this error and |rhs| are considered equal, and should be
   // grouped together.
   bool IsEqual(const ExtensionError* rhs) const;
 
@@ -117,8 +117,7 @@ class RuntimeError : public ExtensionError {
                const GURL& context_url,
                logging::LogSeverity level,
                int render_frame_id,
-               int render_process_id,
-               bool is_from_service_worker = false);
+               int render_process_id);
 
   RuntimeError(const RuntimeError&) = delete;
   RuntimeError& operator=(const RuntimeError&) = delete;
@@ -131,7 +130,6 @@ class RuntimeError : public ExtensionError {
   const StackTrace& stack_trace() const { return stack_trace_; }
   int render_frame_id() const { return render_frame_id_; }
   int render_process_id() const { return render_process_id_; }
-  bool is_from_service_worker() const { return is_from_service_worker_; }
 
  private:
   bool IsEqualImpl(const ExtensionError* rhs) const override;
@@ -148,7 +146,6 @@ class RuntimeError : public ExtensionError {
   // inspect the frame later, if possible.
   int render_frame_id_;
   int render_process_id_;
-  bool is_from_service_worker_ = false;
 };
 
 class InternalError : public ExtensionError {

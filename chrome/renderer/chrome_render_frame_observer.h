@@ -5,17 +5,13 @@
 #ifndef CHROME_RENDERER_CHROME_RENDER_FRAME_OBSERVER_H_
 #define CHROME_RENDERER_CHROME_RENDER_FRAME_OBSERVER_H_
 
-#include <memory>
 #include <string>
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "build/build_config.h"
-#include "chrome/common/actor.mojom.h"
-#include "chrome/common/actor/task_id.h"  // nogncheck
 #include "chrome/common/buildflags.h"
 #include "chrome/common/chrome_render_frame.mojom.h"
-#include "chrome/renderer/actor/tool_executor.h"
 #include "components/safe_browsing/buildflags.h"
 #include "content/public/renderer/render_frame_observer.h"
 #include "mojo/public/cpp/bindings/associated_receiver_set.h"
@@ -23,12 +19,11 @@
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 
-class SkBitmap;
+#if BUILDFLAG(ENABLE_GLIC)
+#include "chrome/common/actor.mojom.h"
+#endif
 
-namespace actor {
-class Journal;
-class PageStabilityMonitor;
-}  // namespace actor
+class SkBitmap;
 
 namespace gfx {
 class Size;
@@ -41,7 +36,7 @@ class PageTextAgent;
 namespace safe_browsing {
 class PhishingClassifierDelegate;
 class PhishingImageEmbedderDelegate;
-}  // namespace safe_browsing
+}
 
 namespace translate {
 class TranslateAgent;
@@ -89,8 +84,7 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
       mojo::ScopedInterfaceEndpointHandle* handle) override;
   void ReadyToCommitNavigation(
       blink::WebDocumentLoader* document_loader) override;
-  void DidSetPageLifecycleState(
-      blink::BFCacheStateChange bfcache_change) override;
+  void DidSetPageLifecycleState(bool restoring_from_bfcache) override;
   void DidFinishLoad() override;
   void DidCreateNewDocument() override;
   void DidCommitProvisionalLoad(ui::PageTransition transition) override;
@@ -123,32 +117,13 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
 #endif
   void GetMediaFeedURL(GetMediaFeedURLCallback callback) override;
   void LoadBlockedPlugins(const std::string& identifier) override;
+  void SetSupportsDraggableRegions(bool supports_draggable_regions) override;
   void SetShouldDeferMediaLoad(bool should_defer) override;
 
-  // TODO(crbug.com/471252374): Move actor mojom methods to its own interface.
-  void InitializeTool(actor::mojom::ToolInvocationPtr request,
-                      InitializeToolCallback callback) override;
-  void ExecuteTool(const actor::TaskId& task_id,
-                   ExecuteToolCallback callback) override;
+#if BUILDFLAG(ENABLE_GLIC)
   void InvokeTool(actor::mojom::ToolInvocationPtr request,
                   InvokeToolCallback callback) override;
-  void CancelTool(const actor::TaskId& task_id) override;
-  void StartActorJournal(
-      mojo::PendingAssociatedRemote<actor::mojom::JournalClient> client)
-      override;
-  void GetCrossDocumentScriptToolResult(
-      GetCrossDocumentScriptToolResultCallback callback) override;
-  // Multiple calls will clobber a PageStabilityMonitor previously created and
-  // it's the caller's responsibility to ensure the monitor is unneeded before
-  // creating a new one.
-  //
-  // `task_id` identifies the ID of the active actor tool.
-  // `supports_paint_stability` indicates whether to include paint stability in
-  // page stability heuristics.
-  void CreatePageStabilityMonitor(
-      mojo::PendingReceiver<actor::mojom::PageStabilityMonitor> monitor,
-      const actor::TaskId& task_id,
-      bool supports_paint_stability) override;
+#endif
 
   // Initialize a |phishing_classifier_delegate_|.
   void SetClientSidePhishingDetection();
@@ -181,7 +156,7 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
                             const gfx::Size& requested_image_max_size);
 
   // Check if the image need to encode to fit requested image format.
-  static bool NeedsEncodeImage(const std::string& mime_type,
+  static bool NeedsEncodeImage(const std::string& image_extension,
                                chrome::mojom::ImageFormat image_format);
 
   // Check if the image is an animated Webp image by looking for animation
@@ -198,8 +173,6 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
       phishing_image_embedder_ = nullptr;
 #endif
 
-  std::unique_ptr<actor::Journal> actor_journal_;
-
   // Owned by ChromeContentRendererClient and outlive us.
   raw_ptr<web_cache::WebCacheImpl> web_cache_impl_;
 
@@ -207,9 +180,6 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
   // Save the JavaScript to preload if ExecuteWebUIJavaScript is invoked.
   std::vector<std::u16string> webui_javascript_;
 #endif
-
-  std::unique_ptr<actor::ToolExecutor> tool_executor_;
-  std::unique_ptr<actor::PageStabilityMonitor> page_stability_monitor_;
 
   mojo::AssociatedReceiverSet<chrome::mojom::ChromeRenderFrame> receivers_;
 

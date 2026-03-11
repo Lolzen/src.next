@@ -29,48 +29,19 @@ public class SysUtils {
     // A device reporting strictly more total memory in megabytes cannot be considered 'low-end'.
     // Keep in sync with LOW_MEMORY_DEVICE_THRESHOLD_MB in C++.
     // LINT.IfChange
-    public static final int LOW_MEMORY_DEVICE_THRESHOLD_MB = 1024;
+    private static final int LOW_MEMORY_DEVICE_THRESHOLD_MB = 1024;
     // LINT.ThenChange(//base/features.cc)
     private static final String TAG = "SysUtils";
 
     private static @Nullable Boolean sLowEndDevice;
     private static @Nullable Integer sAmountOfPhysicalMemoryKB;
-    private static @Nullable Boolean sHasCameraForTesting;
-    private static @Nullable Boolean sIsCurrentlyLowMemoryForTesting;
-    private static int sLowMemoryThresholdMB = LOW_MEMORY_DEVICE_THRESHOLD_MB;
 
     private SysUtils() {}
 
-    /** Overrides the value of {@link #isLowEndDevice()} for testing. */
-    public static void setIsLowEndDeviceForTesting(boolean isLowEndDevice) {
-        sLowEndDevice = isLowEndDevice;
-        ResettersForTesting.register(() -> sLowEndDevice = null);
-    }
-
-    /** Overrides the value of {@link #amountOfPhysicalMemoryKB()} for testing. */
-    public static void setAmountOfPhysicalMemoryKbForTesting(int value) {
-        Integer prev = sAmountOfPhysicalMemoryKB;
-        sAmountOfPhysicalMemoryKB = value;
-        ResettersForTesting.register(() -> sAmountOfPhysicalMemoryKB = prev);
-    }
-
-    /** Overrides the value of {@link #hasCamera(Context)} for testing. */
-    public static void setHasCameraForTesting(@Nullable Boolean hasCamera) {
-        sHasCameraForTesting = hasCamera;
-        ResettersForTesting.register(() -> sHasCameraForTesting = null);
-    }
-
-    /** Overrides the value of {@link #isCurrentlyLowMemory()} for testing. */
-    public static void setIsCurrentlyLowMemoryForTesting(boolean isCurrentlyLowMemory) {
-        sIsCurrentlyLowMemoryForTesting = isCurrentlyLowMemory;
-        ResettersForTesting.register(() -> sIsCurrentlyLowMemoryForTesting = null);
-    }
-
     /**
      * Return the amount of physical memory on this device in kilobytes.
-     *
-     * @return Amount of physical memory in kilobytes, or 0 if there was an error trying to access
-     *     the information.
+     * @return Amount of physical memory in kilobytes, or 0 if there was
+     *         an error trying to access the information.
      */
     private static int detectAmountOfPhysicalMemoryKB() {
         // Extract total memory RAM size by parsing /proc/meminfo, note that
@@ -118,12 +89,8 @@ public class SysUtils {
      * @return Whether or not this device should be considered a low end device.
      */
     public static boolean isLowEndDevice() {
-        if (sLowEndDevice == null) {
-            // Do not cache in tests since command-line flags can change.
-            if (BuildConfig.IS_FOR_TEST) {
-                return detectLowEndDevice();
-            }
-
+        // Do not cache in tests since command-line flags can change.
+        if (sLowEndDevice == null || BuildConfig.IS_FOR_TEST) {
             sLowEndDevice = detectLowEndDevice();
         }
         return sLowEndDevice;
@@ -142,10 +109,8 @@ public class SysUtils {
     /**
      * @return Whether or not the system has low available memory.
      */
+    @CalledByNative
     public static boolean isCurrentlyLowMemory() {
-        if (sIsCurrentlyLowMemoryForTesting != null) {
-            return sIsCurrentlyLowMemoryForTesting;
-        }
         ActivityManager am =
                 (ActivityManager)
                         ContextUtils.getApplicationContext()
@@ -163,9 +128,6 @@ public class SysUtils {
     }
 
     public static boolean hasCamera(final Context context) {
-        if (sHasCameraForTesting != null) {
-            return sHasCameraForTesting;
-        }
         final PackageManager pm = context.getPackageManager();
         return pm.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY);
     }
@@ -187,20 +149,11 @@ public class SysUtils {
         if (physicalMemoryKb <= 0) {
             isLowEnd = false;
         } else {
-            isLowEnd = physicalMemoryKb / 1024 <= sLowMemoryThresholdMB;
+            isLowEnd = physicalMemoryKb / 1024 <= LOW_MEMORY_DEVICE_THRESHOLD_MB;
         }
 
         return isLowEnd;
         // LINT.ThenChange(//base/system/sys_info.cc)
-    }
-
-    public static void setLowMemoryDeviceThresholdMb(int thresholdMb) {
-        sLowMemoryThresholdMB = thresholdMb;
-    }
-
-    @CalledByNative
-    private static int getLowMemoryDeviceThresholdMb() {
-        return sLowMemoryThresholdMB;
     }
 
     /**

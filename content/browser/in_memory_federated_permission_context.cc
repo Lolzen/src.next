@@ -7,12 +7,11 @@
 #include <algorithm>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
 #include "content/browser/webid/flags.h"
-#include "content/public/browser/webid/constants.h"
 #include "content/public/common/content_features.h"
-#include "content/public/common/content_switches.h"
 #include "mojo/public/cpp/bindings/message.h"
 #include "third_party/blink/public/common/webid/login_status_account.h"
 #include "third_party/blink/public/common/webid/login_status_options.h"
@@ -51,13 +50,12 @@ void InMemoryFederatedPermissionContext::RemoveEmbargoAndResetCounts(
   embargoed_origins_.erase(relying_party_embedder);
 }
 
+void InMemoryFederatedPermissionContext::RecordIgnoreAndEmbargo(
+    const url::Origin& relying_party_embedder) {}
+
 bool InMemoryFederatedPermissionContext::ShouldCompleteRequestImmediately()
     const {
-  const base::CommandLine* current_command_line =
-      base::CommandLine::ForCurrentProcess();
-  return current_command_line->HasSwitch("run-web-tests") ||
-         current_command_line->HasSwitch(switches::kBrowserTest) ||
-         current_command_line->HasSwitch(switches::kTestType);
+  return base::CommandLine::ForCurrentProcess()->HasSwitch("run-web-tests");
 }
 
 bool InMemoryFederatedPermissionContext::HasThirdPartyCookiesAccess(
@@ -92,11 +90,6 @@ bool InMemoryFederatedPermissionContext::IsAutoReauthnSettingEnabled() {
 
 bool InMemoryFederatedPermissionContext::IsAutoReauthnEmbargoed(
     const url::Origin& relying_party_embedder) {
-  return false;
-}
-
-bool InMemoryFederatedPermissionContext::IsAutoReauthnDisabledByEmbedder(
-    content::WebContents* web_contents) {
   return false;
 }
 
@@ -249,9 +242,9 @@ std::optional<bool> InMemoryFederatedPermissionContext::GetIdpSigninStatus(
   }
 }
 
-base::ListValue InMemoryFederatedPermissionContext::GetAccounts(
+base::Value::List InMemoryFederatedPermissionContext::GetAccounts(
     const url::Origin& idp_origin) {
-  base::ListValue result;
+  base::Value::List result;
 
   auto options = idp_login_status_options_.find(idp_origin.Serialize());
   if (options == idp_login_status_options_.end()) {
@@ -259,19 +252,17 @@ base::ListValue InMemoryFederatedPermissionContext::GetAccounts(
   }
 
   for (const auto& account : options->second.accounts) {
-    base::DictValue new_account =
-        base::DictValue()
-            .Set(webid::kAccountIdKey, account.id)
-            .Set(webid::kAccountEmailKey, account.email)
-            .Set(webid::kAccountNameKey, account.name);
+    base::Value::Dict new_account = base::Value::Dict()
+                                        .Set("id", account.id)
+                                        .Set("email", account.email)
+                                        .Set("name", account.name);
 
     if (account.given_name.has_value()) {
-      new_account.Set(webid::kAccountGivenNameKey, account.given_name.value());
+      new_account.Set("given_name", account.given_name.value());
     }
 
     if (account.picture.has_value()) {
-      new_account.Set(webid::kAccountPictureKey,
-                      account.picture.value().spec());
+      new_account.Set("picture", account.picture.value().spec());
     }
     result.Append(std::move(new_account));
   }
@@ -294,7 +285,7 @@ void InMemoryFederatedPermissionContext::SetIdpSigninStatus(
     observer.OnIdpSigninStatusReceived(idp_origin, idp_signin_status);
   }
 
-  if (options && webid::IsLightweightModeEnabled()) {
+  if (options && IsFedCmLightweightModeEnabled()) {
     if (idp_signin_status) {
       idp_login_status_options_[idp_origin.Serialize()] = options.value();
     } else {

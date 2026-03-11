@@ -67,11 +67,11 @@ public class TabSwitcherDrawable extends TintedDrawable {
     private int mTabCount;
     private boolean mIncognito;
     private @Nullable String mTextRenderedForTesting;
-    private final Canvas mIconCanvas;
-    private final Bitmap mIconBitmap;
+    private Canvas mIconCanvas;
+    private Bitmap mIconBitmap;
     private boolean mShouldShowNotificationIcon;
-    private final @TabSwitcherDrawableLocation int mTabSwitcherDrawableLocation;
-    private final ObserverList<Observer> mTabSwitcherDrawableObservers = new ObserverList<>();
+    private @TabSwitcherDrawableLocation int mTabSwitcherDrawableLocation;
+    private ObserverList<Observer> mTabSwitcherDrawableObservers = new ObserverList<>();
 
     /**
      * Creates a {@link TabSwitcherDrawable}.

@@ -37,7 +37,8 @@ class LoadingPredictorExtensionBrowserTest : public ExtensionBrowserTest {
   void AddOptimizationGuidePrediction(GURL main_frame_url,
                                       GURL subresource_url) {
     auto* optimization_guide_keyed_service =
-        OptimizationGuideKeyedServiceFactory::GetForProfile(profile());
+        OptimizationGuideKeyedServiceFactory::GetForProfile(
+            browser()->profile());
     optimization_guide::proto::LoadingPredictorMetadata
         loading_predictor_metadata;
 

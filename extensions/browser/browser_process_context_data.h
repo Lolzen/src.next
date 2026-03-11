@@ -7,7 +7,6 @@
 
 #include <memory>
 
-#include "base/memory/raw_ptr.h"
 #include "extensions/common/process_context_data.h"
 #include "url/origin.h"
 

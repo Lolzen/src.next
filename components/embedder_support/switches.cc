@@ -6,8 +6,14 @@
 
 namespace embedder_support {
 
+// Disable auto-reload of error pages.
+const char kDisableAutoReload[] = "disable-auto-reload";
+
 // Disables pop-up blocking.
 const char kDisablePopupBlocking[] = "disable-popup-blocking";
+
+// Enable auto-reload of error pages.
+const char kEnableAutoReload[] = "enable-auto-reload";
 
 // Enable headless mode.
 const char kHeadless[] = "headless";

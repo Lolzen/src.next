@@ -64,7 +64,6 @@ public final class DownloadInfo {
     @PendingState private final int mPendingState;
     @FailState private final int mFailState;
     private final boolean mShouldPromoteOrigin;
-    private final boolean mAllowAutoOpenAfterCompletion;
 
     private DownloadInfo(Builder builder) {
         mUrl = builder.mUrl == null ? GURL.emptyGURL() : builder.mUrl;
@@ -106,7 +105,6 @@ public final class DownloadInfo {
         mPendingState = builder.mPendingState;
         mFailState = builder.mFailState;
         mShouldPromoteOrigin = builder.mShouldPromoteOrigin;
-        mAllowAutoOpenAfterCompletion = builder.mAllowAutoOpenAfterCompletion;
     }
 
     public GURL getUrl() {
@@ -248,31 +246,25 @@ public final class DownloadInfo {
         return mShouldPromoteOrigin;
     }
 
-    public boolean getAllowAutoOpenAfterCompletion() {
-        return mAllowAutoOpenAfterCompletion;
-    }
-
     /**
      * Helper method to build a {@link DownloadInfo} from an {@link OfflineItem}.
-     *
-     * @param item The {@link OfflineItem} to mimic.
+     * @param item    The {@link OfflineItem} to mimic.
      * @param visuals The {@link OfflineItemVisuals} to mimic.
-     * @return A {@link DownloadInfo} containing the relevant fields from {@code item}.
+     * @return        A {@link DownloadInfo} containing the relevant fields from {@code item}.
      */
-    public static DownloadInfo fromOfflineItem(
-            OfflineItem item, @Nullable OfflineItemVisuals visuals) {
+    public static DownloadInfo fromOfflineItem(OfflineItem item, OfflineItemVisuals visuals) {
         return builderFromOfflineItem(item, visuals).build();
     }
 
     /**
      * Helper method to build a {@link DownloadInfo.Builder} from an {@link OfflineItem}.
-     *
-     * @param item The {@link OfflineItem} to mimic.
+     * @param item    The {@link OfflineItem} to mimic.
      * @param visuals The {@link OfflineItemVisuals} to mimic.
-     * @return A {@link DownloadInfo.Builder} containing the relevant fields from {@code item}.
+     * @return        A {@link DownloadInfo.Builder} containing the relevant fields from
+     *                {@code item}.
      */
     public static DownloadInfo.Builder builderFromOfflineItem(
-            OfflineItem item, @Nullable OfflineItemVisuals visuals) {
+            OfflineItem item, OfflineItemVisuals visuals) {
         int state;
         switch (item.state) {
             case OfflineItemState.COMPLETE:
@@ -323,8 +315,7 @@ public final class DownloadInfo {
                 .setIcon(visuals == null ? null : visuals.icon)
                 .setPendingState(item.pendingState)
                 .setFailState(item.failState)
-                .setShouldPromoteOrigin(item.promoteOrigin)
-                .setAllowAutoOpenAfterCompletion(item.allowAutoOpenAfterCompletion);
+                .setShouldPromoteOrigin(item.promoteOrigin);
     }
 
     /** Helper class for building the DownloadInfo object. */
@@ -363,7 +354,6 @@ public final class DownloadInfo {
         @PendingState private int mPendingState;
         @FailState private int mFailState;
         private boolean mShouldPromoteOrigin;
-        private boolean mAllowAutoOpenAfterCompletion;
 
         public Builder setUrl(@Nullable GURL url) {
             mUrl = url;
@@ -531,11 +521,6 @@ public final class DownloadInfo {
             return this;
         }
 
-        public Builder setAllowAutoOpenAfterCompletion(boolean allowAutoOpenAfterCompletion) {
-            mAllowAutoOpenAfterCompletion = allowAutoOpenAfterCompletion;
-            return this;
-        }
-
         public DownloadInfo build() {
             return new DownloadInfo(this);
         }
@@ -577,9 +562,7 @@ public final class DownloadInfo {
                     .setIcon(downloadInfo.getIcon())
                     .setPendingState(downloadInfo.getPendingState())
                     .setFailState(downloadInfo.getFailState())
-                    .setShouldPromoteOrigin(downloadInfo.getShouldPromoteOrigin())
-                    .setAllowAutoOpenAfterCompletion(
-                            downloadInfo.getAllowAutoOpenAfterCompletion());
+                    .setShouldPromoteOrigin(downloadInfo.getShouldPromoteOrigin());
             return builder;
         }
     }
@@ -607,8 +590,7 @@ public final class DownloadInfo {
             @DownloadDangerType int dangerType,
             boolean isDangerous,
             @FailState int failState,
-            boolean isTransient,
-            boolean allowAutoOpenAfterCompletion) {
+            boolean isTransient) {
         String remappedMimeType = MimeUtils.remapGenericMimeType(mimeType, url.getSpec(), fileName);
 
         Progress progress =
@@ -640,7 +622,6 @@ public final class DownloadInfo {
                 .setUrl(url)
                 .setFailState(failState)
                 .setIsTransient(isTransient)
-                .setAllowAutoOpenAfterCompletion(allowAutoOpenAfterCompletion)
                 .build();
     }
 }

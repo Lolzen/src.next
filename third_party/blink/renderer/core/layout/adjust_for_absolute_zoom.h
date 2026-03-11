@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/geometry/layout_unit.h"
 #include "third_party/blink/renderer/platform/geometry/physical_size.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -69,10 +70,6 @@ class AdjustForAbsoluteZoom {
   inline static float AdjustFloat(float value, const ComputedStyle& style) {
     return value / style.EffectiveZoom();
   }
-  inline static float AdjustFloat(float value,
-                                  const LayoutObject& layout_object) {
-    return AdjustFloat(value, layout_object.StyleRef());
-  }
 
   inline static double AdjustDouble(double value, const ComputedStyle& style) {
     return value / style.EffectiveZoom();
@@ -90,11 +87,6 @@ class AdjustForAbsoluteZoom {
                                                 const ComputedStyle& style) {
     return PhysicalSize(AdjustLayoutUnit(size.width, style),
                         AdjustLayoutUnit(size.height, style));
-  }
-  inline static gfx::SizeF AdjustSize(gfx::SizeF size,
-                                      const ComputedStyle& style) {
-    return gfx::SizeF{AdjustFloat(size.width(), style),
-                      AdjustFloat(size.height(), style)};
   }
 
   inline static void AdjustQuadMaybeExcludingCSSZoom(

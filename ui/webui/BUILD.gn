@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/buildflag_header.gni")
-import("//components/signin/features.gni")
 import("//ui/webui/webui_features.gni")
 
 static_library("webui") {
@@ -48,11 +47,6 @@ static_library("webui") {
       "color_change_listener/color_change_handler.cc",
       "color_change_listener/color_change_handler.h",
     ]
-  }
-
-  if (enable_dice_support) {
-    public_deps +=
-        [ "//ui/webui/resources/js/batch_upload_promo:mojo_bindings" ]
   }
 }
 

@@ -52,7 +52,7 @@ class Provider : public extensions::ExternalProviderImpl {
 
   // ExternalProviderImpl overrides:
   void VisitRegisteredExtension() override;
-  void SetPrefs(base::DictValue prefs) override;
+  void SetPrefs(base::Value::Dict prefs) override;
 
   static bool DidPerformNewInstallationForProfile(Profile* profile);
 

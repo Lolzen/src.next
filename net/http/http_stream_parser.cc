@@ -9,7 +9,6 @@
 #include <string_view>
 #include <utility>
 
-#include "base/byte_count.h"
 #include "base/check.h"
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
@@ -24,7 +23,6 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
-#include "base/strings/string_view_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "net/base/features.h"
@@ -63,10 +61,10 @@ std::string GetResponseHeaderLines(const HttpResponseHeaders& headers) {
   return cr_separated_headers;
 }
 
-base::DictValue NetLogSendRequestBodyParams(uint64_t length,
-                                            bool is_chunked,
-                                            bool did_merge) {
-  base::DictValue dict;
+base::Value::Dict NetLogSendRequestBodyParams(uint64_t length,
+                                              bool is_chunked,
+                                              bool did_merge) {
+  base::Value::Dict dict;
   dict.Set("length", static_cast<int>(length));
   dict.Set("is_chunked", is_chunked);
   dict.Set("did_merge", did_merge);
@@ -545,8 +543,7 @@ int HttpStreamParser::DoSendRequestReadBodyComplete(int result) {
       sent_last_chunk_ = true;
     }
     // Encode the buffer as 1 chunk.
-    const std::string_view payload =
-        base::as_string_view(request_body_read_buf_->first(result));
+    const std::string_view payload(request_body_read_buf_->data(), result);
     request_body_send_buf_->Clear();
     result = EncodeChunk(payload, request_body_send_buf_->span());
   }
@@ -1063,7 +1060,7 @@ int HttpStreamParser::ParseResponseHeaders(size_t end_offset) {
       return ERR_INVALID_HTTP_RESPONSE;
     }
 
-    std::string_view scheme = url_.scheme();
+    std::string_view scheme = url_.scheme_piece();
     if (url::DefaultPortForScheme(scheme) != url_.EffectiveIntPort()) {
       // If the port is not the default for the scheme, assume it's not a real
       // HTTP/0.9 response, and fail the request.
@@ -1109,9 +1106,7 @@ int HttpStreamParser::ParseResponseHeaders(size_t end_offset) {
     response_->connection_info = HttpConnectionInfo::kHTTP1_1;
   }
   DVLOG(1) << __func__ << "() content_length = \""
-           << response_->headers->GetContentLength().value_or(
-                  base::ByteCount(-1))
-           << "\n\""
+           << response_->headers->GetContentLength() << "\n\""
            << " headers = \"" << GetResponseHeaderLines(*response_->headers)
            << "\"";
   return OK;
@@ -1161,9 +1156,7 @@ void HttpStreamParser::CalculateResponseBodySize() {
     if (response_->headers->IsChunkEncoded()) {
       chunked_decoder_ = std::make_unique<HttpChunkedDecoder>();
     } else {
-      std::optional<base::ByteCount> content_length =
-          response_->headers->GetContentLength();
-      response_body_length_ = content_length ? content_length->InBytes() : -1;
+      response_body_length_ = response_->headers->GetContentLength();
       // If response_body_length_ is still -1, then we have to wait
       // for the server to close the connection.
     }

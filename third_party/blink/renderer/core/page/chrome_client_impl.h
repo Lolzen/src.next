@@ -39,7 +39,6 @@
 #include "third_party/blink/public/common/widget/constants.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink-forward.h"
 #include "third_party/blink/public/web/web_navigation_policy.h"
-#include "third_party/blink/renderer/core/buildflags.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/platform/graphics/touch_action.h"
@@ -68,14 +67,10 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   WebViewImpl* GetWebView() const override;
   void ChromeDestroyed() override;
   void SetWindowRect(const gfx::Rect&, LocalFrame&) override;
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-  void Minimize(LocalFrame&, WindowingControlsChangeCallback) override;
-  void Maximize(LocalFrame&, WindowingControlsChangeCallback) override;
-  void Restore(LocalFrame&, WindowingControlsChangeCallback) override;
-  void SetResizable(bool resizable,
-                    LocalFrame& frame,
-                    WindowingControlsChangeCallback) override;
-#endif
+  void Minimize(LocalFrame&) override;
+  void Maximize(LocalFrame&) override;
+  void Restore(LocalFrame&) override;
+  void SetResizable(bool resizable, LocalFrame& frame) override;
   gfx::Rect RootWindowRect(LocalFrame&) override;
   void DidAccessInitialMainDocument() override;
   void FocusPage() override;
@@ -95,10 +90,6 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   void StopDeferringCommits(LocalFrame& main_frame,
                             cc::PaintHoldingCommitTrigger) override;
   void SetShouldThrottleFrameRate(bool flag, LocalFrame& main_frame) override;
-  void RequestMainFrameOnCompositorAnimation(
-      LocalFrame&,
-      cc::PropertyChangeForcesCommitCriteria criteria,
-      bool force_propagation) override;
   std::unique_ptr<cc::ScopedPauseRendering> PauseRendering(
       LocalFrame&) override;
   std::optional<int> GetMaxRenderBufferBounds(LocalFrame&) const override;
@@ -109,7 +100,6 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
                      const gfx::Vector2d& cursor_offset,
                      const gfx::Rect& drag_obj_rect) override;
   bool AcceptsLoadDrops() const override;
-  std::optional<bool> GetWebRTCPostQuantumKeyAgreement() const override;
   Page* CreateWindowDelegate(LocalFrame*,
                              const FrameLoadRequest&,
                              const AtomicString& name,
@@ -117,6 +107,10 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
                              network::mojom::blink::WebSandboxFlags,
                              const SessionStorageNamespaceId&,
                              bool& consumed_user_gesture) override;
+  void Show(LocalFrame& frame,
+            LocalFrame& opener_frame,
+            NavigationPolicy navigation_policy,
+            bool user_gesture) override;
   void SetOverscrollBehavior(LocalFrame& main_frame,
                              const cc::OverscrollBehavior&) override;
   void InjectScrollbarGestureScroll(
@@ -163,7 +157,6 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   float WindowToViewportScalar(LocalFrame*, const float) const override;
   const display::ScreenInfo& GetScreenInfo(LocalFrame&) const override;
   const display::ScreenInfos& GetScreenInfos(LocalFrame&) const override;
-  const display::ScreenInfo& GetOriginalScreenInfo(LocalFrame&) const override;
   float InputEventsScaleForEmulation() const override;
   void ContentsSizeChanged(LocalFrame*, const gfx::Size&) const override;
   bool DoubleTapToZoomEnabled() const override;
@@ -252,11 +245,6 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   void ClosePagePopup(PagePopup*) override;
   DOMWindow* PagePopupWindowForTesting() const override;
 
-  void SetUseExternalPopupMenus(bool) override;
-  bool UseExternalPopupMenus() const override {
-    return use_external_popup_menus_;
-  }
-
   void SetBrowserControlsState(float top_height,
                                float bottom_height,
                                bool shrinks_layout) override;
@@ -309,11 +297,13 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
 
   void RequestDecode(LocalFrame*,
                      const cc::DrawImage&,
-                     base::OnceCallback<void(bool)>,
-                     bool speculative) override;
+                     base::OnceCallback<void(bool)>) override;
 
   void NotifyPresentationTime(LocalFrame& frame,
                               ReportTimeCallback callback) override;
+
+  void RequestBeginMainFrameNotExpected(LocalFrame& frame,
+                                        bool request) override;
 
   void DidUpdateTextAutosizerPageInfo(
       const mojom::blink::TextAutosizerPageInfo& page_info) override;
@@ -330,7 +320,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
 
   float ZoomFactorForViewportLayout() override;
 
-  void OnFirstContentfulPaint(const base::TimeDelta& duration) override;
+  void OnFirstContentfulPaint() override;
 
  private:
   bool IsChromeClientImpl() const override { return true; }
@@ -362,14 +352,6 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   bool did_request_non_empty_tool_tip_;
   std::optional<bool> before_unload_confirm_panel_result_for_testing_;
   HeapHashSet<WeakMember<CommitObserver>> commit_observers_;
-
-  // On Mac and Android Java UI, the select popups are rendered by the
-  // browser.
-#if BUILDFLAG(USE_EXTERNAL_POPUP_MENU)
-  bool use_external_popup_menus_ = true;
-#else
-  bool use_external_popup_menus_ = false;
-#endif
 
   FRIEND_TEST_ALL_PREFIXES(FileChooserQueueTest, DerefQueuedChooser);
 };

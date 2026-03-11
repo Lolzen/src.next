@@ -32,7 +32,6 @@
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/static_node_list.h"
 #include "third_party/blink/renderer/core/html/collection_type.h"
-#include "third_party/blink/renderer/platform/heap/heap_traits.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
@@ -43,11 +42,8 @@ class ExceptionState;
 class GetHTMLOptions;
 class HTMLCollection;
 class RadioNodeList;
-class ScriptState;
-class SetHTMLUnsafeOptions;
 class StyleRecalcContext;
 class WhitespaceAttacher;
-class WritableStream;
 
 using StaticElementList = StaticNodeTypeList<Element>;
 
@@ -77,6 +73,11 @@ enum class DynamicRestyleFlags {
       kChildrenAffectedByBackwardPositionalRules
 };
 
+enum SubtreeModificationAction {
+  kDispatchSubtreeModifiedEvent,
+  kOmitSubtreeModifiedEvent
+};
+
 // This constant controls how much buffer is initially allocated
 // for a Node Vector that is used to store child Nodes of a given Node.
 // FIXME: Optimize the value.
@@ -103,9 +104,7 @@ class CORE_EXPORT ContainerNode : public Node {
                                       ExceptionState&);
 
   Node* firstChild() const { return first_child_.Get(); }
-  Node* lastChild() const {
-    return first_child_ ? first_child_->PreviousSiblingCircular() : nullptr;
-  }
+  Node* lastChild() const { return last_child_.Get(); }
   bool hasChildren() const { return static_cast<bool>(first_child_); }
   bool HasChildren() const { return static_cast<bool>(first_child_); }
 
@@ -166,7 +165,7 @@ class CORE_EXPORT ContainerNode : public Node {
   StaticNodeList* FindAllTextNodesMatchingRegex(const String& regex) const;
 
   // These methods are only used during parsing.
-  // They don't accept DocumentFragments.
+  // They don't send DOM mutation events or accept DocumentFragments.
   void ParserAppendChild(Node*);
 
   // Called when the parser adds a child to a DocumentFragment as the result
@@ -182,14 +181,12 @@ class CORE_EXPORT ContainerNode : public Node {
   void ParserFinishedBuildingDocumentFragment(ShouldNotifyInsertedNodes);
   void ParserRemoveChild(Node&);
   void ParserInsertBefore(Node* new_child, Node& ref_child);
-  void ParserReplaceChild(Node& new_child, Node& old_child);
   void ParserTakeAllChildrenFrom(ContainerNode&);
 
-  void RemoveChildren();
+  void RemoveChildren(
+      SubtreeModificationAction = kDispatchSubtreeModifiedEvent);
 
-  void CloneChildNodesFrom(const ContainerNode&,
-                           NodeCloningData&,
-                           CustomElementRegistry*);
+  void CloneChildNodesFrom(const ContainerNode&, NodeCloningData&);
 
   using Node::DetachLayoutTree;
   void AttachLayoutTree(AttachContext&) override;
@@ -198,38 +195,122 @@ class CORE_EXPORT ContainerNode : public Node {
 
   void RemovedFrom(ContainerNode& insertion_point) override;
 
-  // Defined in node-inl.h.
-  inline bool ChildrenOrSiblingsAffectedByFocus() const;
-  inline void SetChildrenOrSiblingsAffectedByFocus();
-  inline bool ChildrenOrSiblingsAffectedByFocusVisible() const;
-  inline void SetChildrenOrSiblingsAffectedByFocusVisible();
-  inline bool ChildrenOrSiblingsAffectedByFocusWithin() const;
-  inline void SetChildrenOrSiblingsAffectedByFocusWithin();
-  inline bool ChildrenOrSiblingsAffectedByHover() const;
-  inline void SetChildrenOrSiblingsAffectedByHover();
-  inline bool ChildrenOrSiblingsAffectedByActive() const;
-  inline void SetChildrenOrSiblingsAffectedByActive();
-  inline bool ChildrenOrSiblingsAffectedByDrag() const;
-  inline void SetChildrenOrSiblingsAffectedByDrag();
-  inline bool ChildrenAffectedByFirstChildRules() const;
-  inline void SetChildrenAffectedByFirstChildRules();
-  inline bool ChildrenAffectedByLastChildRules() const;
-  inline void SetChildrenAffectedByLastChildRules();
-  inline bool ChildrenAffectedByDirectAdjacentRules() const;
-  inline void SetChildrenAffectedByDirectAdjacentRules();
-  inline bool ChildrenAffectedByIndirectAdjacentRules() const;
-  inline void SetChildrenAffectedByIndirectAdjacentRules();
-  inline bool ChildrenAffectedByForwardPositionalRules() const;
-  inline void SetChildrenAffectedByForwardPositionalRules();
-  inline bool ChildrenAffectedByBackwardPositionalRules() const;
-  inline void SetChildrenAffectedByBackwardPositionalRules();
-  inline bool AffectedByFirstChildRules() const;
-  inline void SetAffectedByFirstChildRules();
-  inline bool AffectedByLastChildRules() const;
-  inline void SetAffectedByLastChildRules();
+  bool ChildrenOrSiblingsAffectedByFocus() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenOrSiblingsAffectedByFocus);
+  }
+  void SetChildrenOrSiblingsAffectedByFocus() {
+    SetRestyleFlag(DynamicRestyleFlags::kChildrenOrSiblingsAffectedByFocus);
+  }
 
-  // Defined in node-inl.h.
-  inline bool NeedsAdjacentStyleRecalc() const;
+  bool ChildrenOrSiblingsAffectedByFocusVisible() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenOrSiblingsAffectedByFocusVisible);
+  }
+  void SetChildrenOrSiblingsAffectedByFocusVisible() {
+    SetRestyleFlag(
+        DynamicRestyleFlags::kChildrenOrSiblingsAffectedByFocusVisible);
+  }
+
+  bool ChildrenOrSiblingsAffectedByFocusWithin() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenOrSiblingsAffectedByFocusWithin);
+  }
+  void SetChildrenOrSiblingsAffectedByFocusWithin() {
+    SetRestyleFlag(
+        DynamicRestyleFlags::kChildrenOrSiblingsAffectedByFocusWithin);
+  }
+
+  bool ChildrenOrSiblingsAffectedByHover() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenOrSiblingsAffectedByHover);
+  }
+  void SetChildrenOrSiblingsAffectedByHover() {
+    SetRestyleFlag(DynamicRestyleFlags::kChildrenOrSiblingsAffectedByHover);
+  }
+
+  bool ChildrenOrSiblingsAffectedByActive() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenOrSiblingsAffectedByActive);
+  }
+  void SetChildrenOrSiblingsAffectedByActive() {
+    SetRestyleFlag(DynamicRestyleFlags::kChildrenOrSiblingsAffectedByActive);
+  }
+
+  bool ChildrenOrSiblingsAffectedByDrag() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenOrSiblingsAffectedByDrag);
+  }
+  void SetChildrenOrSiblingsAffectedByDrag() {
+    SetRestyleFlag(DynamicRestyleFlags::kChildrenOrSiblingsAffectedByDrag);
+  }
+
+  bool ChildrenAffectedByFirstChildRules() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenAffectedByFirstChildRules);
+  }
+  void SetChildrenAffectedByFirstChildRules() {
+    SetRestyleFlag(DynamicRestyleFlags::kChildrenAffectedByFirstChildRules);
+  }
+
+  bool ChildrenAffectedByLastChildRules() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenAffectedByLastChildRules);
+  }
+  void SetChildrenAffectedByLastChildRules() {
+    SetRestyleFlag(DynamicRestyleFlags::kChildrenAffectedByLastChildRules);
+  }
+
+  bool ChildrenAffectedByDirectAdjacentRules() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenAffectedByDirectAdjacentRules);
+  }
+  void SetChildrenAffectedByDirectAdjacentRules() {
+    SetRestyleFlag(DynamicRestyleFlags::kChildrenAffectedByDirectAdjacentRules);
+  }
+
+  bool ChildrenAffectedByIndirectAdjacentRules() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenAffectedByIndirectAdjacentRules);
+  }
+  void SetChildrenAffectedByIndirectAdjacentRules() {
+    SetRestyleFlag(
+        DynamicRestyleFlags::kChildrenAffectedByIndirectAdjacentRules);
+  }
+
+  bool ChildrenAffectedByForwardPositionalRules() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenAffectedByForwardPositionalRules);
+  }
+  void SetChildrenAffectedByForwardPositionalRules() {
+    SetRestyleFlag(
+        DynamicRestyleFlags::kChildrenAffectedByForwardPositionalRules);
+  }
+
+  bool ChildrenAffectedByBackwardPositionalRules() const {
+    return HasRestyleFlag(
+        DynamicRestyleFlags::kChildrenAffectedByBackwardPositionalRules);
+  }
+  void SetChildrenAffectedByBackwardPositionalRules() {
+    SetRestyleFlag(
+        DynamicRestyleFlags::kChildrenAffectedByBackwardPositionalRules);
+  }
+
+  bool AffectedByFirstChildRules() const {
+    return HasRestyleFlag(DynamicRestyleFlags::kAffectedByFirstChildRules);
+  }
+  void SetAffectedByFirstChildRules() {
+    SetRestyleFlag(DynamicRestyleFlags::kAffectedByFirstChildRules);
+  }
+
+  bool AffectedByLastChildRules() const {
+    return HasRestyleFlag(DynamicRestyleFlags::kAffectedByLastChildRules);
+  }
+  void SetAffectedByLastChildRules() {
+    SetRestyleFlag(DynamicRestyleFlags::kAffectedByLastChildRules);
+  }
+
+  bool NeedsAdjacentStyleRecalc() const;
 
   // FIXME: These methods should all be renamed to something better than
   // "check", since it's not clear that they alter the style bits of siblings
@@ -395,13 +476,6 @@ class CORE_EXPORT ContainerNode : public Node {
   // only.
   String getHTML(const GetHTMLOptions*, ExceptionState&) const;
 
-  WritableStream* streamAppendHTMLUnsafe(ScriptState*,
-                                         SetHTMLUnsafeOptions*,
-                                         ExceptionState&);
-  WritableStream* streamHTMLUnsafe(ScriptState*,
-                                   SetHTMLUnsafeOptions*,
-                                   ExceptionState&);
-
   // DocumentOrElementEventHandlers:
   // These event listeners are only actually web-exposed on interfaces that
   // include the DocumentOrElementEventHandlers mixin in their idl.
@@ -422,20 +496,8 @@ class CORE_EXPORT ContainerNode : public Node {
                                            Element* attribute_owner_element,
                                            const ChildrenChange*);
 
-  void SetFirstChild(Node* child) {
-    if (child) {
-      child->SetPreviousSibling(lastChild());
-    }
-    first_child_ = child;
-  }
-  void SetLastChild(Node* child) {
-    if (first_child_) {
-      first_child_->SetPreviousSibling(child);
-    } else if (child) {
-      // This is soon going to be the first and only child.
-      child->SetPreviousSibling(child);
-    }
-  }
+  void SetFirstChild(Node* child) { first_child_ = child; }
+  void SetLastChild(Node* child) { last_child_ = child; }
 
   // Utility functions for NodeListsNodeData API.
   template <typename Collection>
@@ -495,9 +557,18 @@ class CORE_EXPORT ContainerNode : public Node {
       NodeVector& post_insertion_notification_targets);
   void NotifyNodeRemoved(Node&);
 
-  // Defined in node-inl.h.
-  inline bool HasRestyleFlag(DynamicRestyleFlags mask) const;
-  inline bool HasRestyleFlags() const;
+  bool HasRestyleFlag(DynamicRestyleFlags mask) const {
+    if (const NodeRareData* data = RareData()) {
+      return data->HasRestyleFlag(mask);
+    }
+    return false;
+  }
+  bool HasRestyleFlags() const {
+    if (const NodeRareData* data = RareData()) {
+      return data->HasRestyleFlags();
+    }
+    return false;
+  }
   void SetRestyleFlag(DynamicRestyleFlags);
 
   bool RecheckNodeInsertionStructuralPrereq(const NodeVector&,
@@ -507,9 +578,11 @@ class CORE_EXPORT ContainerNode : public Node {
   inline bool IsHostIncludingInclusiveAncestorOfThis(const Node&,
                                                      ExceptionState&) const;
 
+  void CheckSoftNavigationHeuristicsTracking(const Document& document,
+                                             Node& inserted_node);
+
   Member<Node> first_child_;
-  // We do not store lastChild() explicitly; it is stored in
-  // first_child_->previous_.
+  Member<Node> last_child_;
 };
 
 template <>
@@ -528,7 +601,14 @@ inline bool ContainerNode::HasChildCount(unsigned count) const {
 
 inline ContainerNode::ContainerNode(TreeScope* tree_scope,
                                     ConstructionType type)
-    : Node(tree_scope, type), first_child_(nullptr) {}
+    : Node(tree_scope, type), first_child_(nullptr), last_child_(nullptr) {}
+
+inline bool ContainerNode::NeedsAdjacentStyleRecalc() const {
+  if (!ChildrenAffectedByDirectAdjacentRules() &&
+      !ChildrenAffectedByIndirectAdjacentRules())
+    return false;
+  return ChildNeedsStyleRecalc() || ChildNeedsStyleInvalidation();
+}
 
 inline unsigned Node::CountChildren() const {
   auto* this_node = DynamicTo<ContainerNode>(*this);

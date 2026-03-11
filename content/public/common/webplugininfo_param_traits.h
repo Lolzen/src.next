@@ -6,8 +6,7 @@
 
 #include "content/common/content_export.h"
 #include "content/public/common/webplugininfo.h"
-#include "ipc/param_traits.h"
-#include "ipc/param_traits_macros.h"
+#include "ipc/ipc_message_macros.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -31,5 +30,6 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPluginInfo)
   IPC_STRUCT_TRAITS_MEMBER(desc)
   IPC_STRUCT_TRAITS_MEMBER(mime_types)
   IPC_STRUCT_TRAITS_MEMBER(type)
+  IPC_STRUCT_TRAITS_MEMBER(pepper_permissions)
   IPC_STRUCT_TRAITS_MEMBER(background_color)
 IPC_STRUCT_TRAITS_END()

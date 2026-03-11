@@ -43,7 +43,7 @@ scoped_refptr<cc::ViewTransitionContentLayer> GetSubframeSnapshotLayer(
     return nullptr;
   }
 
-  return transition->GetScopeSnapshotLayer();
+  return transition->GetSubframeSnapshotLayer();
 }
 
 }  // namespace

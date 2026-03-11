@@ -10,29 +10,32 @@
 #include <string>
 #include <vector>
 
+#include "base/feature_list.h"
 #include "base/functional/callback_forward.h"
+#include "base/functional/callback_helpers.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "chrome/browser/apps/link_capturing/intent_picker_info.h"
 #include "chrome/browser/lifetime/browser_close_manager.h"
 #include "chrome/browser/share/share_attempt.h"
 #include "chrome/browser/signin/chrome_signin_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_bubble_type.h"
 #include "chrome/browser/ui/hats/hats_service.h"
 #include "chrome/browser/ui/page_action/page_action_icon_type.h"
 #include "chrome/browser/ui/translate/partial_translate_bubble_model.h"
+#include "chrome/browser/ui/user_education/browser_user_education_interface.h"
 #include "chrome/browser/ui/webui/tab_search/tab_search.mojom.h"
 #include "chrome/common/buildflags.h"
 #include "components/content_settings/core/common/content_settings_types.h"
-#include "components/translate/core/browser/translate_step.h"
 #include "components/translate/core/common/translate_errors.h"
 #include "ui/base/base_window.h"
 #include "ui/base/interaction/element_identifier.h"
 #include "ui/base/mojom/window_show_state.mojom-forward.h"
 #include "ui/base/window_open_disposition.h"
-#include "ui/gfx/native_ui_types.h"
+#include "ui/gfx/native_widget_types.h"
 #include "url/origin.h"
 
 #if BUILDFLAG(IS_ANDROID)
@@ -42,7 +45,9 @@
 class Browser;
 class BrowserView;
 class DownloadBubbleUIController;
+class DownloadShelf;
 class ExclusiveAccessContext;
+class ExtensionsContainer;
 class FindBar;
 class GURL;
 class LocationBar;
@@ -87,21 +92,26 @@ class NativeTheme;
 class ThemeProvider;
 }  // namespace ui
 
+namespace views {
+class Button;
+class WebView;
+}  // namespace views
+
 namespace web_modal {
 class WebContentsModalDialogHost;
 }
 
 enum class ShowTranslateBubbleResult {
   // The Full Page Translate bubble was successfully shown.
-  kSuccess,
+  SUCCESS,
 
   // The various reasons for which the Full Page Translate bubble could fail to
   // be shown.
-  kBrowserWindowNotValid,
-  kBrowserWindowMinimized,
-  kBrowserWindowNotActive,
-  kWebContentsNotActive,
-  kEditableFieldIsActive,
+  BROWSER_WINDOW_NOT_VALID,
+  BROWSER_WINDOW_MINIMIZED,
+  BROWSER_WINDOW_NOT_ACTIVE,
+  WEB_CONTENTS_NOT_ACTIVE,
+  EDITABLE_FIELD_IS_ACTIVE,
 };
 
 enum class BrowserThemeChangeType {
@@ -121,9 +131,10 @@ enum class BrowserThemeChangeType {
 //
 // NOTE: All getters may return NULL.
 //
-class BrowserWindow : public ui::BaseWindow {
+class BrowserWindow : public ui::BaseWindow,
+                      public BrowserUserEducationInterface {
  public:
-  virtual ~BrowserWindow() = default;
+  ~BrowserWindow() override = default;
 
   //////////////////////////////////////////////////////////////////////////////
   // ui::BaseWindow interface notes:
@@ -204,6 +215,9 @@ class BrowserWindow : public ui::BaseWindow {
   // Returns the ColorProvider associated with the frame.
   virtual const ui::ColorProvider* GetColorProvider() const = 0;
 
+  // Returns the context for use with ElementTracker, InteractionSequence, etc.
+  virtual ui::ElementContext GetElementContext() = 0;
+
   // Returns the height of the browser's top controls. This height doesn't
   // change with the current shown ratio above. Renderers will call this to
   // calculate the top-chrome shown ratio from the gesture scroll offset.
@@ -236,10 +250,7 @@ class BrowserWindow : public ui::BaseWindow {
 
   // Inform the frame that the dev tools window for the selected tab has
   // changed.
-  virtual void UpdateDevTools(content::WebContents* inspected_web_contents) = 0;
-
-  // Returns true if the browser window can dock a DevTools panel.
-  virtual bool CanDockDevTools() const = 0;
+  virtual void UpdateDevTools() = 0;
 
   // Update any loading animations running in the window. |is_visible| is true
   // if the window is visible.
@@ -249,13 +260,12 @@ class BrowserWindow : public ui::BaseWindow {
   virtual void SetStarredState(bool is_starred) = 0;
 
   // Checks if the browser popup is a tab modal popup.
-  virtual bool IsTabModalPopupDeprecated() const = 0;
+  virtual bool IsTabModalPopup() const = 0;
 
   // Sets whether the browser popup is a tab modal popup. Tab modal popups, used
   // by autofill features, intentionally disable save card prompts because they
   // are not intended for saving new card details.
-  virtual void SetIsTabModalPopupDeprecated(
-      bool is_tab_modal_popup_deprecated) = 0;
+  virtual void SetIsTabModalPopup(bool is_tab_modal_popup) = 0;
 
   // Called when the active tab changes.  Subclasses which implement
   // TabStripModelObserver should implement this instead of ActiveTabChanged();
@@ -286,22 +296,15 @@ class BrowserWindow : public ui::BaseWindow {
 
   // True when we do not want to allow exiting fullscreen, e.g. in Chrome OS
   // Kiosk session.
-  // TODO(crbug.com/462003245): Remove these methods from here. It's exclusively
-  // set by ChromeOS in kiosk mode and never changes for the life of the
-  // Browser.
   virtual bool IsForceFullscreen() const = 0;
   virtual void SetForceFullscreen(bool force_fullscreen) = 0;
 
-  // Returns the size of `WebContents` in the browser. This may be called before
-  // the `TabStripModel` has an active tab.
-  // Returns the size of the active `WebContents` if in a split view.
+  // Returns the size of WebContents in the browser. This may be called before
+  // the TabStripModel has an active tab.
   virtual gfx::Size GetContentsSize() const = 0;
 
-  // Resizes the window to fit `WebContents` of a certain size. This should only
-  // be called after the `TabStripModel` has an active tab.
-  // If in a split view, this will resize the active `WebContents` to the
-  // specified size, while preserving the size ratio of the other
-  // `WebContents`.
+  // Resizes the window to fit a WebContents of a certain size. This should only
+  // be called after the TabStripModel has an active tab.
   virtual void SetContentsSize(const gfx::Size& size) = 0;
 
   // Updates the visual state of the specified page action icon if present on
@@ -320,7 +323,7 @@ class BrowserWindow : public ui::BaseWindow {
 
   // Tries to focus the location bar.  Clears the window focus (to avoid
   // inconsistent state) if this fails.
-  virtual void SetFocusToLocationBar(bool is_user_initiated) = 0;
+  virtual void SetFocusToLocationBar(bool select_all) = 0;
 
   // Informs the view whether or not a load is in progress for the current tab.
   // The view can use this notification to update the reload/stop button.
@@ -337,6 +340,9 @@ class BrowserWindow : public ui::BaseWindow {
   // transition if |animate| is true.
   virtual void UpdateCustomTabBarVisibility(bool visible, bool animate) = 0;
 
+  // Updates the visibility of the scrim that covers the content area.
+  virtual void SetContentScrimVisibility(bool visible) = 0;
+
   // Updates the visibility of the scrim that covers the devtools area.
   virtual void SetDevToolsScrimVisibility(bool visible) = 0;
 
@@ -345,6 +351,9 @@ class BrowserWindow : public ui::BaseWindow {
 
   // Focuses the toolbar (for accessibility).
   virtual void FocusToolbar() = 0;
+
+  // Returns the ExtensionsContainer associated with the window, if any.
+  virtual ExtensionsContainer* GetExtensionsContainer() = 0;
 
   // Called from toolbar subviews during their show/hide animations.
   virtual void ToolbarSizeChanged(bool is_animating) = 0;
@@ -383,9 +392,6 @@ class BrowserWindow : public ui::BaseWindow {
 
   // Returns whether the tab strip is editable (for extensions).
   virtual bool IsTabStripEditable() const = 0;
-
-  // Forces the tab strip into a not editable state for testing.
-  virtual void DisableTabStripEditingForTesting() = 0;
 
   // Returns whether the toolbar is available or not. It's called "Visible()"
   // to follow the name convention. But it does not indicate the visibility of
@@ -452,8 +458,11 @@ class BrowserWindow : public ui::BaseWindow {
                                bool show_signin_button) = 0;
 
 #if BUILDFLAG(IS_CHROMEOS)
+  // Returns the PageActionIconView for the Sharing Hub.
+  virtual views::Button* GetSharingHubIconButton() = 0;
+
   // Toggles the multitask menu on the browser frame size button.
-  virtual void ToggleMultitaskMenu() = 0;
+  virtual void ToggleMultitaskMenu() const = 0;
 #else
   // Shows the Sharing Hub bubble. This must only be called as a direct result
   // of user action.
@@ -478,6 +487,25 @@ class BrowserWindow : public ui::BaseWindow {
                                      const std::string& target_language,
                                      const std::u16string& text_selection) = 0;
 
+  // Shows the one-click sign in confirmation UI. |email| holds the full email
+  // address of the account that has signed in.
+  virtual void ShowOneClickSigninConfirmation(
+      const std::u16string& email,
+      base::OnceCallback<void(bool)> confirmed_callback) = 0;
+
+  // Whether or not the shelf view is visible.
+  virtual bool IsDownloadShelfVisible() const = 0;
+
+  // Returns the DownloadShelf. Returns null if download shelf is disabled. This
+  // can happen if the new download bubble UI is enabled.
+  virtual DownloadShelf* GetDownloadShelf() = 0;
+
+  // Returns the TopContainerView.
+  virtual views::View* GetTopContainer() = 0;
+
+  // Returns the LensOverlayView.
+  virtual views::View* GetLensOverlayView() = 0;
+
   // Returns the DownloadBubbleUIController. Returns null if Download Bubble
   // UI is not enabled, or if the download toolbar button does not exist.
   virtual DownloadBubbleUIController* GetDownloadBubbleUIController() = 0;
@@ -497,13 +525,10 @@ class BrowserWindow : public ui::BaseWindow {
   // Shows the app menu (for accessibility).
   virtual void ShowAppMenu() = 0;
 
-  // Allows the BrowserWindow object to handle a mouse drag update
+  // Allows the BrowserWindow object to handle the specified mouse event
   // before sending it to the renderer.
-  // `point` is relative to the content view.
-  virtual void PreHandleDragUpdate(const content::DropData& drop_data,
-                                   const gfx::PointF& point) = 0;
-  virtual void PreHandleDragExit() = 0;
-  virtual void HandleDragEnded() = 0;
+  virtual bool PreHandleMouseEvent(const blink::WebMouseEvent& event) = 0;
+
   // Allows the BrowserWindow object to handle the specified keyboard event
   // before sending it to the renderer.
   virtual content::KeyboardEventProcessingResult PreHandleKeyboardEvent(
@@ -523,22 +548,14 @@ class BrowserWindow : public ui::BaseWindow {
   virtual web_modal::WebContentsModalDialogHost*
   GetWebContentsModalDialogHost() = 0;
 
-  // Return the WebContentsModalDialogHost for use in positioning web contents
-  // modal dialogs relative to its corresponding container view if possible,
-  // otherwise falls back to returning the WebContentsModalDialogHost that is
-  // responsible for modal positioning relative to the browser window.
-  virtual web_modal::WebContentsModalDialogHost*
-  GetWebContentsModalDialogHostFor(content::WebContents* web_contents) = 0;
-
   // Construct a BrowserWindow implementation for the specified |browser|.
-  static std::unique_ptr<BrowserWindow, BrowserWindowDeleter>
-  CreateBrowserWindow(Browser* browser,
-                      bool user_gesture,
-                      bool in_tab_dragging);
+  static BrowserWindow* CreateBrowserWindow(std::unique_ptr<Browser> browser,
+                                            bool user_gesture,
+                                            bool in_tab_dragging);
 
   virtual void ShowAvatarBubbleFromAvatarButton(bool is_source_accelerator) = 0;
 
-  // Attempts showing the In-Product-Help for profile Switching. This is called
+  // Attempts showing the In-Produce-Help for profile Switching. This is called
   // after creating a new profile or opening an existing profile. If the profile
   // customization bubble is shown, the IPH should be shown after.
   virtual void MaybeShowProfileSwitchIPH() = 0;
@@ -616,6 +633,10 @@ class BrowserWindow : public ui::BaseWindow {
   // of a full titlebar. This is only supported for desktop web apps.
   virtual bool IsBorderlessModeEnabled() const = 0;
 
+  // Notifies `BrowserView` about the resizable boolean having been set with
+  // `window.setResizable(bool)` API.
+  virtual void OnWebApiWindowResizableChanged() = 0;
+
   // Returns the overall resizability of the `BrowserView` when considering
   // both the value set by the `window.setResizable(bool)` API and browser's
   // "native" resizability.
@@ -626,16 +647,18 @@ class BrowserWindow : public ui::BaseWindow {
   // Shows the Chrome Labs bubble if enabled.
   virtual void ShowChromeLabs() = 0;
 
+  // Returns the WebView backing the tab-contents area of the BrowserWindow.
+  virtual views::WebView* GetContentsWebView() = 0;
+
   // In production code BrowserView is the only subclass for BrowserWindow. The
   // fact that this is not true in some tests is a problem with the tests. See
   // https://crbug.com/360163254.
   virtual BrowserView* AsBrowserView() = 0;
 
  protected:
-  friend struct BrowserWindowDeleter;
-  // Deletes `this`. Note BrowserWindow will no longer be valid after this
-  // returns.
-  virtual void DeleteBrowserWindow() = 0;
+  friend class BrowserCloseManager;
+  friend class BrowserView;
+  virtual void DestroyBrowser() = 0;
 };
 
 #endif  // CHROME_BROWSER_UI_BROWSER_WINDOW_H_

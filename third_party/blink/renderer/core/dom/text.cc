@@ -85,7 +85,7 @@ Node* Text::MergeNextSiblingNodesIfPossible() {
     unsigned offset = length();
     String next_text_data = next_text->data();
     String old_text_data = data();
-    SetDataWithoutUpdate(StrCat({data(), next_text_data}));
+    SetDataWithoutUpdate(data() + next_text_data);
     UpdateTextLayoutObject(
         TextDiffRange::Insert(old_text_data.length(), next_text_data.length()));
 
@@ -96,7 +96,7 @@ Node* Text::MergeNextSiblingNodesIfPossible() {
     next_text->UpdateTextLayoutObject(
         TextDiffRange::Delete(0, next_text_data.length()));
 
-    // Restore nextText after any synchronous events.
+    // Restore nextText for mutation event.
     next_text->SetDataWithoutUpdate(next_text_data);
     next_text->UpdateTextLayoutObject(
         TextDiffRange::Insert(0, next_text_data.length()));
@@ -115,8 +115,8 @@ Text* Text::splitText(unsigned offset, ExceptionState& exception_state) {
   if (offset > length()) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kIndexSizeError,
-        StrCat({"The offset ", String::Number(offset),
-                " is larger than the Text node's length."}));
+        "The offset " + String::Number(offset) +
+            " is larger than the Text node's length.");
     return nullptr;
   }
 
@@ -134,12 +134,21 @@ Text* Text::splitText(unsigned offset, ExceptionState& exception_state) {
     return nullptr;
 
   if (LayoutText* layout_text = GetLayoutObject()) {
-    // To avoid |LayoutText| has empty text, we rebuild layout tree.
-    if (ContainsOnlyWhitespaceOrEmpty()) {
-      SetForceReattachLayoutTree();
+    if (RuntimeEnabledFeatures::TextDiffSplitFixEnabled()) {
+      // To avoid |LayoutText| has empty text, we rebuild layout tree.
+      if (ContainsOnlyWhitespaceOrEmpty()) {
+        SetForceReattachLayoutTree();
+      } else {
+        layout_text->SetTextWithOffset(
+            data(), TextDiffRange::Delete(offset, old_str.length() - offset));
+      }
     } else {
       layout_text->SetTextWithOffset(
-          data(), TextDiffRange::Delete(offset, old_str.length() - offset));
+          data(), TextDiffRange::Delete(0, old_str.length()));
+      if (ContainsOnlyWhitespaceOrEmpty()) {
+        // To avoid |LayoutText| has empty text, we rebuild layout tree.
+        SetForceReattachLayoutTree();
+      }
     }
   }
 
@@ -213,12 +222,12 @@ String Text::wholeText() const {
 Text* Text::ReplaceWholeText(const String& new_text) {
   // Remove all adjacent text nodes, and replace the contents of this one.
 
-  // Protect startText and endText against synchronous event handlers removing
-  // the last ref.
+  // Protect startText and endText against mutation event handlers removing the
+  // last ref
   Text* start_text = const_cast<Text*>(EarliestLogicallyAdjacentTextNode(this));
   Text* end_text = const_cast<Text*>(LatestLogicallyAdjacentTextNode(this));
 
-  ContainerNode* parent = parentNode();  // Protect against synchronous handlers
+  ContainerNode* parent = parentNode();  // Protect against mutation handlers
                                          // moving this node during traversal
   for (Node* n = start_text;
        n && n != this && n->IsTextNode() && n->parentNode() == parent;) {
@@ -262,9 +271,8 @@ static inline bool CanHaveWhitespaceChildren(
   const LayoutObject& parent = *context.parent;
   if (parent.IsTable() || parent.IsTableRow() || parent.IsTableSection() ||
       parent.IsLayoutTableCol() || parent.IsFrameSet() ||
-      parent.IsFlexibleBox() || parent.IsLayoutGridOrGridLanes() ||
-      parent.IsSVGRoot() || parent.IsSVGContainer() || parent.IsSVGImage() ||
-      parent.IsSVGShape()) {
+      parent.IsFlexibleBox() || parent.IsLayoutGrid() || parent.IsSVGRoot() ||
+      parent.IsSVGContainer() || parent.IsSVGImage() || parent.IsSVGShape()) {
     if (!context.use_previous_in_flow || !context.previous_in_flow ||
         !context.previous_in_flow->IsText())
       return false;
@@ -441,7 +449,7 @@ static bool ShouldUpdateLayoutByReattaching(const Text& text_node,
     // Changes of |text_node| may change first letter part, so we should
     // reattach. Note: When |text_node| is empty or holds collapsed whitespaces
     // |text_fragment_layout_object| represents first-letter part but it isn't
-    // inside first-letter-pseudo-element. See http://crbug.com/978947
+    // inside first-letter-pseudo element. See http://crbug.com/978947
     const auto& text_fragment_layout_object =
         *To<LayoutTextFragment>(text_layout_object);
     return text_fragment_layout_object.GetFirstLetterPseudoElement() ||

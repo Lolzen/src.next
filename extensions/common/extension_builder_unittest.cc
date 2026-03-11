@@ -9,7 +9,6 @@
 #include "components/version_info/channel.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/features/feature_channel.h"
-#include "extensions/common/file_util.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/manifest_handlers/content_scripts_handler.h"
@@ -61,15 +60,16 @@ TEST(ExtensionBuilderTest, AddAPIPermission) {
     EXPECT_TRUE(extension->permissions_data()->HasAPIPermission("idle"));
   }
 
-  // Required API permissions.
+  // MV3 API permissions.
   {
     scoped_refptr<const Extension> extension =
-        ExtensionBuilder("no permissions").Build();
+        ExtensionBuilder("no permissions").SetManifestVersion(3).Build();
     EXPECT_TRUE(extension->permissions_data()->active_permissions().IsEmpty());
   }
   {
     scoped_refptr<const Extension> extension =
         ExtensionBuilder("api permissions")
+            .SetManifestVersion(3)
             .AddAPIPermission("storage")
             .AddAPIPermissions({"alarms", "idle"})
             .Build();
@@ -102,16 +102,17 @@ TEST(ExtensionBuilderTest, AddOptionalAPIPermission) {
                     .HasAPIPermission("idle"));
   }
 
-  // Optional API permissions.
+  // MV3 optional API permissions.
   {
     scoped_refptr<const Extension> extension =
-        ExtensionBuilder("no permissions").Build();
+        ExtensionBuilder("no permissions").SetManifestVersion(3).Build();
     EXPECT_TRUE(
         PermissionsParser::GetOptionalPermissions(extension.get()).IsEmpty());
   }
   {
     scoped_refptr<const Extension> extension =
         ExtensionBuilder("api permissions")
+            .SetManifestVersion(3)
             .AddOptionalAPIPermission("storage")
             .AddOptionalAPIPermissions({"alarms", "idle"})
             .Build();
@@ -155,10 +156,10 @@ TEST(ExtensionBuilderTest, AddHostPermission) {
                      .HasExplicitAccessToOrigin(GURL("http://four.example")));
   }
 
-  // Required host permissions.
+  // MV3 host permissions.
   {
     scoped_refptr<const Extension> extension =
-        ExtensionBuilder("no permissions").Build();
+        ExtensionBuilder("no permissions").SetManifestVersion(3).Build();
     EXPECT_TRUE(extension->permissions_data()
                     ->active_permissions()
                     .effective_hosts()
@@ -167,6 +168,7 @@ TEST(ExtensionBuilderTest, AddHostPermission) {
   {
     scoped_refptr<const Extension> extension =
         ExtensionBuilder("api permissions")
+            .SetManifestVersion(3)
             .AddHostPermission("*://one.example/*")
             .AddHostPermissions({"*://two.example/*", "*://three.example/*"})
             .Build();
@@ -214,10 +216,10 @@ TEST(ExtensionBuilderTest, AddOptionalHostPermission) {
         GURL("http://four.example")));
   }
 
-  // Optional host permissions.
+  // MV3 optional host permissions.
   {
     scoped_refptr<const Extension> extension =
-        ExtensionBuilder("no permissions").Build();
+        ExtensionBuilder("no permissions").SetManifestVersion(3).Build();
     EXPECT_TRUE(extension->permissions_data()
                     ->active_permissions()
                     .effective_hosts()
@@ -226,6 +228,7 @@ TEST(ExtensionBuilderTest, AddOptionalHostPermission) {
   {
     scoped_refptr<const Extension> extension =
         ExtensionBuilder("api permissions")
+            .SetManifestVersion(3)
             .AddOptionalHostPermission("*://one.example/*")
             .AddOptionalHostPermissions(
                 {"*://two.example/*", "*://three.example/*"})
@@ -318,19 +321,17 @@ TEST(ExtensionBuilderTest, Background) {
     EXPECT_FALSE(BackgroundInfo::HasLazyBackgroundPage(extension.get()));
     EXPECT_FALSE(BackgroundInfo::HasPersistentBackgroundPage(extension.get()));
     EXPECT_TRUE(BackgroundInfo::IsServiceWorkerBased(extension.get()));
-    EXPECT_EQ(ExtensionBuilder::kServiceWorkerScriptFile,
-              file_util::ExtensionURLToRelativeFilePath(
-                  BackgroundInfo::GetBackgroundServiceWorkerScriptURL(
-                      extension.get()))
-                  .AsUTF8Unsafe());
+    EXPECT_EQ(
+        ExtensionBuilder::kServiceWorkerScriptFile,
+        BackgroundInfo::GetBackgroundServiceWorkerScript(extension.get()));
   }
 }
 
 TEST(ExtensionBuilderTest, MergeManifest) {
-  auto connectable = base::DictValue().Set(
-      "matches", base::ListValue().Append("*://example.com/*"));
-  base::DictValue connectable_value =
-      base::DictValue().Set("externally_connectable", std::move(connectable));
+  auto connectable = base::Value::Dict().Set(
+      "matches", base::Value::List().Append("*://example.com/*"));
+  base::Value::Dict connectable_value =
+      base::Value::Dict().Set("externally_connectable", std::move(connectable));
   scoped_refptr<const Extension> extension =
       ExtensionBuilder("extra")
           .MergeManifest(std::move(connectable_value))
@@ -348,14 +349,14 @@ TEST(ExtensionBuilderTest, IDUniqueness) {
 }
 
 TEST(ExtensionBuilderTest, SetManifestAndMergeManifest) {
-  auto manifest = base::DictValue()
+  auto manifest = base::Value::Dict()
                       .Set("name", "some name")
                       .Set("manifest_version", 2)
                       .Set("description", "some description");
   scoped_refptr<const Extension> extension =
       ExtensionBuilder()
           .SetManifest(std::move(manifest))
-          .MergeManifest(base::DictValue().Set("version", "0.1"))
+          .MergeManifest(base::Value::Dict().Set("version", "0.1"))
           .Build();
   EXPECT_EQ("some name", extension->name());
   EXPECT_EQ(2, extension->manifest_version());
@@ -367,7 +368,7 @@ TEST(ExtensionBuilderTest, MergeManifestOverridesValues) {
   {
     scoped_refptr<const Extension> extension =
         ExtensionBuilder("foo")
-            .MergeManifest(base::DictValue().Set("version", "52.0.9"))
+            .MergeManifest(base::Value::Dict().Set("version", "52.0.9"))
             .Build();
     // MergeManifest() should have overwritten the default 0.1 value for
     // version.
@@ -375,7 +376,7 @@ TEST(ExtensionBuilderTest, MergeManifestOverridesValues) {
   }
 
   {
-    auto manifest = base::DictValue()
+    auto manifest = base::Value::Dict()
                         .Set("name", "some name")
                         .Set("manifest_version", 2)
                         .Set("description", "some description")
@@ -383,7 +384,7 @@ TEST(ExtensionBuilderTest, MergeManifestOverridesValues) {
     scoped_refptr<const Extension> extension =
         ExtensionBuilder()
             .SetManifest(std::move(manifest))
-            .MergeManifest(base::DictValue().Set("version", "42.1"))
+            .MergeManifest(base::Value::Dict().Set("version", "42.1"))
             .Build();
     EXPECT_EQ("42.1", extension->version().GetString());
   }

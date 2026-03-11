@@ -35,10 +35,10 @@ bool BackoffDurationSafeToSerialize(const base::TimeDelta& duration) {
 
 namespace net {
 
-base::ListValue BackoffEntrySerializer::SerializeToList(
+base::Value::List BackoffEntrySerializer::SerializeToList(
     const BackoffEntry& entry,
     base::Time time_now) {
-  base::ListValue serialized;
+  base::Value::List serialized;
   serialized.Append(SerializationFormatVersion::kVersion2);
 
   serialized.Append(entry.failure_count());
@@ -74,7 +74,7 @@ base::ListValue BackoffEntrySerializer::SerializeToList(
 }
 
 std::unique_ptr<BackoffEntry> BackoffEntrySerializer::DeserializeFromList(
-    const base::ListValue& serialized,
+    const base::Value::List& serialized,
     const BackoffEntry::Policy* policy,
     const base::TickClock* tick_clock,
     base::Time time_now) {

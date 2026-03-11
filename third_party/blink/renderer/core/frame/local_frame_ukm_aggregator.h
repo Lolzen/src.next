@@ -5,17 +5,14 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_LOCAL_FRAME_UKM_AGGREGATOR_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_LOCAL_FRAME_UKM_AGGREGATOR_H_
 
-#include <stdint.h>
-
-#include <array>
-#include <memory>
 #include <optional>
 
 #include "base/rand_util.h"
 #include "base/time/time.h"
+#include "cc/metrics/frame_sequence_tracker_collection.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/platform/instrumentation/histogram.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace base {
@@ -24,8 +21,6 @@ class TickClock;
 
 namespace cc {
 struct BeginMainFrameMetrics;
-
-using ActiveFrameSequenceTrackers = uint16_t;
 }
 
 namespace ukm {
@@ -34,7 +29,6 @@ class UkmRecorder;
 
 namespace blink {
 
-class CustomCountHistogram;
 enum class DocumentUpdateReason;
 
 // This class aggregates and records time based UKM and UMA metrics

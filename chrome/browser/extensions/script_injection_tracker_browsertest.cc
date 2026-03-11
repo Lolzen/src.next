@@ -18,9 +18,12 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/extensions/permissions/permissions_test_util.h"
+#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/extensions/user_scripts_test_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/guest_view/browser/guest_view_base.h"
 #include "components/guest_view/browser/guest_view_manager_delegate.h"
@@ -40,9 +43,8 @@
 #include "extensions/browser/browsertest_util.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/browser/permissions/active_tab_permission_granter.h"
-#include "extensions/browser/permissions/permissions_test_util.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/browser/script_executor.h"
 #include "extensions/browser/user_script_manager.h"
 #include "extensions/common/extension_features.h"
 #include "extensions/common/features/feature_channel.h"
@@ -104,6 +106,35 @@ void ExecuteProgrammaticContentScript(content::WebContents* web_contents,
   EXPECT_EQ("\"Hello from acking script!\"", msg);
 }
 
+// Executes a `script` as a user script associated with the given `extension_id`
+// within the primary main frame of `web_contents`, waiting for the injection to
+// complete.
+void ExecuteUserScript(content::WebContents& web_contents,
+                       const ExtensionId& extension_id,
+                       const std::string& script) {
+  base::RunLoop run_loop;
+
+  ScriptExecutor script_executor(&web_contents);
+  std::vector<mojom::JSSourcePtr> sources;
+  sources.push_back(mojom::JSSource::New(script, GURL()));
+  script_executor.ExecuteScript(
+      mojom::HostID(mojom::HostID::HostType::kExtensions, extension_id),
+      mojom::CodeInjection::NewJs(mojom::JSInjection::New(
+          std::move(sources), mojom::ExecutionWorld::kUserScript,
+          /*world_id=*/std::nullopt,
+          blink::mojom::WantResultOption::kWantResult,
+          blink::mojom::UserActivationOption::kDoNotActivate,
+          blink::mojom::PromiseResultOption::kAwait)),
+      ScriptExecutor::SPECIFIED_FRAMES, {ExtensionApiFrameIdMap::kTopFrameId},
+      mojom::MatchOriginAsFallbackBehavior::kNever,
+      mojom::RunLocation::kDocumentIdle, ScriptExecutor::DEFAULT_PROCESS,
+      GURL() /* webview_src */,
+      base::IgnoreArgs<std::vector<ScriptExecutor::FrameResult>>(
+          run_loop.QuitWhenIdleClosure()));
+
+  run_loop.Run();
+}
+
 // Test suite covering `extensions::ScriptInjectionTracker` from
 // //extensions/browser/script_injection_tracker.h.
 //
@@ -120,6 +151,11 @@ class ScriptInjectionTrackerBrowserTest : public ExtensionBrowserTest {
     content::SetupCrossSiteRedirector(embedded_test_server());
   }
 
+  // Returns the current active web contents.
+  content::WebContents* GetActiveWebContents() {
+    return browser()->tab_strip_model()->GetActiveWebContents();
+  }
+
   // Navigates to url for given `hostname` and `relative_url`. Returns whether
   // the navigation is in a new process compared to the currently active tab.
   [[nodiscard]] bool NavigateToURLInNewProcess(std::string_view hostname,
@@ -128,7 +164,9 @@ class ScriptInjectionTrackerBrowserTest : public ExtensionBrowserTest {
 
     // Opening the URL in a new tab should force it into a new process.
     GURL url = embedded_test_server()->GetURL(hostname, relative_url);
-    NavigateToURLInNewTab(url);
+    ui_test_utils::NavigateToURLWithDisposition(
+        browser(), url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+        ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
 
     content::WebContents* new_web_contents = GetActiveWebContents();
     return original_web_contents->GetPrimaryMainFrame()->GetProcess() !=
@@ -198,13 +236,13 @@ IN_PROC_BROWSER_TEST_F(ScriptInjectionTrackerBrowserTest,
 
   // Navigate to an arbitrary, mostly-empty test page.
   GURL page_url = embedded_test_server()->GetURL("foo.com", "/title1.html");
-  content::WebContents* web_contents = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(web_contents, page_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
 
   // Verify that initially no processes show up as having been injected with
   // content scripts.
+  content::WebContents* web_contents = GetActiveWebContents();
   content::RenderFrameHost* background_frame =
-      ProcessManager::Get(profile())
+      ProcessManager::Get(browser()->profile())
           ->GetBackgroundHostForExtension(extension->id())
           ->main_frame_host();
   EXPECT_EQ("This page has no title.",
@@ -245,7 +283,7 @@ IN_PROC_BROWSER_TEST_F(ScriptInjectionTrackerBrowserTest,
   // even though the *current* set of documents hosted in the renderer process
   // have not run a content script.
   GURL new_url = embedded_test_server()->GetURL("foo.com", "/title2.html");
-  ASSERT_TRUE(NavigateToURL(web_contents, new_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), new_url));
   EXPECT_EQ("This page has a title.",
             content::EvalJs(web_contents, "document.body.innerText"));
   EXPECT_TRUE(ScriptInjectionTracker::DidProcessRunContentScriptFromExtension(
@@ -282,11 +320,11 @@ IN_PROC_BROWSER_TEST_F(ScriptInjectionTrackerBrowserTest,
 
   // Navigate to an arbitrary, mostly-empty test page.
   GURL page_url = embedded_test_server()->GetURL("foo.com", "/title1.html");
-  content::WebContents* web_contents = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(web_contents, page_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
 
   // Verify that initially no processes show up as having been injected with
   // user scripts.
+  content::WebContents* web_contents = GetActiveWebContents();
   EXPECT_EQ("This page has no title.",
             content::EvalJs(web_contents, "document.body.innerText"));
   EXPECT_FALSE(ScriptInjectionTracker::DidProcessRunUserScriptFromExtension(
@@ -295,8 +333,7 @@ IN_PROC_BROWSER_TEST_F(ScriptInjectionTrackerBrowserTest,
   // Programmatically inject a user script.
   static constexpr char kUserScript[] =
       "document.body.innerText = 'user script has run';";
-  browsertest_util::ExecuteUserScript(web_contents, extension->id(),
-                                      kUserScript);
+  ExecuteUserScript(*web_contents, extension->id(), kUserScript);
 
   // Verify that the right processes show up as having been injected with
   // content scripts.
@@ -317,7 +354,7 @@ IN_PROC_BROWSER_TEST_F(ScriptInjectionTrackerBrowserTest,
   // even though the *current* set of documents hosted in the renderer process
   // have not run a user script.
   GURL new_url = embedded_test_server()->GetURL("foo.com", "/title2.html");
-  ASSERT_TRUE(NavigateToURL(web_contents, new_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), new_url));
   EXPECT_EQ("This page has a title.",
             content::EvalJs(web_contents, "document.body.innerText"));
   EXPECT_TRUE(ScriptInjectionTracker::DidProcessRunUserScriptFromExtension(
@@ -337,9 +374,8 @@ IN_PROC_BROWSER_TEST_F(ScriptInjectionTrackerBrowserTest,
 
   // The test assumes the RenderFrame stays the same after navigation. Disable
   // back/forward cache to ensure that RenderFrame swap won't happen.
-  content::WebContents* web_contents = GetActiveWebContents();
   content::DisableBackForwardCacheForTesting(
-      web_contents,
+      GetActiveWebContents(),
       content::BackForwardCache::TEST_ASSUMES_NO_RENDER_FRAME_CHANGE);
   // Install a test extension.
   TestExtensionDir dir;
@@ -358,7 +394,8 @@ IN_PROC_BROWSER_TEST_F(ScriptInjectionTrackerBrowserTest,
 
   // Navigate to an arbitrary, mostly-empty test page.
   GURL page_url = embedded_test_server()->GetURL("foo.com", "/title1.html");
-  ASSERT_TRUE(NavigateToURL(web_contents, page_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
+  content::WebContents* web_contents = GetActiveWebContents();
 
   // Programmatically inject a content script between ReadyToCommit and
   // DidCommit events.
@@ -367,7 +404,7 @@ IN_PROC_BROWSER_TEST_F(ScriptInjectionTrackerBrowserTest,
     ContentScriptExecuterBeforeDidCommit content_script_executer(
         new_url, web_contents, extension->id(),
         "document.body.innerText = 'content script has run'");
-    ASSERT_TRUE(NavigateToURL(web_contents, new_url));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), new_url));
     content_script_executer.WaitForMessage();
   }
 
@@ -411,8 +448,8 @@ IN_PROC_BROWSER_TEST_F(ScriptInjectionTrackerBrowserTest,
   // Navigate to a test page that is *not* covered by `content_scripts.matches`
   // manifest entry above.
   GURL ignored_url = embedded_test_server()->GetURL("foo.com", "/title1.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), ignored_url));
   content::WebContents* first_tab = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(first_tab, ignored_url));
 
   // Verify that initially no processes show up as having been injected with
   // content scripts.
@@ -460,8 +497,8 @@ IN_PROC_BROWSER_TEST_F(
   // manifest entry below (the extension is *not* installed at this point yet).
   GURL injected_url =
       embedded_test_server()->GetURL("example.com", "/title1.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), injected_url));
   content::WebContents* first_tab = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(first_tab, injected_url));
 
   // Create the test extension.
   TestExtensionDir dir;
@@ -555,11 +592,11 @@ IN_PROC_BROWSER_TEST_F(
     GURL injected_url =
         embedded_test_server()->GetURL("bar.com", "/title1.html");
     ExtensionTestMessageListener listener("Hello from content script!");
-    first_tab = GetActiveWebContents();
-    ASSERT_TRUE(NavigateToURL(first_tab, injected_url));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), injected_url));
 
     // Verify that content script has been injected.
     ASSERT_TRUE(listener.WaitUntilSatisfied());
+    first_tab = GetActiveWebContents();
     EXPECT_EQ("content script has run",
               content::EvalJs(first_tab, "document.body.innerText"));
 
@@ -642,11 +679,11 @@ IN_PROC_BROWSER_TEST_F(
     GURL injected_url =
         embedded_test_server()->GetURL("bar.com", "/title1.html");
     ExtensionTestMessageListener listener("Hello from content script!");
-    first_tab = GetActiveWebContents();
-    ASSERT_TRUE(NavigateToURL(first_tab, injected_url));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), injected_url));
 
     // Verify that content script has been injected.
     ASSERT_TRUE(listener.WaitUntilSatisfied());
+    first_tab = GetActiveWebContents();
     EXPECT_EQ("content script has run",
               content::EvalJs(first_tab, "document.body.innerText"));
 
@@ -739,11 +776,11 @@ IN_PROC_BROWSER_TEST_F(
     GURL injected_url =
         embedded_test_server()->GetURL("bar.com", "/title1.html");
     ExtensionTestMessageListener listener("Hello from content script!");
-    first_tab = GetActiveWebContents();
-    ASSERT_TRUE(NavigateToURL(first_tab, injected_url));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), injected_url));
 
     // Verify that content script has been injected.
     ASSERT_TRUE(listener.WaitUntilSatisfied());
+    first_tab = GetActiveWebContents();
     EXPECT_EQ("content script has run: 1",
               content::EvalJs(first_tab, "document.body.innerText"));
 
@@ -877,8 +914,8 @@ IN_PROC_BROWSER_TEST_F(
   // manifest entry used in this test (see `kManifestTemplate` below).
   GURL ignored_url =
       embedded_test_server()->GetURL("foo.test.com", "/title1.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), ignored_url));
   content::WebContents* web_contents = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(web_contents, ignored_url));
 
   // The test uses a long-running `pagehide` handler to postpone DidCommit in a
   // same-process, cross-origin navigation that happens in the next test steps:
@@ -1069,11 +1106,11 @@ IN_PROC_BROWSER_TEST_F(ScriptInjectionTrackerBrowserTest,
   // Navigate to a test page that is *not* covered by the PageStateMatcher used
   // above.
   GURL ignored_url = embedded_test_server()->GetURL("foo.com", "/title1.html");
-  content::WebContents* first_tab = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(first_tab, ignored_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), ignored_url));
 
   // Verify that initially no frames show up as having been injected with
   // content scripts.
+  content::WebContents* first_tab = GetActiveWebContents();
   EXPECT_EQ("This page has no title.",
             content::EvalJs(first_tab, "document.body.innerText"));
   EXPECT_FALSE(ScriptInjectionTracker::DidProcessRunContentScriptFromExtension(
@@ -1134,12 +1171,14 @@ IN_PROC_BROWSER_TEST_F(ScriptInjectionTrackerBrowserTest, HistoryPushState) {
   GURL url =
       embedded_test_server()->GetURL("bar.com", "/History/push_state.html");
   ExtensionTestMessageListener listener("Hello from content script!");
-  auto* web_contents = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(web_contents, url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
 
   // Verify that content script has been injected.
   ASSERT_TRUE(listener.WaitUntilSatisfied());
-  content::RenderFrameHost* main_frame = web_contents->GetPrimaryMainFrame();
+  content::RenderFrameHost* main_frame = browser()
+                                             ->tab_strip_model()
+                                             ->GetActiveWebContents()
+                                             ->GetPrimaryMainFrame();
   EXPECT_EQ("content script has run",
             content::EvalJs(main_frame, "document.body.innerText"));
 
@@ -1210,11 +1249,11 @@ IN_PROC_BROWSER_TEST_F(DynamicScriptsTrackerBrowserTest,
   // Navigate to a test page that is *not* covered by the dynamic content script
   // used above.
   GURL ignored_url = embedded_test_server()->GetURL("foo.com", "/title1.html");
-  content::WebContents* first_tab = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(first_tab, ignored_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), ignored_url));
 
   // Verify that initially no frames show up as having been injected with
   // content scripts.
+  content::WebContents* first_tab = GetActiveWebContents();
   EXPECT_EQ("This page has no title.",
             content::EvalJs(first_tab, "document.body.innerText"));
   EXPECT_FALSE(ScriptInjectionTracker::DidProcessRunContentScriptFromExtension(
@@ -1285,11 +1324,11 @@ IN_PROC_BROWSER_TEST_F(DynamicScriptsTrackerBrowserTest,
   // Navigate to a test page that is not in the extension's host permissions.
   GURL ignored_url =
       embedded_test_server()->GetURL("non-requested.com", "/title1.html");
-  content::WebContents* first_tab = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(first_tab, ignored_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), ignored_url));
 
   // Verify that initially no frames show up as having been injected with
   // content scripts.
+  content::WebContents* first_tab = GetActiveWebContents();
   EXPECT_EQ("This page has no title.",
             content::EvalJs(first_tab, "document.body.innerText"));
   EXPECT_FALSE(ScriptInjectionTracker::DidProcessRunContentScriptFromExtension(
@@ -1385,7 +1424,7 @@ IN_PROC_BROWSER_TEST_F(DynamicScriptsTrackerBrowserTest,
   // Navigate to an extension page (so that later we can call
   // `chrome.scripting.registerContentScripts`).
   content::RenderFrameHost* extension_frame = ui_test_utils::NavigateToURL(
-      browser(), extension->GetResourceURL("page.html"));
+      browser(), extension->GetResourceURL("/page.html"));
   ASSERT_TRUE(extension_frame);
 
   // Step 1: Navigate to a test page that *will later* be covered by the dynamic
@@ -1512,9 +1551,9 @@ IN_PROC_BROWSER_TEST_F(DynamicScriptsTrackerBrowserTest,
   // Step 2: Navigate to a.com. Verify that the process doesn't show up
   // as having been injected with content scripts.
   GURL optional_url = embedded_test_server()->GetURL("a.com", "/title1.html");
-  content::WebContents* web_contents = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(web_contents, optional_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), optional_url));
 
+  content::WebContents* web_contents = GetActiveWebContents();
   EXPECT_EQ("This page has no title.",
             content::EvalJs(web_contents, "document.body.innerText"));
   EXPECT_FALSE(ScriptInjectionTracker::DidProcessRunContentScriptFromExtension(
@@ -1528,7 +1567,7 @@ IN_PROC_BROWSER_TEST_F(DynamicScriptsTrackerBrowserTest,
   // Step 4: Navigate to a.com in the same renderer. Verify process
   // shows up as having been injected with content script and content script is
   // injected.
-  ASSERT_TRUE(NavigateToURL(web_contents, optional_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), optional_url));
 
   EXPECT_EQ("Content script has run",
             content::EvalJs(web_contents, "document.body.title"));
@@ -1693,23 +1732,23 @@ IN_PROC_BROWSER_TEST_F(DynamicScriptsTrackerBrowserTest, ActiveTabGranted) {
   // Step 2: Navigate to a.com. Verify that the process doesn't show up as
   // having been injected with content scripts.
   GURL url = embedded_test_server()->GetURL("a.com", "/title1.html");
-  content::WebContents* web_contents = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(web_contents, url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
 
+  content::WebContents* web_contents = GetActiveWebContents();
   EXPECT_EQ("This page has no title.",
             content::EvalJs(web_contents, "document.body.innerText"));
   EXPECT_FALSE(ScriptInjectionTracker::DidProcessRunContentScriptFromExtension(
       *web_contents->GetPrimaryMainFrame()->GetProcess(), extension->id()));
 
   // Step 3: Grant activeTab and verify tracker runs the content script.
-  ActiveTabPermissionGranter::FromWebContents(web_contents)
-      ->GrantIfRequested(extension);
+  TabHelper* tab_helper = TabHelper::FromWebContents(web_contents);
+  tab_helper->active_tab_permission_granter()->GrantIfRequested(extension);
   EXPECT_TRUE(ScriptInjectionTracker::DidProcessRunContentScriptFromExtension(
       *web_contents->GetPrimaryMainFrame()->GetProcess(), extension->id()));
 
   // Step 4: Navigate to a.com in the same renderer. Verify process shows up as
   // having been injected with content script, and content script is injected.
-  ASSERT_TRUE(NavigateToURL(web_contents, url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
   EXPECT_EQ("Content script has run",
             content::EvalJs(web_contents, "document.body.title"));
   EXPECT_TRUE(ScriptInjectionTracker::DidProcessRunContentScriptFromExtension(
@@ -1808,10 +1847,10 @@ IN_PROC_BROWSER_TEST_P(UserScriptTrackerBrowserTest,
   // Navigate to a page that is not in the user script 'matches'.
   GURL ignored_url =
       embedded_test_server()->GetURL("other.com", "/title1.html");
-  content::WebContents* first_tab = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(first_tab, ignored_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), ignored_url));
 
   // Verify that no frames show up as having been injected with user scripts.
+  content::WebContents* first_tab = GetActiveWebContents();
   EXPECT_EQ("This page has no title.",
             content::EvalJs(first_tab, "document.body.innerText"));
   EXPECT_FALSE(ScriptInjectionTracker::DidProcessRunUserScriptFromExtension(
@@ -1902,10 +1941,10 @@ IN_PROC_BROWSER_TEST_P(UserScriptTrackerBrowserTest,
   // Navigate to a page that is not in the extension's host permissions.
   GURL ignored_url =
       embedded_test_server()->GetURL("non-requested.com", "/title1.html");
-  content::WebContents* first_tab = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(first_tab, ignored_url));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), ignored_url));
 
   // Verify that no frames show up as having been injected with user scripts.
+  content::WebContents* first_tab = GetActiveWebContents();
   EXPECT_EQ("This page has no title.",
             content::EvalJs(first_tab, "document.body.innerText"));
   EXPECT_FALSE(ScriptInjectionTracker::DidProcessRunUserScriptFromExtension(
@@ -1953,7 +1992,7 @@ class ScriptInjectionTrackerAppBrowserTest : public PlatformAppBrowserTest {
 
   guest_view::TestGuestViewManager* GetGuestViewManager() {
     return factory_.GetOrCreateTestGuestViewManager(
-        profile(),
+        browser()->profile(),
         ExtensionsAPIClient::Get()->CreateGuestViewManagerDelegate());
   }
 

@@ -33,9 +33,8 @@ class GraphicsContext;
 class LocalFrameView;
 class RemoteFrame;
 
-class CORE_EXPORT RemoteFrameView final
-    : public GarbageCollected<RemoteFrameView>,
-      public FrameView {
+class RemoteFrameView final : public GarbageCollected<RemoteFrameView>,
+                              public FrameView {
  public:
   explicit RemoteFrameView(RemoteFrame*);
   ~RemoteFrameView() override;
@@ -62,14 +61,11 @@ class CORE_EXPORT RemoteFrameView final
   void Hide() override;
   void Show() override;
 
-  void SetNeedsOcclusionTracking(bool);
-
-  void UpdateIntersectionObserverStatus() override;
-  void UpdateViewportIntersectionsForSubtree(
+  bool UpdateViewportIntersectionsForSubtree(
       unsigned parent_flags,
       ComputeIntersectionsContext&) override;
-  bool HasActiveIntersectionObservations() const override;
-  bool NeedsOcclusionTracking() const override;
+  void SetNeedsOcclusionTracking(bool);
+  bool NeedsOcclusionTracking() const { return needs_occlusion_tracking_; }
 
   std::optional<NaturalSizingInfo> GetNaturalDimensions() const override;
 

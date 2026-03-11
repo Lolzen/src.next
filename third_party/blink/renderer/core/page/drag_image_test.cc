@@ -62,7 +62,7 @@ class TestImage : public Image {
     return gfx::Size(image_->width(), image_->height());
   }
 
-  bool IsOpaque() override { return false; }
+  bool CurrentFrameKnownToBeOpaque() override { return false; }
 
   void DestroyDecodedData() override {
     // Image pure virtual stub.

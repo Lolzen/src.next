@@ -48,9 +48,7 @@ class CORE_EXPORT LayoutHTMLCanvas final : public LayoutReplaced {
 
   bool DrawsBackgroundOntoContentLayer() const final;
 
-  void StyleDidChange(StyleDifference,
-                      const ComputedStyle* old_style,
-                      const StyleChangeContext&) override;
+  void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
 
   const char* GetName() const override {
     NOT_DESTROYED();
@@ -85,6 +83,8 @@ class CORE_EXPORT LayoutHTMLCanvas final : public LayoutReplaced {
     return &children_;
   }
 
+  void DidInvalidatePaintForPlacedElement(Element* placedElement);
+
  private:
   LayoutObjectChildList* VirtualChildren() final {
     NOT_DESTROYED();
@@ -96,7 +96,7 @@ class CORE_EXPORT LayoutHTMLCanvas final : public LayoutReplaced {
   }
   bool CanHaveChildren() const final {
     NOT_DESTROYED();
-    return RuntimeEnabledFeatures::CanvasDrawElementEnabled();
+    return RuntimeEnabledFeatures::CanvasPlaceElementEnabled();
   }
   bool IsChildAllowed(LayoutObject*, const ComputedStyle&) const final;
 

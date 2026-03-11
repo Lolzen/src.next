@@ -16,7 +16,7 @@
 #include "base/check.h"
 #include "base/compiler_specific.h"
 #include "base/containers/flat_set.h"
-#include "base/containers/span.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/metrics/histogram_macros.h"
@@ -28,7 +28,6 @@
 #include "components/history/core/browser/history_backend_client.h"
 #include "components/history/core/browser/history_backend_notifier.h"
 #include "components/history/core/browser/history_database.h"
-#include "components/history/core/browser/history_types.h"
 
 namespace history {
 
@@ -132,7 +131,7 @@ constexpr base::TimeDelta kExpirationSleepWakeupThreshold = base::Hours(1);
 const int kClearOnDemandFaviconsIntervalHours = 24;
 
 bool IsAnyURLPinned(HistoryBackendClient* backend_client,
-                    base::span<const GURL> urls) {
+                    const std::vector<GURL>& urls) {
   for (const GURL& url : urls) {
     if (backend_client->IsPinnedURL(url))
       return true;
@@ -187,7 +186,7 @@ void ExpireHistoryBackend::DeleteURL(const GURL& url, base::Time end_time) {
   DeleteURLs({url}, end_time);
 }
 
-void ExpireHistoryBackend::DeleteURLs(base::span<const GURL> urls,
+void ExpireHistoryBackend::DeleteURLs(const std::vector<GURL>& urls,
                                       base::Time end_time) {
   if (!main_db_)
     return;
@@ -269,7 +268,7 @@ void ExpireHistoryBackend::ExpireHistoryBetween(
 }
 
 void ExpireHistoryBackend::ExpireHistoryForTimes(
-    base::span<const base::Time> times) {
+    const std::vector<base::Time>& times) {
   // `times` must be in reverse chronological order and have no
   // duplicates, i.e. each member must be earlier than the one before
   // it.
@@ -586,15 +585,12 @@ void ExpireHistoryBackend::ExpireURLsForVisits(const VisitVector& visits,
 
     // Check if there are any other visits for this URL and update the time
     // (the time change may not actually be synced to disk below when we're
-    // archiving). This includes 404 visits (see crbug.com/430618428 for
-    // context).
+    // archiving).
     VisitRow last_visit;
-    if (main_db_->GetMostRecentVisitForURL(
-            url_row.id(), &last_visit, VisitQuery404sPolicy::kInclude404s)) {
+    if (main_db_->GetMostRecentVisitForURL(url_row.id(), &last_visit))
       url_row.set_last_visit(last_visit.visit_time);
-    } else {
+    else
       url_row.set_last_visit(base::Time());
-    }
 
     // Don't delete URLs with visits still in the DB, or pinned.
     bool is_pinned =

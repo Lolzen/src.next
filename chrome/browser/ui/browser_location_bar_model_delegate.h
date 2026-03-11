@@ -5,16 +5,16 @@
 #ifndef CHROME_BROWSER_UI_BROWSER_LOCATION_BAR_MODEL_DELEGATE_H_
 #define CHROME_BROWSER_UI_BROWSER_LOCATION_BAR_MODEL_DELEGATE_H_
 
-#include "base/memory/raw_ref.h"
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/ui/toolbar/chrome_location_bar_model_delegate.h"
 
-class TabStripModel;
+class Browser;
 
 // Implementation of LocationBarModelDelegate which uses an instance of
 // Browser in order to fulfil its duties.
 class BrowserLocationBarModelDelegate : public ChromeLocationBarModelDelegate {
  public:
-  explicit BrowserLocationBarModelDelegate(TabStripModel* tab_strip_model);
+  explicit BrowserLocationBarModelDelegate(Browser* browser);
 
   BrowserLocationBarModelDelegate(const BrowserLocationBarModelDelegate&) =
       delete;
@@ -27,7 +27,7 @@ class BrowserLocationBarModelDelegate : public ChromeLocationBarModelDelegate {
   content::WebContents* GetActiveWebContents() const override;
 
  private:
-  const raw_ref<TabStripModel> tab_strip_model_;
+  const raw_ptr<Browser> browser_;
 };
 
 #endif  // CHROME_BROWSER_UI_BROWSER_LOCATION_BAR_MODEL_DELEGATE_H_

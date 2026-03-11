@@ -4,10 +4,9 @@
 
 #include "extensions/browser/zipfile_installer.h"
 
-#include <algorithm>
-#include <optional>
 #include <variant>
 
+#include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -16,7 +15,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
-#include "base/values.h"
 #include "components/services/unzip/content/unzip_service.h"
 #include "components/services/unzip/public/cpp/unzip.h"
 #include "components/services/unzip/public/mojom/unzipper.mojom.h"
@@ -26,6 +24,8 @@
 #include "extensions/common/extension_features.h"
 #include "extensions/common/manifest.h"
 #include "extensions/strings/grit/extensions_strings.h"
+#include "services/data_decoder/public/cpp/data_decoder.h"
+#include "services/data_decoder/public/mojom/json_parser.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace extensions {
@@ -178,8 +178,34 @@ void ZipFileInstaller::ManifestRead(
     return;
   }
 
-  std::optional<base::Value> result = base::JSONReader::Read(
-      *manifest_content, base::JSON_PARSE_CHROMIUM_EXTENSIONS);
+  // Create a DataDecoder to specify custom parse options to the JSON
+  // parser. The ownership of the |data_decoder| and |json_parser|
+  // transfer to the response callback and are deleted after it runs.
+  auto data_decoder = std::make_unique<data_decoder::DataDecoder>();
+  mojo::Remote<data_decoder::mojom::JsonParser> json_parser;
+  data_decoder->GetService()->BindJsonParser(
+      json_parser.BindNewPipeAndPassReceiver());
+  json_parser.set_disconnect_handler(
+      base::BindOnce(&ZipFileInstaller::ManifestParsed, this, unzip_dir,
+                     std::nullopt, "Data Decoder terminated unexpectedly"));
+  auto* json_parser_ptr = json_parser.get();
+  json_parser_ptr->Parse(
+      *manifest_content, base::JSON_PARSE_CHROMIUM_EXTENSIONS,
+      base::BindOnce(
+          [](std::unique_ptr<data_decoder::DataDecoder>,
+             mojo::Remote<data_decoder::mojom::JsonParser>,
+             scoped_refptr<ZipFileInstaller> installer,
+             const base::FilePath& unzip_dir, std::optional<base::Value> value,
+             const std::optional<std::string>& error) {
+            installer->ManifestParsed(unzip_dir, std::move(value), error);
+          },
+          std::move(data_decoder), std::move(json_parser),
+          base::WrapRefCounted(this), unzip_dir));
+}
+
+void ZipFileInstaller::ManifestParsed(const base::FilePath& unzip_dir,
+                                      std::optional<base::Value> result,
+                                      const std::optional<std::string>& error) {
   if (!result || !result->is_dict()) {
     ReportFailure(std::string(kExtensionHandlerFileUnzipError));
     return;
@@ -195,7 +221,7 @@ void ZipFileInstaller::ManifestRead(
         return ZipFileInstaller::ShouldExtractFile(is_theme, file_path) &&
                !ZipFileInstaller::IsManifestFile(file_path);
       },
-      manifest_type == Manifest::Type::kTheme);
+      manifest_type == Manifest::TYPE_THEME);
 
   // TODO(crbug.com/41274425): This silently ignores blocked file types.
   //                         Add install warnings.
@@ -232,7 +258,7 @@ bool ZipFileInstaller::ShouldExtractFile(bool is_theme,
     if (extension.empty()) {
       return true;
     }
-    return std::ranges::contains(kAllowedThemeFiletypes, extension);
+    return base::Contains(kAllowedThemeFiletypes, extension);
   }
   return !base::FilePath::CompareEqualIgnoreCase(file_path.FinalExtension(),
                                                  FILE_PATH_LITERAL(".exe"));

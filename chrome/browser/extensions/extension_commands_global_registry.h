@@ -10,11 +10,8 @@
 #include "base/memory/raw_ptr.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
-#include "extensions/buildflags/buildflags.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/accelerators/global_accelerator_listener/global_accelerator_listener.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace content {
 class BrowserContext;
@@ -62,7 +59,7 @@ class ExtensionCommandsGlobalRegistry
     registry_for_active_window_ = registry;
   }
 
-  // Returns whether `accelerator` is registered on the registry for the active
+  // Returns whether |accelerator| is registered on the registry for the active
   // window or on the global registry.
   bool IsRegistered(const ui::Accelerator& accelerator);
 
@@ -76,12 +73,10 @@ class ExtensionCommandsGlobalRegistry
   static const bool kServiceRedirectedInIncognito = true;
 
   // Overridden from ExtensionKeybindingRegistry:
-  bool PopulateCommands(const Extension* extension,
-                        ui::CommandMap* commands) override;
-  bool RegisterAccelerator(const ui::Accelerator& accelerator,
-                           const ExtensionId& extension_id,
-                           const std::string& command_name) override;
-  void UnregisterAccelerator(const ui::Accelerator& accelerator) override;
+  void AddExtensionKeybindings(const Extension* extension,
+                               const std::string& command_name) override;
+  void RemoveExtensionKeybindingImpl(const ui::Accelerator& accelerator,
+                                     const std::string& command_name) override;
   void OnShortcutHandlingSuspended(bool suspended) override;
 
   // Called by the GlobalShortcutListener object when a shortcut this class has

@@ -25,9 +25,9 @@ import androidx.annotation.IntDef;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.widget.ImageViewCompat;
 
-import org.chromium.base.MathUtils;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.metrics.RecordUserAction;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.profiles.Profile;
@@ -36,20 +36,17 @@ import org.chromium.chrome.browser.toolbar.R;
 import org.chromium.chrome.browser.ui.favicon.FaviconHelper;
 import org.chromium.chrome.browser.ui.favicon.FaviconHelper.DefaultFaviconHelper;
 import org.chromium.chrome.browser.ui.favicon.FaviconHelper.FaviconImageCallback;
-import org.chromium.chrome.browser.url_constants.UrlConstantResolver;
-import org.chromium.chrome.browser.url_constants.UrlConstantResolverFactory;
+import org.chromium.components.embedder_support.util.UrlConstants;
 import org.chromium.components.embedder_support.util.UrlUtilities;
 import org.chromium.content_public.browser.NavigationController;
 import org.chromium.content_public.browser.NavigationEntry;
 import org.chromium.content_public.browser.NavigationHistory;
-import org.chromium.ui.UiUtils;
 import org.chromium.url.GURL;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.function.Supplier;
 
 /** A popup that handles displaying the navigation history for a given tab. */
 @NullMarked
@@ -80,12 +77,12 @@ public class NavigationPopup implements AdapterView.OnItemClickListener {
     private final Context mContext;
     private final ListPopupWindow mPopup;
     private final NavigationController mNavigationController;
-    private final NavigationHistory mHistory;
+    private NavigationHistory mHistory;
     private final NavigationAdapter mAdapter;
     private final @Type int mType;
     private final int mFaviconSize;
     private final @Nullable OnLayoutChangeListener mAnchorViewLayoutChangeListener;
-    private final Supplier<@Nullable Tab> mCurrentTabSupplier;
+    private final Supplier<Tab> mCurrentTabSupplier;
     private final HistoryDelegate mHistoryDelegate;
 
     private DefaultFaviconHelper mDefaultFaviconHelper;
@@ -113,7 +110,7 @@ public class NavigationPopup implements AdapterView.OnItemClickListener {
             Context context,
             @Nullable NavigationController navigationController,
             @Type int type,
-            Supplier<@Nullable Tab> currentTabSupplier,
+            Supplier<Tab> currentTabSupplier,
             HistoryDelegate historyDelegate) {
         mProfile = profile;
         mContext = context;
@@ -130,12 +127,10 @@ public class NavigationPopup implements AdapterView.OnItemClickListener {
                 mNavigationController.getDirectedNavigationHistory(
                         isForward, MAXIMUM_HISTORY_ITEMS);
         if (!shouldUseIncognitoResources()) {
-            UrlConstantResolver urlConstantResolver =
-                    UrlConstantResolverFactory.getForProfile(profile);
             mHistory.addEntry(
                     new NavigationEntry(
                             FULL_HISTORY_ENTRY_INDEX,
-                            new GURL(urlConstantResolver.getHistoryPageUrl()),
+                            new GURL(UrlConstants.HISTORY_URL),
                             GURL.emptyGURL(),
                             GURL.emptyGURL(),
                             resources.getString(R.string.show_full_history),
@@ -160,6 +155,9 @@ public class NavigationPopup implements AdapterView.OnItemClickListener {
         mPopup.setHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
         mPopup.setOnItemClickListener(this);
         mPopup.setAdapter(mAdapter);
+        mPopup.setWidth(
+                resources.getDimensionPixelSize(
+                        anchorToBottom ? R.dimen.navigation_popup_width : R.dimen.menu_width));
 
         if (anchorToBottom) {
             // By default ListPopupWindow uses the top & bottom padding of the background to
@@ -206,36 +204,12 @@ public class NavigationPopup implements AdapterView.OnItemClickListener {
             mPopup.getAnchorView().removeOnLayoutChangeListener(mAnchorViewLayoutChangeListener);
         }
         mPopup.setAnchorView(anchorView);
-        Resources resources = mContext.getResources();
-        boolean isAndroidSystemBack = mType == Type.ANDROID_SYSTEM_BACK;
-        int contentWidth = UiUtils.computeListAdapterContentDimensions(mAdapter, null)[0];
-        int minWidth = resources.getDimensionPixelSize(R.dimen.navigation_popup_tablet_min_width);
-        int maxWidth =
-                // Take the smaller of...
-                Math.min(
-                        // ... a fixed upper bound, and...
-                        resources.getDimensionPixelSize(R.dimen.navigation_popup_tablet_max_width),
-                        // ... the width of the screen minus a margin.
-                        resources.getDisplayMetrics().widthPixels
-                                - resources.getDimensionPixelSize(
-                                        R.dimen.navigation_popup_tablet_width_margin));
-        mPopup.setWidth(
-                isAndroidSystemBack
-                        ? resources.getDimensionPixelSize(R.dimen.navigation_popup_width)
-                        : MathUtils.clamp(contentWidth, minWidth, maxWidth));
-        if (isAndroidSystemBack) {
+        if (mType == Type.ANDROID_SYSTEM_BACK) {
             anchorView.addOnLayoutChangeListener(mAnchorViewLayoutChangeListener);
             centerPopupOverAnchorViewAndShow();
         } else {
             mPopup.show();
         }
-
-        // Set clipToOutline to true to contain the mouse hover effect inside the
-        // popup's outline. Also set the background of the list view to menu_bg_shape
-        // to make its shape the same as the popup.
-        assumeNonNull(mPopup.getListView());
-        mPopup.getListView().setBackgroundResource(R.drawable.menu_bg_shape);
-        mPopup.getListView().setClipToOutline(true);
     }
 
     /** Dismisses the popup. */
@@ -299,12 +273,7 @@ public class NavigationPopup implements AdapterView.OnItemClickListener {
     private void onFaviconAvailable(GURL pageUrl, Bitmap favicon) {
         if (favicon == null) {
             if (mDefaultFaviconHelper == null) mDefaultFaviconHelper = new DefaultFaviconHelper();
-            favicon =
-                    mDefaultFaviconHelper.getDefaultFaviconBitmap(
-                            mContext,
-                            pageUrl,
-                            /* useDarkIcon= */ true,
-                            /* useIncognitoNtpIcon= */ false);
+            favicon = mDefaultFaviconHelper.getDefaultFaviconBitmap(mContext, pageUrl, true);
         }
         if (UrlUtilities.isNtpUrl(pageUrl) && shouldUseIncognitoResources()) {
             favicon =
@@ -324,7 +293,6 @@ public class NavigationPopup implements AdapterView.OnItemClickListener {
         if (entry.getIndex() == FULL_HISTORY_ENTRY_INDEX) {
             RecordUserAction.record(buildComputedAction("ShowFullHistory"));
             Tab currentTab = mCurrentTabSupplier.get();
-            assert currentTab != null;
             mHistoryDelegate.show(currentTab);
         } else {
             // 1-based index to keep in line with Desktop implementation.
@@ -358,7 +326,7 @@ public class NavigationPopup implements AdapterView.OnItemClickListener {
         public View getView(int position, View convertView, ViewGroup parent) {
             EntryViewHolder viewHolder;
             if (convertView == null) {
-                LayoutInflater inflater = LayoutInflater.from(mContext);
+                LayoutInflater inflater = LayoutInflater.from(parent.getContext());
                 convertView = inflater.inflate(R.layout.navigation_popup_item, parent, false);
                 viewHolder =
                         new EntryViewHolder(
@@ -424,8 +392,8 @@ public class NavigationPopup implements AdapterView.OnItemClickListener {
             mTextView = textView;
         }
 
-        final View mContainer;
-        final ImageView mImageView;
-        final TextView mTextView;
+        View mContainer;
+        ImageView mImageView;
+        TextView mTextView;
     }
 }

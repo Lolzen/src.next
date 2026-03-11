@@ -16,7 +16,6 @@ interface IsReadyToPayService {
      * whether the payment app is ready for payment.
      *
      * @param callback The callback to report back to the browser.
-     * @param parameters Transaction information.
      */
-    oneway void isReadyToPay(IsReadyToPayServiceCallback callback, in Bundle parameters);
+    oneway void isReadyToPay(IsReadyToPayServiceCallback callback);
 }

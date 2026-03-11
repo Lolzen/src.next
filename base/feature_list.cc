@@ -2,25 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/feature_list.h"
+#include "base/location.h"
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
 
 #include <stddef.h>
 
 #include <algorithm>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <tuple>
 
 #include "base/base_switches.h"
 #include "base/check_is_test.h"
-#include "base/command_line.h"
-#include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
+#include "base/feature_list.h"
 #include "base/feature_visitor.h"
-#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
@@ -99,12 +101,14 @@ class EarlyFeatureAccessTracker {
   void Fail(const Feature* feature, bool with_feature_allow_list) {
     // TODO(crbug.com/40237050): Enable this check on all platforms.
 #if !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_NACL)
     // Create a crash key with the name of the feature accessed too early, to
     // facilitate crash triage.
     SCOPED_CRASH_KEY_STRING256("FeatureList", "feature-accessed-too-early",
                                feature->name);
     SCOPED_CRASH_KEY_BOOL("FeatureList", "early-access-allow-list",
                           with_feature_allow_list);
+#endif  // !BUILDFLAG(IS_NACL)
     CHECK(!feature) << "Accessed feature " << feature->name
                     << (with_feature_allow_list
                             ? " which is not on the allow list passed to "
@@ -142,39 +146,37 @@ void DCheckOverridesAllowed() {}
 
 // An allocator entry for a feature in shared memory. The FeatureEntry is
 // followed by a base::Pickle object that contains the feature and trial name.
-class FeatureEntry {
- public:
+struct FeatureEntry {
   // SHA1(FeatureEntry): Increment this if structure changes!
   static constexpr uint32_t kPersistentTypeId = 0x06567CA6 + 2;
 
   // Expected size for 32/64-bit check.
   static constexpr size_t kExpectedInstanceSize = 16;
 
-  static FeatureEntry* Create(PersistentMemoryAllocator* allocator,
-                              uint32_t override_state,
-                              const Pickle& pickle) {
-    size_t total_size = sizeof(FeatureEntry) + pickle.size();
-    FeatureEntry* entry = allocator->New<FeatureEntry>(total_size);
-    if (entry) {
-      entry->override_state_ = override_state;
-      entry->pickle_size_ = pickle.size();
-      entry->GetPickleData().copy_from(span(pickle));
-    }
-    return entry;
-  }
+  // Specifies whether a feature override enables or disables the feature. Same
+  // values as the OverrideState enum in feature_list.h
+  uint32_t override_state;
 
-  FeatureEntry(const FeatureEntry&) = delete;
-  FeatureEntry& operator=(const FeatureEntry&) = delete;
+  // On e.g. x86, alignof(uint64_t) is 4.  Ensure consistent size and alignment
+  // of `pickle_size` across platforms.
+  uint32_t padding;
 
-  FeatureList::OverrideState override_state() const {
-    return static_cast<FeatureList::OverrideState>(override_state_);
+  // Size of the pickled structure, NOT the total size of this entry.
+  uint64_t pickle_size;
+
+  // Return a pointer to the pickled data area immediately following the entry.
+  uint8_t* GetPickledDataPtr() { return reinterpret_cast<uint8_t*>(this + 1); }
+  const uint8_t* GetPickledDataPtr() const {
+    return reinterpret_cast<const uint8_t*>(this + 1);
   }
 
   // Reads the feature and trial name from the pickle. Calling this is only
   // valid on an initialized entry that's in shared memory.
   bool GetFeatureAndTrialName(std::string_view* feature_name,
                               std::string_view* trial_name) const {
-    PickleIterator pickle_iter = PickleIterator::WithData(GetPickleData());
+    Pickle pickle = Pickle::WithUnownedBuffer(
+        span(GetPickledDataPtr(), checked_cast<size_t>(pickle_size)));
+    PickleIterator pickle_iter(pickle);
     if (!pickle_iter.ReadStringPiece(feature_name)) {
       return false;
     }
@@ -182,36 +184,6 @@ class FeatureEntry {
     std::ignore = pickle_iter.ReadStringPiece(trial_name);
     return true;
   }
-
- private:
-  friend class ::base::PersistentMemoryAllocator;
-
-  FeatureEntry() = default;
-
-  // Return a span to the pickled data area immediately following the entry.
-  span<uint8_t> GetPickleData() {
-    // SAFETY: `Create()` guarantees that `pickle_size_` bytes are allocated for
-    // Pickle data immediately following FeatureEntry data.
-    return UNSAFE_BUFFERS(span(reinterpret_cast<uint8_t*>(this + 1),
-                               checked_cast<size_t>(pickle_size_)));
-  }
-  span<const uint8_t> GetPickleData() const {
-    // SAFETY: `Create()` guarantees that `pickle_size_` bytes are allocated for
-    // Pickle data immediately following FeatureEntry data.
-    return UNSAFE_BUFFERS(span(reinterpret_cast<const uint8_t*>(this + 1),
-                               checked_cast<size_t>(pickle_size_)));
-  }
-
-  // Specifies whether a feature override enables or disables the feature. Same
-  // values as the OverrideState enum in feature_list.h
-  uint32_t override_state_;
-
-  // On e.g. x86, alignof(uint64_t) is 4.  Ensure consistent size and alignment
-  // of `pickle_size` across platforms.
-  uint32_t padding_;
-
-  // Size of the pickled structure, NOT the total size of this entry.
-  uint64_t pickle_size_;
 };
 
 // Splits |text| into two parts by the |separator| where the first part will be
@@ -226,18 +198,12 @@ bool SplitIntoTwo(std::string_view text,
                   std::string* second) {
   std::vector<std::string_view> parts =
       SplitStringPiece(text, separator, TRIM_WHITESPACE, SPLIT_WANT_ALL);
-  if (parts.empty()) {
-    DLOG(ERROR) << "Using '" << separator << "' to split '" << text
-                << "' failed.";
-    return false;
-  }
-  if (parts.size() > 2) {
+  if (parts.size() == 2) {
+    *second = std::string(parts[1]);
+  } else if (parts.size() > 2) {
     DLOG(ERROR) << "Only one '" << separator
                 << "' is allowed but got: " << text;
     return false;
-  }
-  if (parts.size() == 2) {
-    *second = std::string(parts[1]);
   }
   *first = parts[0];
   return true;
@@ -381,7 +347,8 @@ void FeatureList::InitFromSharedMemory(PersistentMemoryAllocator* allocator) {
   PersistentMemoryAllocator::Iterator iter(allocator);
   const FeatureEntry* entry;
   while ((entry = iter.GetNextOfObject<FeatureEntry>()) != nullptr) {
-    OverrideState override_state = entry->override_state();
+    OverrideState override_state =
+        static_cast<OverrideState>(entry->override_state);
 
     std::string_view feature_name;
     std::string_view trial_name;
@@ -394,18 +361,18 @@ void FeatureList::InitFromSharedMemory(PersistentMemoryAllocator* allocator) {
   }
 }
 
-bool FeatureList::IsFeatureOverridden(std::string_view feature_name) const {
+bool FeatureList::IsFeatureOverridden(const std::string& feature_name) const {
   return GetOverrideEntryByFeatureName(feature_name);
 }
 
 bool FeatureList::IsFeatureOverriddenFromCommandLine(
-    std::string_view feature_name) const {
+    const std::string& feature_name) const {
   const OverrideEntry* entry = GetOverrideEntryByFeatureName(feature_name);
   return entry && !entry->overridden_by_field_trial;
 }
 
 bool FeatureList::IsFeatureOverriddenFromCommandLine(
-    std::string_view feature_name,
+    const std::string& feature_name,
     OverrideState state) const {
   const OverrideEntry* entry = GetOverrideEntryByFeatureName(feature_name);
   return entry && !entry->overridden_by_field_trial &&
@@ -466,11 +433,15 @@ void FeatureList::AddFeaturesToAllocator(PersistentMemoryAllocator* allocator) {
       pickle.WriteString(override.second.field_trial->trial_name());
     }
 
-    FeatureEntry* entry = FeatureEntry::Create(
-        allocator, override.second.overridden_state, pickle);
+    size_t total_size = sizeof(FeatureEntry) + pickle.size();
+    FeatureEntry* entry = allocator->New<FeatureEntry>(total_size);
     if (!entry) {
       return;
     }
+
+    entry->override_state = override.second.overridden_state;
+    entry->pickle_size = pickle.size();
+    memcpy(entry->GetPickledDataPtr(), pickle.data(), pickle.size());
 
     allocator->MakeIterable(entry);
   }
@@ -614,7 +585,7 @@ bool FeatureList::InitInstance(
     instance_existed_before = true;
   }
 
-  auto feature_list = std::make_unique<FeatureList>();
+  std::unique_ptr<FeatureList> feature_list(new FeatureList);
   feature_list->InitFromCommandLine(enable_features, disable_features);
   feature_list->RegisterExtraFeatureOverrides(extra_overrides);
   FeatureList::SetInstance(std::move(feature_list));
@@ -647,8 +618,10 @@ void FeatureList::SetInstance(std::unique_ptr<FeatureList> instance) {
   // FeatureList instance, as the state of the involved Features might change
   // with the final FeatureList for this process.
   if (!g_feature_list_instance->IsEarlyAccessInstance()) {
+#if !BUILDFLAG(IS_NACL)
     // Configured first because it takes precedence over the getrandom() trial.
     internal::ConfigureBoringSSLBackedRandBytesFieldTrial();
+#endif
   }
 
 #if BUILDFLAG(DCHECK_IS_CONFIGURABLE)
@@ -757,7 +730,8 @@ void FeatureList::VisitFeaturesAndParams(FeatureVisitor& visitor,
     if (field_trial) {
       trial_name = field_trial->trial_name();
       group_name = field_trial->group_name();
-      params_associator->GetFieldTrialParams(field_trial, &params);
+      params_associator->GetFieldTrialParamsWithoutFallback(
+          trial_name, group_name, &params);
     }
 
     visitor.Visit(feature_override.first,
@@ -925,9 +899,11 @@ void FeatureList::RegisterOverridesFromCommandLine(
     if (pos != std::string::npos) {
       feature_name = std::string_view(value.data(), pos);
       trial = FieldTrialList::Find(value.substr(pos + 1));
+#if !BUILDFLAG(IS_NACL)
       // If the below DCHECK fires, it means a non-existent trial name was
       // specified via the "Feature<Trial" command-line syntax.
       DCHECK(trial) << "trial='" << value.substr(pos + 1) << "' does not exist";
+#endif  // !BUILDFLAG(IS_NACL)
     }
 
     RegisterOverride(feature_name, overridden_state, trial);
@@ -1051,7 +1027,7 @@ bool FeatureList::AllowFeatureAccess(const Feature& feature) const {
   if (!IsEarlyAccessInstance()) {
     return true;
   }
-  return allowed_feature_names_.contains(feature.name);
+  return base::Contains(allowed_feature_names_, feature.name);
 }
 
 FeatureList::OverrideEntry::OverrideEntry(OverrideState overridden_state,

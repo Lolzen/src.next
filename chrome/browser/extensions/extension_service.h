@@ -15,11 +15,13 @@
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/scoped_multi_source_observation.h"
 #include "base/scoped_observation.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/browser/extensions/blocklist.h"
 #include "chrome/browser/extensions/cws_info_service.h"
 #include "chrome/browser/extensions/extension_management.h"
 #include "chrome/browser/extensions/extension_telemetry_service_verdict_handler.h"
@@ -27,13 +29,11 @@
 #include "chrome/browser/extensions/forced_extensions/force_installed_tracker.h"
 #include "chrome/browser/extensions/omaha_attributes_handler.h"
 #include "chrome/browser/extensions/safe_browsing_verdict_handler.h"
-#include "chrome/browser/policy/cloud/extension_install_policy_service.h"
 #include "chrome/browser/profiles/profile_manager_observer.h"
 #include "chrome/browser/upgrade_detector/upgrade_observer.h"
 #include "components/sync/model/string_ordinal.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_process_host_creation_observer.h"
-#include "extensions/browser/blocklist.h"
 #include "extensions/browser/crx_file_info.h"
 #include "extensions/browser/delayed_install_manager.h"
 #include "extensions/browser/disable_reason.h"
@@ -92,7 +92,7 @@ class ExtensionServiceInterface {
 
   // Attempts finishing installation of an update for an extension with the
   // specified id, when installation of that extension was previously delayed.
-  // `install_immediately` - Whether the extension should be installed if it's
+  // |install_immediately| - Whether the extension should be installed if it's
   //     currently in use.
   // Returns whether the extension installation was finished.
   virtual bool FinishDelayedInstallationIfReady(const std::string& extension_id,
@@ -124,12 +124,11 @@ class ExtensionService : public ExtensionServiceInterface,
                          public Blocklist::Observer,
                          public CWSInfoService::Observer,
                          public ExtensionManagement::Observer,
-                         public policy::ExtensionInstallPolicyService::Observer,
                          public UpgradeObserver,
                          public ExtensionHostRegistry::Observer,
                          public ProfileManagerObserver {
  public:
-  // Constructor stores pointers to `profile` and `extension_prefs` but
+  // Constructor stores pointers to |profile| and |extension_prefs| but
   // ownership remains at caller.
   ExtensionService(Profile* profile,
                    const base::CommandLine* command_line,
@@ -160,9 +159,6 @@ class ExtensionService : public ExtensionServiceInterface,
   // ExtensionManagement::Observer implementation:
   void OnExtensionManagementSettingsChanged() override;
 
-  // policy::ExtensionInstallPolicyService::Observer implementation:
-  void OnExtensionInstallPolicyUpdated() override;
-
   // Initialize and start all installed extensions.
   void Init();
 
@@ -170,18 +166,30 @@ class ExtensionService : public ExtensionServiceInterface,
   // KeyedService two-phase shutdown.
   void Shutdown();
 
+  // Enables the extension. If the extension is already enabled, does
+  // nothing.
+  void EnableExtension(const std::string& extension_id);
+
   // Performs action based on Omaha attributes for the extension.
   void PerformActionBasedOnOmahaAttributes(const std::string& extension_id,
-                                           const base::DictValue& attributes);
+                                           const base::Value::Dict& attributes);
 
   // Performs action based on verdicts received from the Extension Telemetry
   // server. Currently, these verdicts are limited to off-store extensions.
   void PerformActionBasedOnExtensionTelemetryServiceVerdicts(
       const Blocklist::BlocklistStateMap& blocklist_state_map);
 
+  // Disables the extension. If the extension is already disabled, just adds
+  // the incoming disable reason(s). If the extension cannot be disabled (due to
+  // policy), does nothing.
+  void DisableExtension(const ExtensionId& extension_id,
+                        disable_reason::DisableReason disable_reason);
+  void DisableExtension(const ExtensionId& extension_id,
+                        const DisableReasonSet& disable_reasons);
+
   // Disable non-default and non-managed extensions with ids not in
-  // `except_ids`. Default extensions are those from the Web Store with
-  // `was_installed_by_default` flag.
+  // |except_ids|. Default extensions are those from the Web Store with
+  // |was_installed_by_default| flag.
   void DisableUserExtensionsExcept(const std::vector<std::string>& except_ids);
 
   // Returns whether a user is able to disable a given extension or if that is
@@ -228,8 +236,6 @@ class ExtensionService : public ExtensionServiceInterface,
 
   void UninstallMigratedExtensionsForTest();
 
-  bool HasShutDownExecutedForTest() const { return is_shut_down_executed_; }
-
 #if defined(UNIT_TEST)
   void FinishInstallationForTest(const Extension* extension) {
     extension_registrar_->FinishInstallation(extension);
@@ -239,21 +245,6 @@ class ExtensionService : public ExtensionServiceInterface,
     OnProfileMarkedForPermanentDeletion(profile_);
   }
 #endif
-
-  // Load Extension Flags.
-  // These values are persisted to logs. Entries should not be renumbered and
-  // numeric values should never be reused.
-  //
-  // LINT.IfChange(LoadExtensionFlag)
-  enum class LoadExtensionFlag {
-    // --load-extension flag.
-    kLoadExtension = 0,
-    // --disable-extensions-except flag.
-    kDisableExtensionsExcept = 1,
-
-    kMaxValue = kDisableExtensionsExcept,
-  };
-  // LINT.ThenChange(/tools/metrics/histograms/metadata/extensions/enums.xml:LoadExtensionFlag)
 
  private:
   // Loads extensions specified via a command line flag/switch.
@@ -313,10 +304,6 @@ class ExtensionService : public ExtensionServiceInterface,
   // other disable reasons associated with them.
   void OnDeveloperModePrefChanged();
 
-  // Logs a warning if --extensions-on-chrome-urls switch is used in Google
-  // Chrome.
-  void LogExtensionsOnChromeUrlsSwitchWarningIfNeeded();
-
   raw_ptr<const base::CommandLine> command_line_ = nullptr;
 
   // The normal profile associated with this ExtensionService.
@@ -359,10 +346,6 @@ class ExtensionService : public ExtensionServiceInterface,
   // Used for specially handling external extensions that are installed the
   // first time.
   bool is_first_run_ = false;
-
-  // Set to true if the ExtensionService::Shutdown() has been executed.
-  // Used in test to ensure the service's shutdown method has been called.
-  bool is_shut_down_executed_ = false;
 
   // The controller for the UI that alerts the user about any blocklisted
   // extensions. Not owned.
@@ -409,10 +392,6 @@ class ExtensionService : public ExtensionServiceInterface,
 
   base::ScopedObservation<CWSInfoService, CWSInfoService::Observer>
       cws_info_service_observation_{this};
-
-  base::ScopedObservation<policy::ExtensionInstallPolicyService,
-                          policy::ExtensionInstallPolicyService::Observer>
-      extension_install_policy_observation_{this};
 
   raw_ptr<DelayedInstallManager> delayed_install_manager_;
 

@@ -23,7 +23,7 @@ public final class WindowEventObserverManager implements DisplayAndroidObserver,
     private final ObserverList<WindowEventObserver> mWindowEventObservers = new ObserverList<>();
 
     private @Nullable WindowAndroid mWindowAndroid;
-    private final ViewEventSinkImpl mViewEventSink;
+    private ViewEventSinkImpl mViewEventSink;
     private boolean mAttachedToWindow;
 
     // The cache of device's current orientation and DIP scale factor.
