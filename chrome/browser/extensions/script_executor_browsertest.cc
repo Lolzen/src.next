@@ -13,6 +13,8 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -109,12 +111,13 @@ IN_PROC_BROWSER_TEST_F(ScriptExecutorBrowserTest, MainWorldExecution) {
 
   GURL example_com =
       embedded_test_server()->GetURL("example.com", "/simple.html");
-  content::WebContents* web_contents = GetActiveWebContents();
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);
 
   {
     content::TestNavigationObserver nav_observer(web_contents);
-    ASSERT_TRUE(NavigateToURL(web_contents, example_com));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), example_com));
     nav_observer.Wait();
     EXPECT_TRUE(nav_observer.last_navigation_succeeded());
   }
@@ -157,12 +160,13 @@ IN_PROC_BROWSER_TEST_F(ScriptExecutorBrowserTest, MainFrameExecution) {
 
   GURL example_com =
       embedded_test_server()->GetURL("example.com", "/simple.html");
-  content::WebContents* web_contents = GetActiveWebContents();
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);
 
   {
     content::TestNavigationObserver nav_observer(web_contents);
-    ASSERT_TRUE(NavigateToURL(web_contents, example_com));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), example_com));
     nav_observer.Wait();
     EXPECT_TRUE(nav_observer.last_navigation_succeeded());
   }
@@ -208,12 +212,13 @@ IN_PROC_BROWSER_TEST_F(ScriptExecutorBrowserTest, MultipleSourceExecution) {
 
   GURL example_com =
       embedded_test_server()->GetURL("example.com", "/simple.html");
-  content::WebContents* web_contents = GetActiveWebContents();
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);
 
   {
     content::TestNavigationObserver nav_observer(web_contents);
-    ASSERT_TRUE(NavigateToURL(web_contents, example_com));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), example_com));
     nav_observer.Wait();
     EXPECT_TRUE(nav_observer.last_navigation_succeeded());
   }
@@ -264,12 +269,13 @@ IN_PROC_BROWSER_TEST_F(ScriptExecutorBrowserTest, PromisesResolve) {
 
   GURL example_com =
       embedded_test_server()->GetURL("example.com", "/simple.html");
-  content::WebContents* web_contents = GetActiveWebContents();
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);
 
   {
     content::TestNavigationObserver nav_observer(web_contents);
-    ASSERT_TRUE(NavigateToURL(web_contents, example_com));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), example_com));
     nav_observer.Wait();
     EXPECT_TRUE(nav_observer.last_navigation_succeeded());
   }
@@ -281,7 +287,7 @@ IN_PROC_BROWSER_TEST_F(ScriptExecutorBrowserTest, PromisesResolve) {
   {
     // Inject two pieces of code. They each evaluate to a promise. The second,
     // `kCode2`, evaluates to a promise that resolves immediately, and then
-    // asynchronously resolves the promise from the first, `kCode1`, which
+    // asynchronously resovles the promise from the first, `kCode1`, which
     // changes the title of the page.
     // This guarantees that the renderer code properly waits for *all* results
     // to resolve, and not simply the last one.
@@ -361,12 +367,13 @@ IN_PROC_BROWSER_TEST_F(ScriptExecutorBrowserTest, SpecifiedFrames) {
 
   GURL example_com = embedded_test_server()->GetURL(
       "example.com", "/extensions/iframes/main.html");
-  content::WebContents* web_contents = GetActiveWebContents();
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   ASSERT_TRUE(web_contents);
 
   {
     content::TestNavigationObserver nav_observer(web_contents);
-    ASSERT_TRUE(NavigateToURL(web_contents, example_com));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), example_com));
     nav_observer.Wait();
     EXPECT_TRUE(nav_observer.last_navigation_succeeded());
   }

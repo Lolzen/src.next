@@ -10,6 +10,7 @@
 
 #include "base/containers/fixed_flat_map.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_forward.h"
 #include "base/i18n/case_conversion.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/strings/string_util.h"
@@ -21,7 +22,6 @@
 #include "components/omnibox/browser/actions/omnibox_extension_action.h"
 #include "components/omnibox/browser/autocomplete_input.h"
 #include "components/omnibox/browser/autocomplete_match_classification.h"
-#include "components/omnibox/browser/suggestion_group_util.h"
 #include "components/omnibox/browser/unscoped_extension_provider.h"
 #include "components/omnibox/browser/vector_icons.h"  // nogncheck
 #include "extensions/browser/extension_util.h"
@@ -31,10 +31,6 @@ namespace {
 // LINT.IfChange
 constexpr size_t kMaxSuggestionsPerExtension = 4;
 // LINT.ThenChange(//components/omnibox/browser/autocomplete_grouper_sections.cc)
-
-// Unscoped Extension suggestions are grouped after all other suggestions. But
-// they still need to score within top N suggestions to be shown.
-constexpr int kUnscopedExtensionRelevance = 2000;
 
 constexpr auto kReservedGroupIdMap =
     base::MakeFixedFlatMap<size_t, omnibox::GroupId>(
@@ -69,9 +65,6 @@ void UnscopedExtensionProviderDelegateImpl::Start(
     std::set<std::string> unscoped_mode_extension_ids) {
   CHECK(extension_suggest_matches_.empty());
   CHECK(extension_id_to_group_id_map_.empty());
-  first_suggestion_relevance_ =
-      input.IsZeroSuggest() ? omnibox::kUnscopedExtensionZeroSuggestRelevance
-                            : kUnscopedExtensionRelevance;
 
   for (const std::string& extension_id : unscoped_mode_extension_ids) {
     if (!IsEnabledExtension(extension_id)) {
@@ -116,7 +109,7 @@ void UnscopedExtensionProviderDelegateImpl::OnOmniboxSuggestionsReady(
   //    it will only be done if the user closes the omnibox, arrows down in the
   //    omnibox, or if all extensions have returned suggestions.
   if (request_id != current_request_id_ ||
-      extension_id_to_group_id_map_.contains(extension_id) ||
+      base::Contains(extension_id_to_group_id_map_, extension_id) ||
       provider_->done() || suggestions.empty()) {
     return;
   }
@@ -143,10 +136,10 @@ void UnscopedExtensionProviderDelegateImpl::OnOmniboxSuggestionsReady(
   group.set_header_text(base::UTF16ToUTF8(template_url->keyword()));
   provider_->AddToSuggestionGroupsMap(current_group_id, std::move(group));
 
+  int first_relevance = 10000000;
   for (const auto& suggestion : suggestions) {
-    CHECK_GE(first_suggestion_relevance_, 0);
-    extension_suggest_matches_.push_back(CreateAutocompleteMatch(
-        suggestion, first_suggestion_relevance_--, extension_id));
+    extension_suggest_matches_.push_back(
+        CreateAutocompleteMatch(suggestion, --first_relevance, extension_id));
   }
 
   ACMatches* matches = provider_->matches();

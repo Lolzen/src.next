@@ -38,10 +38,10 @@ class TestExternalRegistryLoader : public ExternalRegistryLoader {
  private:
   ~TestExternalRegistryLoader() override = default;
 
-  base::DictValue LoadPrefsOnBlockingThread() override {
-    return base::DictValue().Set(kDummyRegistryKey, id_++);
+  base::Value::Dict LoadPrefsOnBlockingThread() override {
+    return base::Value::Dict().Set(kDummyRegistryKey, id_++);
   }
-  void LoadFinished(base::DictValue prefs) override {
+  void LoadFinished(base::Value::Dict prefs) override {
     ++load_finished_count_;
     ASSERT_LE(load_finished_count_, 2);
 

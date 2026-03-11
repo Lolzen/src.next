@@ -7,8 +7,6 @@
 
 #include <string_view>
 
-#include "base/containers/lru_cache.h"
-#include "base/no_destructor.h"
 #include "content/common/content_export.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "services/network/public/mojom/cross_origin_embedder_policy.mojom-forward.h"
@@ -28,6 +26,7 @@ class SharedDictionaryAccessObserver;
 }  // namespace network
 
 namespace content {
+
 class NavigationRequest;
 class RenderFrameHostImpl;
 class RenderProcessHost;
@@ -69,7 +68,6 @@ class URLLoaderFactoryParamsHelper {
       network::mojom::TrustTokenOperationPolicyVerdict
           trust_token_redemption_policy,
       net::CookieSettingOverrides cookie_setting_overrides,
-      const std::optional<base::UnguessableToken>& network_restrictions_id,
       std::string_view debug_tag);
 
   // Creates URLLoaderFactoryParams to be used by |isolated_world_origin| hosted
@@ -128,15 +126,6 @@ class URLLoaderFactoryParamsHelper {
           shared_dictionary_observer,
       mojo::PendingRemote<network::mojom::DeviceBoundSessionAccessObserver>
           device_bound_session_observer);
-
-  // Called when the main frame navigation finishes, this should update the
-  // recently accessed origin set.
-  static CONTENT_EXPORT void OnMainFrameNavigation(url::Origin origin);
-
-  // Returns if the main frame origin from the `IsolationInfo` is recently
-  // accessed from any tab in the current BrowserContext.
-  static CONTENT_EXPORT bool IsMainFrameOriginRecentlyAccessed(
-      const net::IsolationInfo& isolation_info);
 
  private:
   // Only static methods.

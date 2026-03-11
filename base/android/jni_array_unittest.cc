@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdint>
 #include <limits>
 
 #include "base/android/jni_android.h"
@@ -17,7 +16,6 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
-#include "base/strings/string_view_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -120,7 +118,7 @@ void CheckIntConversion(JNIEnv* env,
   jsize java_array_len = env->GetArrayLength(ints.obj());
   ASSERT_EQ(checked_cast<jsize>(in.size()), java_array_len);
 
-  int32_t value;
+  jint value;
   for (size_t i = 0; i < in.size(); ++i) {
     env->GetIntArrayRegion(ints.obj(), i, 1, &value);
     ASSERT_EQ(in[i], value);
@@ -143,7 +141,7 @@ void CheckLongConversion(JNIEnv* env,
   jsize java_array_len = env->GetArrayLength(longs.obj());
   ASSERT_EQ(checked_cast<jsize>(in.size()), java_array_len);
 
-  int64_t value;
+  jlong value;
   for (size_t i = 0; i < in.size(); ++i) {
     env->GetLongArrayRegion(longs.obj(), i, 1, &value);
     ASSERT_EQ(in[i], value);
@@ -166,7 +164,7 @@ void CheckFloatConversion(JNIEnv* env,
   jsize java_array_len = env->GetArrayLength(floats.obj());
   ASSERT_EQ(checked_cast<jsize>(in.size()), java_array_len);
 
-  float value;
+  jfloat value;
   for (size_t i = 0; i < in.size(); ++i) {
     env->GetFloatArrayRegion(floats.obj(), i, 1, &value);
     ASSERT_EQ(in[i], value);
@@ -188,7 +186,7 @@ void CheckDoubleConversion(JNIEnv* env,
   jsize java_array_len = env->GetArrayLength(doubles.obj());
   ASSERT_EQ(checked_cast<jsize>(in.size()), java_array_len);
 
-  double value;
+  jdouble value;
   for (size_t i = 0; i < in.size(); ++i) {
     env->GetDoubleArrayRegion(doubles.obj(), i, 1, &value);
     ASSERT_EQ(in[i], value);
@@ -240,12 +238,12 @@ TEST(JniArray, JavaBooleanArrayToBoolVector) {
   const auto kBools = std::to_array<bool>({false, true, false});
 
   JNIEnv* env = AttachCurrentThread();
-  auto jbooleans = ScopedJavaLocalRef<jbooleanArray>::Adopt(
+  ScopedJavaLocalRef<jbooleanArray> jbooleans(
       env, env->NewBooleanArray(kBools.size()));
   ASSERT_TRUE(jbooleans);
 
   for (size_t i = 0; i < kBools.size(); ++i) {
-    jboolean j = kBools[i];
+    jboolean j = static_cast<jboolean>(kBools[i]);
     env->SetBooleanArrayRegion(jbooleans.obj(), i, 1, &j);
     ASSERT_FALSE(HasException(env));
   }
@@ -263,7 +261,7 @@ TEST(JniArray, JavaBooleanArrayToBoolVector) {
 void CheckIntArrayConversion(JNIEnv* env,
                              ScopedJavaLocalRef<jintArray> jints,
                              std::vector<int> int_vector) {
-  int32_t value;
+  jint value;
   for (size_t i = 0; i < int_vector.size(); ++i) {
     env->GetIntArrayRegion(jints.obj(), i, 1, &value);
     ASSERT_EQ(int_vector[i], value);
@@ -274,12 +272,12 @@ TEST(JniArray, JavaIntArrayToIntVector) {
   const auto kInts = std::to_array<int>({0, 1, -1});
 
   JNIEnv* env = AttachCurrentThread();
-  auto jints =
-      ScopedJavaLocalRef<jintArray>::Adopt(env, env->NewIntArray(kInts.size()));
+  ScopedJavaLocalRef<jintArray> jints(env, env->NewIntArray(kInts.size()));
   ASSERT_TRUE(jints);
 
   for (size_t i = 0; i < kInts.size(); ++i) {
-    env->SetIntArrayRegion(jints.obj(), i, 1, &kInts[i]);
+    jint j = static_cast<jint>(kInts[i]);
+    env->SetIntArrayRegion(jints.obj(), i, 1, &j);
     ASSERT_FALSE(HasException(env));
   }
 
@@ -296,12 +294,12 @@ TEST(JniArray, JavaLongArrayToInt64Vector) {
   const auto kInt64s = std::to_array<int64_t>({0LL, 1LL, -1LL});
 
   JNIEnv* env = AttachCurrentThread();
-  auto jlongs = ScopedJavaLocalRef<jlongArray>::Adopt(
-      env, env->NewLongArray(kInt64s.size()));
+  ScopedJavaLocalRef<jlongArray> jlongs(env, env->NewLongArray(kInt64s.size()));
   ASSERT_TRUE(jlongs);
 
   for (size_t i = 0; i < kInt64s.size(); ++i) {
-    env->SetLongArrayRegion(jlongs.obj(), i, 1, &kInt64s[i]);
+    jlong j = static_cast<jlong>(kInt64s[i]);
+    env->SetLongArrayRegion(jlongs.obj(), i, 1, &j);
     ASSERT_FALSE(HasException(env));
   }
 
@@ -312,7 +310,7 @@ TEST(JniArray, JavaLongArrayToInt64Vector) {
             env->GetArrayLength(jlongs.obj()));
   ASSERT_EQ(int64s.size(), kInt64s.size());
 
-  int64_t value;
+  jlong value;
   for (size_t i = 0; i < kInt64s.size(); ++i) {
     env->GetLongArrayRegion(jlongs.obj(), i, 1, &value);
     ASSERT_EQ(int64s[i], value);
@@ -324,23 +322,23 @@ TEST(JniArray, JavaLongArrayToLongVector) {
   const auto kInt64s = std::to_array<int64_t>({0LL, 1LL, -1LL});
 
   JNIEnv* env = AttachCurrentThread();
-  auto jlongs = ScopedJavaLocalRef<jlongArray>::Adopt(
-      env, env->NewLongArray(kInt64s.size()));
+  ScopedJavaLocalRef<jlongArray> jlongs(env, env->NewLongArray(kInt64s.size()));
   ASSERT_TRUE(jlongs);
 
   for (size_t i = 0; i < kInt64s.size(); ++i) {
-    env->SetLongArrayRegion(jlongs.obj(), i, 1, &kInt64s[i]);
+    jlong j = static_cast<jlong>(kInt64s[i]);
+    env->SetLongArrayRegion(jlongs.obj(), i, 1, &j);
     ASSERT_FALSE(HasException(env));
   }
 
-  std::vector<int64_t> jlongs_vector;
+  std::vector<jlong> jlongs_vector;
   JavaLongArrayToLongVector(env, jlongs, &jlongs_vector);
 
   ASSERT_EQ(checked_cast<jsize>(jlongs_vector.size()),
             env->GetArrayLength(jlongs.obj()));
   ASSERT_EQ(jlongs_vector.size(), kInt64s.size());
 
-  int64_t value;
+  jlong value;
   for (size_t i = 0; i < kInt64s.size(); ++i) {
     env->GetLongArrayRegion(jlongs.obj(), i, 1, &value);
     ASSERT_EQ(jlongs_vector[i], value);
@@ -351,12 +349,13 @@ TEST(JniArray, JavaFloatArrayToFloatVector) {
   const auto kFloats = std::to_array<float>({0.0, 0.5, -0.5});
 
   JNIEnv* env = AttachCurrentThread();
-  auto jfloats = ScopedJavaLocalRef<jfloatArray>::Adopt(
-      env, env->NewFloatArray(kFloats.size()));
+  ScopedJavaLocalRef<jfloatArray> jfloats(env,
+                                          env->NewFloatArray(kFloats.size()));
   ASSERT_TRUE(jfloats);
 
   for (size_t i = 0; i < kFloats.size(); ++i) {
-    env->SetFloatArrayRegion(jfloats.obj(), i, 1, &kFloats[i]);
+    jfloat j = static_cast<jfloat>(kFloats[i]);
+    env->SetFloatArrayRegion(jfloats.obj(), i, 1, &j);
     ASSERT_FALSE(HasException(env));
   }
 
@@ -367,7 +366,7 @@ TEST(JniArray, JavaFloatArrayToFloatVector) {
             env->GetArrayLength(jfloats.obj()));
   ASSERT_EQ(floats.size(), kFloats.size());
 
-  float value;
+  jfloat value;
   for (size_t i = 0; i < kFloats.size(); ++i) {
     env->GetFloatArrayRegion(jfloats.obj(), i, 1, &value);
     ASSERT_EQ(floats[i], value);
@@ -378,12 +377,12 @@ TEST(JniArray, JavaDoubleArrayToDoubleVector) {
   const auto kDoubles = std::to_array<double>(
       {0.0, 0.5, -0.5, std::numeric_limits<double>::min()});
   JNIEnv* env = AttachCurrentThread();
-  auto jdoubles = ScopedJavaLocalRef<jdoubleArray>::Adopt(
+  ScopedJavaLocalRef<jdoubleArray> jdoubles(
       env, env->NewDoubleArray(kDoubles.size()));
   ASSERT_TRUE(jdoubles);
 
   env->SetDoubleArrayRegion(jdoubles.obj(), 0, kDoubles.size(),
-                            reinterpret_cast<const double*>(kDoubles.data()));
+                            reinterpret_cast<const jdouble*>(kDoubles.data()));
   ASSERT_FALSE(HasException(env));
 
   std::vector<double> doubles;
@@ -396,11 +395,10 @@ TEST(JniArray, JavaArrayOfByteArrayToStringVector) {
   JNIEnv* env = AttachCurrentThread();
 
   // Create a byte[][] object.
-  auto byte_array_clazz =
-      ScopedJavaLocalRef<jclass>::Adopt(env, env->FindClass("[B"));
+  ScopedJavaLocalRef<jclass> byte_array_clazz(env, env->FindClass("[B"));
   ASSERT_TRUE(byte_array_clazz);
 
-  auto array = ScopedJavaLocalRef<jobjectArray>::Adopt(
+  ScopedJavaLocalRef<jobjectArray> array(
       env, env->NewObjectArray(kMaxItems, byte_array_clazz.obj(), NULL));
   ASSERT_TRUE(array);
 
@@ -433,11 +431,10 @@ TEST(JniArray, JavaArrayOfByteArrayToBytesVector) {
   JNIEnv* env = AttachCurrentThread();
 
   // Create a byte[][] object.
-  auto byte_array_clazz =
-      ScopedJavaLocalRef<jclass>::Adopt(env, env->FindClass("[B"));
+  ScopedJavaLocalRef<jclass> byte_array_clazz(env, env->FindClass("[B"));
   ASSERT_TRUE(byte_array_clazz);
 
-  auto array = ScopedJavaLocalRef<jobjectArray>::Adopt(
+  ScopedJavaLocalRef<jobjectArray> array(
       env, env->NewObjectArray(kMaxItems, byte_array_clazz.obj(), nullptr));
   ASSERT_TRUE(array);
 
@@ -475,19 +472,19 @@ TEST(JniArray, JavaArrayOfStringArrayToVectorOfStringVector) {
 
   JNIEnv* env = AttachCurrentThread();
 
-  auto array = ScopedJavaLocalRef<jobjectArray>::Adopt(
+  ScopedJavaLocalRef<jobjectArray> array(
       env, env->NewObjectArray(kArrays.size(),
                                env->FindClass("[Ljava/lang/String;"), NULL));
   ASSERT_TRUE(array);
 
-  auto string_clazz = ScopedJavaLocalRef<jclass>::Adopt(
-      env, env->FindClass("java/lang/String"));
+  ScopedJavaLocalRef<jclass> string_clazz(env,
+                                          env->FindClass("java/lang/String"));
   ASSERT_TRUE(string_clazz);
 
   for (size_t i = 0; i < kArrays.size(); ++i) {
     const std::vector<std::u16string>& child_data = kArrays[i];
 
-    auto child_array = ScopedJavaLocalRef<jobjectArray>::Adopt(
+    ScopedJavaLocalRef<jobjectArray> child_array(
         env, env->NewObjectArray(child_data.size(), string_clazz.obj(), NULL));
     ASSERT_TRUE(child_array);
 
@@ -511,11 +508,10 @@ TEST(JniArray, JavaArrayOfIntArrayToIntVector) {
   JNIEnv* env = AttachCurrentThread();
 
   // Create an int[][] object.
-  auto int_array_clazz =
-      ScopedJavaLocalRef<jclass>::Adopt(env, env->FindClass("[I"));
+  ScopedJavaLocalRef<jclass> int_array_clazz(env, env->FindClass("[I"));
   ASSERT_TRUE(int_array_clazz);
 
-  auto array = ScopedJavaLocalRef<jobjectArray>::Adopt(
+  ScopedJavaLocalRef<jobjectArray> array(
       env, env->NewObjectArray(kNumItems, int_array_clazz.obj(), nullptr));
   ASSERT_TRUE(array);
 
@@ -568,17 +564,17 @@ TEST(JniArray, ToJavaArrayOfObjectsOfClass) {
 
   EXPECT_EQ("one",
             ConvertJavaStringToUTF8(
-                env, ScopedJavaLocalRef<jstring>::Adopt(
+                env, ScopedJavaLocalRef<jstring>(
                          env, static_cast<jstring>(env->GetObjectArrayElement(
                                   j_array.obj(), 0)))));
   EXPECT_EQ("two",
             ConvertJavaStringToUTF8(
-                env, ScopedJavaLocalRef<jstring>::Adopt(
+                env, ScopedJavaLocalRef<jstring>(
                          env, static_cast<jstring>(env->GetObjectArrayElement(
                                   j_array.obj(), 1)))));
   EXPECT_EQ("three",
             ConvertJavaStringToUTF8(
-                env, ScopedJavaLocalRef<jstring>::Adopt(
+                env, ScopedJavaLocalRef<jstring>(
                          env, static_cast<jstring>(env->GetObjectArrayElement(
                                   j_array.obj(), 2)))));
 }
@@ -597,17 +593,17 @@ TEST(JniArray, ToJavaArrayOfObjectLocalRef) {
 
   EXPECT_EQ("one",
             ConvertJavaStringToUTF8(
-                env, ScopedJavaLocalRef<jstring>::Adopt(
+                env, ScopedJavaLocalRef<jstring>(
                          env, static_cast<jstring>(env->GetObjectArrayElement(
                                   j_array.obj(), 0)))));
   EXPECT_EQ("two",
             ConvertJavaStringToUTF8(
-                env, ScopedJavaLocalRef<jstring>::Adopt(
+                env, ScopedJavaLocalRef<jstring>(
                          env, static_cast<jstring>(env->GetObjectArrayElement(
                                   j_array.obj(), 1)))));
   EXPECT_EQ("three",
             ConvertJavaStringToUTF8(
-                env, ScopedJavaLocalRef<jstring>::Adopt(
+                env, ScopedJavaLocalRef<jstring>(
                          env, static_cast<jstring>(env->GetObjectArrayElement(
                                   j_array.obj(), 2)))));
 }
@@ -626,17 +622,17 @@ TEST(JniArray, ToJavaArrayOfObjectGlobalRef) {
 
   EXPECT_EQ("one",
             ConvertJavaStringToUTF8(
-                env, ScopedJavaLocalRef<jstring>::Adopt(
+                env, ScopedJavaLocalRef<jstring>(
                          env, static_cast<jstring>(env->GetObjectArrayElement(
                                   j_array.obj(), 0)))));
   EXPECT_EQ("two",
             ConvertJavaStringToUTF8(
-                env, ScopedJavaLocalRef<jstring>::Adopt(
+                env, ScopedJavaLocalRef<jstring>(
                          env, static_cast<jstring>(env->GetObjectArrayElement(
                                   j_array.obj(), 1)))));
   EXPECT_EQ("three",
             ConvertJavaStringToUTF8(
-                env, ScopedJavaLocalRef<jstring>::Adopt(
+                env, ScopedJavaLocalRef<jstring>(
                          env, static_cast<jstring>(env->GetObjectArrayElement(
                                   j_array.obj(), 2)))));
 }

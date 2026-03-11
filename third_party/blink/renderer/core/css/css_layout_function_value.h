@@ -9,6 +9,10 @@
 #include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 
+namespace WTF {
+class String;
+}  // namespace WTF
+
 namespace blink {
 
 class CSSCustomIdentValue;
@@ -19,12 +23,11 @@ class CSSLayoutFunctionValue : public CSSValue {
  public:
   CSSLayoutFunctionValue(CSSCustomIdentValue* name, bool is_inline);
 
-  String CustomCSSText() const;
+  WTF::String CustomCSSText() const;
   AtomicString GetName() const;
   bool IsInline() const { return is_inline_; }
 
   bool Equals(const CSSLayoutFunctionValue&) const;
-  bool HasRandomFunctions() const;
   void TraceAfterDispatch(blink::Visitor*) const;
 
  private:

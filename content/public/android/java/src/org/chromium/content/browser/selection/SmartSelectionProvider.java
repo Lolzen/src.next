@@ -19,6 +19,7 @@ import android.view.textclassifier.TextClassifier;
 import android.view.textclassifier.TextSelection;
 
 import androidx.annotation.IntDef;
+import androidx.annotation.RequiresApi;
 
 import org.chromium.base.Log;
 import org.chromium.base.task.AsyncTask;
@@ -47,13 +48,13 @@ public class SmartSelectionProvider {
         int SUGGEST_AND_CLASSIFY = 1;
     }
 
-    private final SelectionClient.ResultCallback mResultCallback;
+    private SelectionClient.ResultCallback mResultCallback;
     private @Nullable WindowAndroid mWindowAndroid;
     private @Nullable ClassificationTask mClassificationTask;
     private @Nullable TextClassifier mTextClassifier;
 
-    private final Handler mHandler;
-    private final Runnable mFailureResponseRunnable;
+    private Handler mHandler;
+    private Runnable mFailureResponseRunnable;
     private final @Nullable SmartSelectionEventProcessor mSelectionEventProcessor;
 
     public SmartSelectionProvider(
@@ -140,7 +141,7 @@ public class SmartSelectionProvider {
         if (context == null) {
             return null;
         }
-        if (mSelectionEventProcessor == null) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || mSelectionEventProcessor == null) {
             return getTextClassifier();
         }
         TextClassifier textClassifierSession = mSelectionEventProcessor.getTextClassifierSession();
@@ -257,9 +258,16 @@ public class SmartSelectionProvider {
             result.end = end;
             result.startAdjust = start - mOriginalStart;
             result.endAdjust = end - mOriginalEnd;
+            result.label = tc.getLabel();
+            result.icon = tc.getIcon();
+            result.intent = tc.getIntent();
+            result.onClickListener = tc.getOnClickListener();
             result.textSelection = ts;
             result.textClassification = tc;
-            result.additionalIcons = loadIconDrawables(mContext, result.textClassification);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                result.additionalIcons = loadIconDrawables(mContext, result.textClassification);
+            }
 
             return result;
         }
@@ -268,6 +276,7 @@ public class SmartSelectionProvider {
         // background thread right after we get the text classification result in
         // SmartSelectionProvider. TextClassification#getActions() is only available on P and above,
         // so
+        @RequiresApi(Build.VERSION_CODES.P)
         private @Nullable List<Drawable> loadIconDrawables(
                 @Nullable Context context, TextClassification tc) {
             if (context == null || tc == null) return null;

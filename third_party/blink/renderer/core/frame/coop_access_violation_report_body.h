@@ -19,7 +19,7 @@ class CORE_EXPORT CoopAccessViolationReportBody final
 
  public:
   CoopAccessViolationReportBody(
-      SourceLocation* source_location,
+      std::unique_ptr<SourceLocation> source_location,
       network::mojom::blink::CoopAccessReportType type,
       const String& property,
       const String& reported_url);

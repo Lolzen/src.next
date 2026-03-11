@@ -16,6 +16,7 @@
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
 #include "base/debug/debugging_buildflags.h"
+#include "base/debug/stack_trace.h"
 #include "third_party/jni_zero/jni_zero.h"
 
 namespace base {
@@ -62,10 +63,8 @@ inline void DetachFromVM() {
 // Initializes the global JVM.
 BASE_EXPORT void InitVM(JavaVM* vm);
 
-// Returns true if the global JVM has been initialized. This happens
-// immediately on native library load, so this is still correct even very
-// early in startup.
-inline bool IsJavaAvailable() {
+// Returns true if the global JVM has been initialized.
+inline bool IsVMInitialized() {
   return jni_zero::IsVMInitialized();
 }
 

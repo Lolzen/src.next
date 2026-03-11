@@ -15,12 +15,10 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/strings/grit/components_strings.h"
-#include "components/tabs/public/tab_interface.h"
 #include "components/ui_metrics/sadtab_metrics_types.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_controller.h"
@@ -65,10 +63,14 @@ bool IsRepeatedlyCrashing() {
 }
 
 bool AreOtherTabsOpen() {
-  int count = 0;
-  tabs::ForEachTabInterface(
-      [&count](tabs::TabInterface* tab) { return ++count < 2; });
-  return count > 1;
+  size_t tab_count = 0;
+  for (Browser* browser : *BrowserList::GetInstance()) {
+    tab_count += browser->tab_strip_model()->count();
+    if (tab_count > 1U) {
+      break;
+    }
+  }
+  return (tab_count > 1U);
 }
 
 }  // namespace
@@ -86,7 +88,6 @@ bool SadTab::ShouldShow(base::TerminationStatus status) {
     case base::TERMINATION_STATUS_INTEGRITY_FAILURE:
 #endif
     case base::TERMINATION_STATUS_OOM:
-    case base::TERMINATION_STATUS_EVICTED_FOR_MEMORY:
       return true;
     case base::TERMINATION_STATUS_NORMAL_TERMINATION:
     case base::TERMINATION_STATUS_STILL_RUNNING:
@@ -205,7 +206,7 @@ void SadTab::RecordFirstPaint() {
 void SadTab::PerformAction(SadTab::Action action) {
   DCHECK(recorded_paint_);
   switch (action) {
-    case Action::kButton:
+    case Action::BUTTON:
       RecordEvent(show_feedback_button_,
                   ui_metrics::SadTabEvent::BUTTON_CLICKED);
       if (show_feedback_button_) {
@@ -222,7 +223,7 @@ void SadTab::PerformAction(SadTab::Action action) {
                                               true);
       }
       break;
-    case Action::kHelpLink:
+    case Action::HELP_LINK:
       RecordEvent(show_feedback_button_,
                   ui_metrics::SadTabEvent::HELP_LINK_CLICKED);
       content::OpenURLParams params(GURL(GetHelpLinkURL()), content::Referrer(),

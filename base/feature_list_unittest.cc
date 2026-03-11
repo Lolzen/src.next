@@ -42,10 +42,6 @@ BASE_FEATURE(kFeatureOffByDefault,
              kFeatureOffByDefaultName,
              FEATURE_DISABLED_BY_DEFAULT);
 
-// For testing the 2-argument BASE_FEATURE macro.
-BASE_FEATURE(kFeature2ArgsOn, FEATURE_ENABLED_BY_DEFAULT);
-BASE_FEATURE(kFeature2ArgsOff, FEATURE_DISABLED_BY_DEFAULT);
-
 std::string SortFeatureListString(const std::string& feature_list) {
   std::vector<std::string_view> features =
       FeatureList::SplitFeatureListString(feature_list);
@@ -54,9 +50,6 @@ std::string SortFeatureListString(const std::string& feature_list) {
 }
 
 }  // namespace
-
-// A feature outside the anonymous namespace.
-BASE_FEATURE(kFeatureOutsideAnonymousNamespace, FEATURE_DISABLED_BY_DEFAULT);
 
 class FeatureListTest : public testing::Test {
  public:
@@ -75,20 +68,6 @@ class FeatureListTest : public testing::Test {
 TEST_F(FeatureListTest, DefaultStates) {
   EXPECT_TRUE(FeatureList::IsEnabled(kFeatureOnByDefault));
   EXPECT_FALSE(FeatureList::IsEnabled(kFeatureOffByDefault));
-}
-
-// Testing the 2-argument BASE_FEATURE macro.
-TEST_F(FeatureListTest, TwoArgMacro) {
-  EXPECT_TRUE(FeatureList::IsEnabled(kFeature2ArgsOn));
-  EXPECT_FALSE(FeatureList::IsEnabled(kFeature2ArgsOff));
-  EXPECT_STREQ("Feature2ArgsOn", kFeature2ArgsOn.name);
-  EXPECT_STREQ("Feature2ArgsOff", kFeature2ArgsOff.name);
-}
-
-TEST_F(FeatureListTest, OutsideAnonymousNamespace) {
-  EXPECT_FALSE(FeatureList::IsEnabled(kFeatureOutsideAnonymousNamespace));
-  EXPECT_STREQ("FeatureOutsideAnonymousNamespace",
-               kFeatureOutsideAnonymousNamespace.name);
 }
 
 TEST_F(FeatureListTest, InitFromCommandLine) {
@@ -332,9 +311,8 @@ TEST_F(FeatureListTest, IsFeatureOverriddenFromFieldTrial) {
   EXPECT_FALSE(feature_list->IsFeatureOverridden(kFeatureOnByDefaultName));
   EXPECT_FALSE(feature_list->IsFeatureOverridden(kFeatureOffByDefaultName));
 
-  // Now, register field trials to override `kFeatureOnByDefaultName` state and
-  // keeping `kFeatureOffByDefault` as the default. Check that both are
-  // considered overridden.
+  // Now, register a field trial to override |kFeatureOnByDefaultName| state
+  // and check that the function still returns false for that feature.
   feature_list->RegisterFieldTrialOverride(
       kFeatureOffByDefaultName, FeatureList::OVERRIDE_USE_DEFAULT,
       FieldTrialList::CreateFieldTrial("Trial1", "A"));
@@ -655,7 +633,7 @@ TEST_F(FeatureListTest, InitFromCommandLine_UseDefault) {
 }
 
 TEST_F(FeatureListTest, InitInstance) {
-  auto feature_list = std::make_unique<base::FeatureList>();
+  std::unique_ptr<base::FeatureList> feature_list(new base::FeatureList);
   test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatureList(std::move(feature_list));
 
@@ -691,7 +669,7 @@ TEST_F(FeatureListTest, UninitializedInstance_IsEnabledReturnsFalse) {
 }
 
 TEST_F(FeatureListTest, StoreAndRetrieveFeaturesFromSharedMemory) {
-  auto feature_list = std::make_unique<base::FeatureList>();
+  std::unique_ptr<base::FeatureList> feature_list(new base::FeatureList);
 
   // Create some overrides.
   feature_list->RegisterOverride(kFeatureOffByDefaultName,
@@ -707,7 +685,7 @@ TEST_F(FeatureListTest, StoreAndRetrieveFeaturesFromSharedMemory) {
                                                     "");
   feature_list->AddFeaturesToAllocator(&allocator);
 
-  auto feature_list2 = std::make_unique<base::FeatureList>();
+  std::unique_ptr<base::FeatureList> feature_list2(new base::FeatureList);
 
   // Check that the new feature list is empty.
   EXPECT_FALSE(feature_list2->IsFeatureOverriddenFromCommandLine(
@@ -724,7 +702,7 @@ TEST_F(FeatureListTest, StoreAndRetrieveFeaturesFromSharedMemory) {
 }
 
 TEST_F(FeatureListTest, StoreAndRetrieveAssociatedFeaturesFromSharedMemory) {
-  auto feature_list = std::make_unique<base::FeatureList>();
+  std::unique_ptr<base::FeatureList> feature_list(new base::FeatureList);
 
   // Create some overrides.
   FieldTrial* trial1 = FieldTrialList::CreateFieldTrial("TrialExample1", "A");
@@ -742,7 +720,7 @@ TEST_F(FeatureListTest, StoreAndRetrieveAssociatedFeaturesFromSharedMemory) {
                                                     "");
   feature_list->AddFeaturesToAllocator(&allocator);
 
-  auto feature_list2 = std::make_unique<base::FeatureList>();
+  std::unique_ptr<base::FeatureList> feature_list2(new base::FeatureList);
   feature_list2->InitFromSharedMemory(&allocator);
   feature_list2->FinalizeInitialization();
 
@@ -787,21 +765,6 @@ TEST_F(FeatureListTest, SetEarlyAccessInstance_ReplaceByRealList) {
   FeatureList::SetInstance(std::move(feature_list));
   EXPECT_TRUE(FeatureList::IsEnabled(kFeatureOnByDefault));
   EXPECT_FALSE(FeatureList::IsEnabled(kFeatureOffByDefault));
-}
-
-TEST_F(FeatureListTest, ParseFeatureString_WithIllegalFeatures) {
-  // Normal feature format: Feature<Trial.Group:param=value.
-  // Leading or trailing separators ('<', '.', ':') make the string invalid.
-  const std::string enable_features = ":Feature,.Feature";
-  for (const auto& enable_feature :
-       FeatureList::SplitFeatureListString(enable_features)) {
-    std::string feature_name;
-    std::string study;
-    std::string group;
-    std::string feature_params;
-    FeatureList::ParseEnableFeatureString(enable_feature, &feature_name, &study,
-                                          &group, &feature_params);
-  }
 }
 
 #if BUILDFLAG(ENABLE_BANNED_BASE_FEATURE_PREFIX) && \
@@ -1033,32 +996,18 @@ TEST(TestFeatureVisitor, FeatureHasParams) {
       /*enable_features=*/"TestFeature<foo.bar:k1/v1/k2/v2",
       /*disable_features=*/"");
 
-  const std::multiset<TestFeatureVisitor::VisitedFeatureState>
+  TestFeatureVisitor visitor;
+  base::FeatureList::VisitFeaturesAndParams(visitor);
+  std::multiset<TestFeatureVisitor::VisitedFeatureState> actual_feature_state =
+      visitor.feature_state();
+
+  std::multiset<TestFeatureVisitor::VisitedFeatureState>
       expected_feature_state = {
           {"TestFeature", FeatureList::OverrideState::OVERRIDE_ENABLE_FEATURE,
            FieldTrialParams{{"k1", "v1"}, {"k2", "v2"}}, "foo", "bar"},
       };
 
-  {  // Check cached params.
-    TestFeatureVisitor visitor;
-    base::FeatureList::VisitFeaturesAndParams(visitor);
-    std::multiset<TestFeatureVisitor::VisitedFeatureState>
-        actual_feature_state = visitor.feature_state();
-
-    EXPECT_EQ(actual_feature_state, expected_feature_state);
-  }
-
-  {  // Check that we fetch params from shared memory.
-    FieldTrialList::InstantiateFieldTrialAllocatorIfNeeded();
-    FieldTrialParamAssociator::GetInstance()->ClearAllCachedParamsForTesting();
-
-    TestFeatureVisitor visitor;
-    base::FeatureList::VisitFeaturesAndParams(visitor);
-    std::multiset<TestFeatureVisitor::VisitedFeatureState>
-        actual_feature_state = visitor.feature_state();
-
-    EXPECT_EQ(actual_feature_state, expected_feature_state);
-  }
+  EXPECT_EQ(actual_feature_state, expected_feature_state);
 }
 
 TEST(TestFeatureVisitor, FeatureWithPrefix) {

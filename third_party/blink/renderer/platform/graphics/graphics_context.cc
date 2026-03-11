@@ -36,6 +36,7 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink.h"
 #include "third_party/blink/renderer/platform/fonts/plain_text_painter.h"
+#include "third_party/blink/renderer/platform/fonts/text_run_paint_info.h"
 #include "third_party/blink/renderer/platform/geometry/contoured_rect.h"
 #include "third_party/blink/renderer/platform/geometry/float_rounded_rect.h"
 #include "third_party/blink/renderer/platform/geometry/path.h"
@@ -50,8 +51,8 @@
 #include "third_party/blink/renderer/platform/graphics/paint/paint_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/platform_focus_ring.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
+#include "third_party/blink/renderer/platform/graphics/styled_stroke_data.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
-#include "third_party/blink/renderer/platform/text/text_run.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
@@ -83,96 +84,6 @@ SkColor4f DarkModeColor(GraphicsContext& context,
         SkColor4f::FromColor(auto_dark_mode.contrast_color));
   }
   return color;
-}
-
-InterpolationQuality ComputeInterpolationQuality(const gfx::SizeF& src,
-                                                 const gfx::SizeF& dest,
-                                                 bool is_data_complete) {
-  // Figure out if we should resample this image. We try to prune out some
-  // common cases where resampling won't give us anything, since it is much
-  // slower than drawing stretched.
-  const gfx::SizeF diff(std::abs(dest.width() - src.width()),
-                        std::abs(dest.height() - src.height()));
-  const bool width_nearly_equal =
-      diff.width() < std::numeric_limits<float>::epsilon();
-  const bool height_nearly_equal =
-      diff.height() < std::numeric_limits<float>::epsilon();
-  // We don't need to resample if the source and destination are the same.
-  if (width_nearly_equal && height_nearly_equal) {
-    return kInterpolationNone;
-  }
-
-  // Images smaller than this in either direction are considered "small" and
-  // are not resampled ever (see below).
-  static constexpr int kSmallImageSizeThreshold = 8;
-  if (src.width() <= kSmallImageSizeThreshold ||
-      src.height() <= kSmallImageSizeThreshold ||
-      dest.width() <= kSmallImageSizeThreshold ||
-      dest.height() <= kSmallImageSizeThreshold) {
-    // Small image detected.
-
-    auto nearly_integral = [](float value) {
-      return std::abs(value - std::floor(value)) <
-             std::numeric_limits<float>::epsilon();
-    };
-
-    // Resample in the case where the new size would be non-integral.
-    // This can cause noticeable breaks in repeating patterns, except
-    // when the source image is only one pixel wide in that dimension.
-    if ((!nearly_integral(dest.width()) &&
-         src.width() > 1 + std::numeric_limits<float>::epsilon()) ||
-        (!nearly_integral(dest.height()) &&
-         src.height() > 1 + std::numeric_limits<float>::epsilon())) {
-      return kInterpolationLow;
-    }
-
-    // Otherwise, don't resample small images. These are often used for
-    // borders and rules (think 1x1 images used to make lines).
-    return kInterpolationNone;
-  }
-
-  // The amount an image can be stretched in a single direction before we
-  // say that it is being stretched so much that it must be a line or
-  // background that doesn't need resampling.
-  static constexpr float kLargeStretch = 3.0f;
-  if (src.height() * kLargeStretch <= dest.height() ||
-      src.width() * kLargeStretch <= dest.width()) {
-    // Large image detected.
-
-    // Don't resample if it is being stretched a lot in only one direction.
-    // This is trying to catch cases where somebody has created a border
-    // (which might be large) and then is stretching it to fill some part
-    // of the page.
-    if (width_nearly_equal || height_nearly_equal) {
-      return kInterpolationNone;
-    }
-
-    // The image is growing a lot and in more than one direction. Resampling
-    // is slow and doesn't give us very much when growing a lot.
-    return kInterpolationLow;
-  }
-
-  // The percent change below which we will not resample. This usually means
-  // an off-by-one error on the web page, and just doing nearest neighbor
-  // sampling is usually good enough.
-  static constexpr float kFractionalChangeThreshold = 0.025f;
-  if ((diff.width() / src.width() < kFractionalChangeThreshold) &&
-      (diff.height() / src.height() < kFractionalChangeThreshold)) {
-    // It is disappointingly common on the web for image sizes to be off by
-    // one or two pixels. We don't bother resampling if the size difference
-    // is a small fraction of the original size.
-    return kInterpolationNone;
-  }
-
-  // When the image is not yet done loading, use linear. We don't cache the
-  // partially resampled images, and as they come in incrementally, it causes
-  // us to have to resample the whole thing every time.
-  if (!is_data_complete) {
-    return kInterpolationLow;
-  }
-
-  // Everything else gets resampled at default quality.
-  return GetDefaultInterpolationQuality();
 }
 
 }  // namespace
@@ -232,8 +143,6 @@ void GraphicsContext::CopyConfigFrom(GraphicsContext& other) {
   SetPrintingMetafile(other.printing_metafile_);
   SetPaintPreviewTracker(other.paint_preview_tracker_);
   SetPrinting(other.printing_);
-  SetPrintingInternalHeadersAndFooters(
-      other.printing_internal_headers_and_footers_);
 }
 
 DarkModeFilter* GraphicsContext::GetDarkModeFilter() {
@@ -416,14 +325,159 @@ void GraphicsContext::DrawFocusRingRect(const SkRRect& rrect,
       width);
 }
 
-void GraphicsContext::SetPrinting(bool printing) {
-  printing_ = printing;
+static void EnforceDotsAtEndpoints(GraphicsContext& context,
+                                   gfx::PointF& p1,
+                                   gfx::PointF& p2,
+                                   const int path_length,
+                                   const int width,
+                                   const cc::PaintFlags& flags,
+                                   const bool is_vertical_line,
+                                   const AutoDarkMode& auto_dark_mode) {
+  // For narrow lines, we always want integral dot and dash sizes, and start
+  // and end points, to prevent anti-aliasing from erasing the dot effect.
+  // For 1-pixel wide lines, we must make one end a dash. Otherwise we have
+  // a little more scope to distribute the error. But we never want to reduce
+  // the size of the end dots because doing so makes corners of all-dotted
+  // paths look odd.
+  //
+  // There is no way to give custom start and end dash sizes or gaps to Skia,
+  // so if we need non-uniform gaps we need to draw the start, and maybe the
+  // end dot ourselves, and move the line start (and end) to the start/end of
+  // the second dot.
+  DCHECK_LE(width, 3);  // Width is max 3 according to StrokeIsDashed
+  int mod_4 = path_length % 4;
+  int mod_6 = path_length % 6;
+  // New start dot to be explicitly drawn, if needed, and the amount to grow the
+  // start dot and the offset for first gap.
+  bool use_start_dot = false;
+  int start_dot_growth = 0;
+  int start_line_offset = 0;
+  // New end dot to be explicitly drawn, if needed, and the amount to grow the
+  // second dot.
+  bool use_end_dot = false;
+  int end_dot_growth = 0;
+  if ((width == 1 && path_length % 2 == 0) || (width == 3 && mod_6 == 0)) {
+    // Cases where we add one pixel to the first dot.
+    use_start_dot = true;
+    start_dot_growth = 1;
+    start_line_offset = 1;
+  }
+  if ((width == 2 && (mod_4 == 0 || mod_4 == 1)) ||
+      (width == 3 && (mod_6 == 1 || mod_6 == 2))) {
+    // Cases where we drop 1 pixel from the start gap
+    use_start_dot = true;
+    start_line_offset = -1;
+  }
+  if ((width == 2 && mod_4 == 0) || (width == 3 && mod_6 == 1)) {
+    // Cases where we drop 1 pixel from the end gap
+    use_end_dot = true;
+  }
+  if ((width == 2 && mod_4 == 3) ||
+      (width == 3 && (mod_6 == 4 || mod_6 == 5))) {
+    // Cases where we add 1 pixel to the start gap
+    use_start_dot = true;
+    start_line_offset = 1;
+  }
+  if (width == 3 && mod_6 == 5) {
+    // Case where we add 1 pixel to the end gap and leave the end
+    // dot the same size.
+    use_end_dot = true;
+  } else if (width == 3 && mod_6 == 0) {
+    // Case where we add one pixel gap and one pixel to the dot at the end
+    use_end_dot = true;
+    end_dot_growth = 1;  // Moves the larger end pt for this case
+  }
+
+  if (use_start_dot || use_end_dot) {
+    cc::PaintFlags fill_flags;
+    fill_flags.setColor(flags.getColor4f());
+    if (use_start_dot) {
+      SkRect start_dot;
+      if (is_vertical_line) {
+        start_dot.setLTRB(p1.x() - width / 2, p1.y(),
+                          p1.x() + width - width / 2,
+                          p1.y() + width + start_dot_growth);
+        p1.set_y(p1.y() + (2 * width + start_line_offset));
+      } else {
+        start_dot.setLTRB(p1.x(), p1.y() - width / 2,
+                          p1.x() + width + start_dot_growth,
+                          p1.y() + width - width / 2);
+        p1.set_x(p1.x() + (2 * width + start_line_offset));
+      }
+      context.DrawRect(start_dot, fill_flags, auto_dark_mode);
+    }
+    if (use_end_dot) {
+      SkRect end_dot;
+      if (is_vertical_line) {
+        end_dot.setLTRB(p2.x() - width / 2, p2.y() - width - end_dot_growth,
+                        p2.x() + width - width / 2, p2.y());
+        // Be sure to stop drawing before we get to the last dot
+        p2.set_y(p2.y() - (width + end_dot_growth + 1));
+      } else {
+        end_dot.setLTRB(p2.x() - width - end_dot_growth, p2.y() - width / 2,
+                        p2.x(), p2.y() + width - width / 2);
+        // Be sure to stop drawing before we get to the last dot
+        p2.set_x(p2.x() - (width + end_dot_growth + 1));
+      }
+      context.DrawRect(end_dot, fill_flags, auto_dark_mode);
+    }
+  }
 }
 
-void GraphicsContext::SetPrintingInternalHeadersAndFooters(
-    bool printing_internal_headers_and_footers) {
-  printing_internal_headers_and_footers_ =
-      printing_internal_headers_and_footers;
+void GraphicsContext::DrawLine(const gfx::Point& point1,
+                               const gfx::Point& point2,
+                               const StyledStrokeData& styled_stroke,
+                               const AutoDarkMode& auto_dark_mode,
+                               bool is_text_line,
+                               const cc::PaintFlags* paint_flags) {
+  DCHECK(canvas_);
+
+  StrokeStyle pen_style = styled_stroke.Style();
+  if (pen_style == kNoStroke)
+    return;
+
+  gfx::PointF p1 = gfx::PointF(point1);
+  gfx::PointF p2 = gfx::PointF(point2);
+  bool is_vertical_line = (p1.x() == p2.x());
+  int width = roundf(styled_stroke.Thickness());
+
+  // We know these are vertical or horizontal lines, so the length will just
+  // be the sum of the displacement component vectors give or take 1 -
+  // probably worth the speed up of no square root, which also won't be exact.
+  gfx::Vector2dF disp = p2 - p1;
+  int length = SkScalarRoundToInt(disp.x() + disp.y());
+  cc::PaintFlags flags =
+      paint_flags ? *paint_flags : ImmutableState()->StrokeFlags();
+  styled_stroke.SetupPaint(&flags, {length, width, false});
+
+  if (pen_style == kDottedStroke) {
+    if (StyledStrokeData::StrokeIsDashed(width, pen_style)) {
+      // When the length of the line is an odd multiple of the width, things
+      // work well because we get dots at each end of the line, but if the
+      // length is anything else, we get gaps or partial dots at the end of the
+      // line. Fix that by explicitly enforcing full dots at the ends of lines.
+      // Note that we don't enforce end points when it's text line as enforcing
+      // is to improve border line quality.
+      if (!is_text_line) {
+        EnforceDotsAtEndpoints(*this, p1, p2, length, width, flags,
+                               is_vertical_line, auto_dark_mode);
+      }
+    } else {
+      // We draw thick dotted lines with 0 length dash strokes and round
+      // endcaps, producing circles. The endcaps extend beyond the line's
+      // endpoints, so move the start and end in.
+      if (is_vertical_line) {
+        p1.set_y(p1.y() + width / 2.f);
+        p2.set_y(p2.y() - width / 2.f);
+      } else {
+        p1.set_x(p1.x() + width / 2.f);
+        p2.set_x(p2.x() - width / 2.f);
+      }
+    }
+  }
+
+  AdjustLineToPixelBoundaries(p1, p2, width);
+  DrawLine(p1, p2, flags, auto_dark_mode);
 }
 
 void GraphicsContext::DrawText(const Font& font,
@@ -495,11 +549,22 @@ void GraphicsContext::DrawBidiText(const Font& font,
                                    const gfx::PointF& point,
                                    const AutoDarkMode& auto_dark_mode) {
   DrawTextPasses([&](const cc::PaintFlags& flags) {
-    if (PlainTextPainter::Shared().DrawWithBidiReorder(
-            run, 0, run.length(), font, Font::kDoNotPaintIfFontNotReady,
-            *canvas_, point, DarkModeFlags(this, auto_dark_mode, flags),
-            printing_ ? Font::DrawType::kGlyphsAndClusters
-                      : Font::DrawType::kGlyphsOnly)) {
+    if (RuntimeEnabledFeatures::PlainTextPainterEnabled()) {
+      if (PlainTextPainter::Shared().DrawWithBidiReorder(
+              run, 0, run.length(), font, Font::kDoNotPaintIfFontNotReady,
+              *canvas_, point, DarkModeFlags(this, auto_dark_mode, flags),
+              printing_ ? Font::DrawType::kGlyphsAndClusters
+                        : Font::DrawType::kGlyphsOnly)) {
+        paint_controller_.SetTextPainted();
+      }
+      return;
+    }
+    if (font.DeprecatedDrawBidiText(canvas_, TextRunPaintInfo(run), point,
+                                    Font::kDoNotPaintIfFontNotReady,
+                                    DarkModeFlags(this, auto_dark_mode, flags),
+                                    printing_
+                                        ? Font::DrawType::kGlyphsAndClusters
+                                        : Font::DrawType::kGlyphsOnly)) {
       paint_controller_.SetTextPainted();
     }
   });
@@ -514,8 +579,7 @@ void GraphicsContext::DrawImage(
     const gfx::RectF* src_ptr,
     SkBlendMode op,
     RespectImageOrientationEnum should_respect_image_orientation,
-    Image::ImageClampingMode clamping_mode,
-    ImageNodeAnimationInfo image_node_animation_info) {
+    Image::ImageClampingMode clamping_mode) {
   const gfx::RectF src = src_ptr ? *src_ptr : gfx::RectF(image.Rect());
   cc::PaintFlags image_flags = ImmutableState()->FillFlags();
   image_flags.setBlendMode(op);
@@ -523,10 +587,10 @@ void GraphicsContext::DrawImage(
 
   SkSamplingOptions sampling = ComputeSamplingOptions(image, dest, src);
   DarkModeFilter* dark_mode_filter = GetDarkModeFilterForImage(auto_dark_mode);
-  ImageDrawOptions draw_options(
-      dark_mode_filter, sampling, should_respect_image_orientation,
-      clamping_mode, decode_mode, auto_dark_mode.enabled,
-      paint_timing_info.image_may_be_lcp_candidate, image_node_animation_info);
+  ImageDrawOptions draw_options(dark_mode_filter, sampling,
+                                should_respect_image_orientation, clamping_mode,
+                                decode_mode, auto_dark_mode.enabled,
+                                paint_timing_info.image_may_be_lcp_candidate);
   image.Draw(canvas_, image_flags, dest, src, draw_options);
   SetImagePainted(paint_timing_info.report_paint_timing);
 }
@@ -539,12 +603,10 @@ void GraphicsContext::DrawImageRRect(
     const gfx::RectF& src_rect,
     SkBlendMode op,
     RespectImageOrientationEnum respect_orientation,
-    Image::ImageClampingMode clamping_mode,
-    ImageNodeAnimationInfo image_node_animation_info) {
+    Image::ImageClampingMode clamping_mode) {
   if (!dest.IsRounded()) {
     DrawImage(image, decode_mode, auto_dark_mode, paint_timing_info,
-              dest.Rect(), &src_rect, op, respect_orientation, clamping_mode,
-              image_node_animation_info);
+              dest.Rect(), &src_rect, op, respect_orientation, clamping_mode);
     return;
   }
 
@@ -562,10 +624,10 @@ void GraphicsContext::DrawImageRRect(
   image_flags.setColor(SkColors::kBlack);
 
   DarkModeFilter* dark_mode_filter = GetDarkModeFilterForImage(auto_dark_mode);
-  ImageDrawOptions draw_options(
-      dark_mode_filter, sampling, respect_orientation, clamping_mode,
-      decode_mode, auto_dark_mode.enabled,
-      paint_timing_info.image_may_be_lcp_candidate, image_node_animation_info);
+  ImageDrawOptions draw_options(dark_mode_filter, sampling, respect_orientation,
+                                clamping_mode, decode_mode,
+                                auto_dark_mode.enabled,
+                                paint_timing_info.image_may_be_lcp_candidate);
 
   bool use_shader = (visible_src == src_rect) &&
                     (respect_orientation == kDoNotRespectImageOrientation ||
@@ -610,11 +672,13 @@ cc::PaintFlags::FilterQuality GraphicsContext::ComputeFilterQuality(
   InterpolationQuality resampling;
   if (printing_) {
     resampling = kInterpolationNone;
-  } else if (image.IsLazyDecoded()) {
+  } else if (image.CurrentFrameIsLazyDecoded()) {
     resampling = GetDefaultInterpolationQuality();
   } else {
-    resampling = ComputeInterpolationQuality(src.size(), dest.size(),
-                                             image.FirstFrameIsComplete());
+    resampling = ComputeInterpolationQuality(
+        SkScalarToFloat(src.width()), SkScalarToFloat(src.height()),
+        SkScalarToFloat(dest.width()), SkScalarToFloat(dest.height()),
+        image.CurrentFrameIsComplete());
 
     if (resampling == kInterpolationNone) {
       // FIXME: This is to not break tests (it results in the filter bitmap flag
@@ -639,15 +703,11 @@ void GraphicsContext::DrawImageTiled(
   image_flags.setBlendMode(op);
   SkSamplingOptions sampling = ImageSamplingOptions();
   DarkModeFilter* dark_mode_filter = GetDarkModeFilterForImage(auto_dark_mode);
-  ImageDrawOptions draw_options(
-      dark_mode_filter, sampling, respect_orientation,
-      Image::kClampImageToSourceRect, Image::kSyncDecode,
-      auto_dark_mode.enabled, paint_timing_info.image_may_be_lcp_candidate,
-      // DrawPattern didn't use image animation information.
-      // An minor edge case exists - tiled image is updated when change
-      // image animation with border-image: round. That is neither
-      // a new case nor an intended use case.
-      ImageNodeAnimationInfo());
+  ImageDrawOptions draw_options(dark_mode_filter, sampling, respect_orientation,
+                                Image::kClampImageToSourceRect,
+                                Image::kSyncDecode, auto_dark_mode.enabled,
+                                paint_timing_info.image_may_be_lcp_candidate);
+
   image.DrawPattern(*this, image_flags, dest_rect, tiling_info, draw_options);
   SetImagePainted(paint_timing_info.report_paint_timing);
 }
@@ -904,11 +964,10 @@ void GraphicsContext::StrokeRect(const gfx::RectF& rect,
   } else if (valid_w || valid_h) {
     // we are expected to respect the lineJoin, so we can't just call
     // drawLine -- we have to create a path that doubles back on itself.
-    const SkPath path = SkPathBuilder()
-                            .moveTo(r.fLeft, r.fTop)
-                            .lineTo(r.fRight, r.fBottom)
-                            .close()
-                            .detach();
+    SkPath path;
+    path.moveTo(r.fLeft, r.fTop);
+    path.lineTo(r.fRight, r.fBottom);
+    path.close();
     DrawPath(path, flags, auto_dark_mode);
   }
 }
@@ -1004,6 +1063,27 @@ void GraphicsContext::SetURLDestinationLocation(const String& name,
 
 void GraphicsContext::ConcatCTM(const AffineTransform& affine) {
   Concat(affine.ToSkM44());
+}
+
+void GraphicsContext::AdjustLineToPixelBoundaries(gfx::PointF& p1,
+                                                  gfx::PointF& p2,
+                                                  float stroke_width) {
+  // For odd widths, we add in 0.5 to the appropriate x/y so that the float
+  // arithmetic works out.  For example, with a border width of 3, painting will
+  // pass us (y1+y2)/2, e.g., (50+53)/2 = 103/2 = 51 when we want 51.5.  It is
+  // always true that an even width gave us a perfect position, but an odd width
+  // gave us a position that is off by exactly 0.5.
+  if (static_cast<int>(stroke_width) % 2) {  // odd
+    if (p1.x() == p2.x()) {
+      // We're a vertical line.  Adjust our x.
+      p1.set_x(p1.x() + 0.5f);
+      p2.set_x(p2.x() + 0.5f);
+    } else {
+      // We're a horizontal line. Adjust our y.
+      p1.set_y(p1.y() + 0.5f);
+      p2.set_y(p2.y() + 0.5f);
+    }
+  }
 }
 
 }  // namespace blink

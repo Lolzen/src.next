@@ -12,7 +12,6 @@
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread.h"
-#include "build/build_config.h"
 #include "net/base/features.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/network_config_watcher_apple.h"
@@ -45,10 +44,7 @@ class TestIPAddressObserver : public NetworkChangeNotifier::IPAddressObserver {
   }
 
   // Implements NetworkChangeNotifier::IPAddressObserver:
-  void OnIPAddressChanged(
-      NetworkChangeNotifier::IPAddressChangeType change_type) override {
-    ip_address_changed_ = true;
-  }
+  void OnIPAddressChanged() override { ip_address_changed_ = true; }
 
   bool ip_address_changed() const { return ip_address_changed_; }
 
@@ -59,9 +55,19 @@ class TestIPAddressObserver : public NetworkChangeNotifier::IPAddressObserver {
 }  // namespace
 
 class NetworkChangeNotifierAppleTest : public WithTaskEnvironment,
-                                       public ::testing::Test {
+                                       public ::testing::TestWithParam<bool> {
  public:
-  NetworkChangeNotifierAppleTest() = default;
+  NetworkChangeNotifierAppleTest() {
+    if (ReduceIPAddressChangeNotificationEnabled()) {
+      feature_list_.InitWithFeatures(
+          /*enabled_features=*/{features::kReduceIPAddressChangeNotification},
+          /*disabled_features=*/{});
+    } else {
+      feature_list_.InitWithFeatures(
+          /*enabled_features=*/{},
+          /*disabled_features=*/{features::kReduceIPAddressChangeNotification});
+    }
+  }
   NetworkChangeNotifierAppleTest(const NetworkChangeNotifierAppleTest&) =
       delete;
   NetworkChangeNotifierAppleTest& operator=(
@@ -71,6 +77,8 @@ class NetworkChangeNotifierAppleTest : public WithTaskEnvironment,
   void TearDown() override { RunUntilIdle(); }
 
  protected:
+  bool ReduceIPAddressChangeNotificationEnabled() const { return GetParam(); }
+
   std::unique_ptr<NetworkChangeNotifierApple>
   CreateNetworkChangeNotifierApple() {
     auto notifier = std::make_unique<NetworkChangeNotifierApple>();
@@ -128,9 +136,19 @@ class NetworkChangeNotifierAppleTest : public WithTaskEnvironment,
  private:
   // Allows us to allocate our own NetworkChangeNotifier for unit testing.
   NetworkChangeNotifier::DisableForTest disable_for_test_;
+  base::test::ScopedFeatureList feature_list_;
 };
 
-TEST_F(NetworkChangeNotifierAppleTest, NoInterfaceChange) {
+INSTANTIATE_TEST_SUITE_P(
+    All,
+    NetworkChangeNotifierAppleTest,
+    ::testing::Values(true, false),
+    [](const testing::TestParamInfo<bool>& info) {
+      return info.param ? "ReduceIPAddressChangeNotificationEnabled"
+                        : "ReduceIPAddressChangeNotificationDisabled";
+    });
+
+TEST_P(NetworkChangeNotifierAppleTest, NoInterfaceChange) {
   net::IPAddress ip_address;
   EXPECT_TRUE(ip_address.AssignFromIPLiteral(kIPv4PrivateAddrString1));
   network_interface_list_->push_back(net::NetworkInterface(
@@ -145,12 +163,13 @@ TEST_F(NetworkChangeNotifierAppleTest, NoInterfaceChange) {
   TestIPAddressObserver observer;
   SimulateDynamicStoreCallback(*notifier, kSCEntNetIPv4);
   RunUntilIdle();
-  // We ignore the OnNetworkConfigChange callback without any network interface
-  // change.
-  EXPECT_FALSE(observer.ip_address_changed());
+  // When kReduceIPAddressChangeNotification feature is enabled, we ignores
+  // the OnNetworkConfigChange callback without any network interface change.
+  EXPECT_EQ(observer.ip_address_changed(),
+            !ReduceIPAddressChangeNotificationEnabled());
 }
 
-TEST_F(NetworkChangeNotifierAppleTest, IPv4AddressChange) {
+TEST_P(NetworkChangeNotifierAppleTest, IPv4AddressChange) {
   net::IPAddress ip_address;
   EXPECT_TRUE(ip_address.AssignFromIPLiteral(kIPv4PrivateAddrString1));
   network_interface_list_->push_back(net::NetworkInterface(
@@ -169,7 +188,7 @@ TEST_F(NetworkChangeNotifierAppleTest, IPv4AddressChange) {
   EXPECT_TRUE(observer.ip_address_changed());
 }
 
-TEST_F(NetworkChangeNotifierAppleTest, PublicIPv6AddressChange) {
+TEST_P(NetworkChangeNotifierAppleTest, PublicIPv6AddressChange) {
   net::IPAddress ip_address;
   EXPECT_TRUE(ip_address.AssignFromIPLiteral(kIPv6PublicAddrString1));
   network_interface_list_->push_back(net::NetworkInterface(
@@ -188,7 +207,7 @@ TEST_F(NetworkChangeNotifierAppleTest, PublicIPv6AddressChange) {
   EXPECT_TRUE(observer.ip_address_changed());
 }
 
-TEST_F(NetworkChangeNotifierAppleTest,
+TEST_P(NetworkChangeNotifierAppleTest,
        LinkLocalIPv6AddressChangeOnPrimaryInterface) {
   net::IPAddress ip_address;
   EXPECT_TRUE(ip_address.AssignFromIPLiteral(kIPv6LinkLocalAddrString1));
@@ -209,7 +228,7 @@ TEST_F(NetworkChangeNotifierAppleTest,
   EXPECT_TRUE(observer.ip_address_changed());
 }
 
-TEST_F(NetworkChangeNotifierAppleTest,
+TEST_P(NetworkChangeNotifierAppleTest,
        LinkLocalIPv6AddressChangeOnNonPrimaryInterface) {
   net::IPAddress ip_address1;
   EXPECT_TRUE(ip_address1.AssignFromIPLiteral(kIPv4PrivateAddrString1));
@@ -233,11 +252,13 @@ TEST_F(NetworkChangeNotifierAppleTest,
   TestIPAddressObserver observer;
   SimulateDynamicStoreCallback(*notifier, kSCEntNetIPv4);
   RunUntilIdle();
-  // We ignore the link local IPv6 address change on the non-primary interface.
-  EXPECT_FALSE(observer.ip_address_changed());
+  // When kReduceIPAddressChangeNotification feature is enabled, we ignores
+  // the link local IPv6 address change on the non-primary interface.
+  EXPECT_EQ(observer.ip_address_changed(),
+            !ReduceIPAddressChangeNotificationEnabled());
 }
 
-TEST_F(NetworkChangeNotifierAppleTest, NewInterfaceWithIpV4) {
+TEST_P(NetworkChangeNotifierAppleTest, NewInterfaceWithIpV4) {
   net::IPAddress ip_address;
   EXPECT_TRUE(ip_address.AssignFromIPLiteral(kIPv4PrivateAddrString1));
   network_interface_list_->push_back(net::NetworkInterface(
@@ -261,7 +282,7 @@ TEST_F(NetworkChangeNotifierAppleTest, NewInterfaceWithIpV4) {
   EXPECT_TRUE(observer.ip_address_changed());
 }
 
-TEST_F(NetworkChangeNotifierAppleTest, NewInterfaceWithLinkLocalIpV6) {
+TEST_P(NetworkChangeNotifierAppleTest, NewInterfaceWithLinkLocalIpV6) {
   net::IPAddress ip_address;
   EXPECT_TRUE(ip_address.AssignFromIPLiteral(kIPv4PrivateAddrString1));
   network_interface_list_->push_back(net::NetworkInterface(
@@ -283,11 +304,13 @@ TEST_F(NetworkChangeNotifierAppleTest, NewInterfaceWithLinkLocalIpV6) {
   TestIPAddressObserver observer;
   SimulateDynamicStoreCallback(*notifier, kSCEntNetIPv4);
   RunUntilIdle();
-  // We ignore the new link local IPv6 interface.
-  EXPECT_FALSE(observer.ip_address_changed());
+  // When kReduceIPAddressChangeNotification feature is enabled, we ignores
+  // the new link local IPv6 interface.
+  EXPECT_EQ(observer.ip_address_changed(),
+            !ReduceIPAddressChangeNotificationEnabled());
 }
 
-TEST_F(NetworkChangeNotifierAppleTest, NewInterfaceWithPublicIpV6) {
+TEST_P(NetworkChangeNotifierAppleTest, NewInterfaceWithPublicIpV6) {
   net::IPAddress ip_address;
   EXPECT_TRUE(ip_address.AssignFromIPLiteral(kIPv4PrivateAddrString1));
   network_interface_list_->push_back(net::NetworkInterface(
@@ -312,7 +335,7 @@ TEST_F(NetworkChangeNotifierAppleTest, NewInterfaceWithPublicIpV6) {
   EXPECT_TRUE(observer.ip_address_changed());
 }
 
-TEST_F(NetworkChangeNotifierAppleTest, IPv4PrimaryInterfaceChange) {
+TEST_P(NetworkChangeNotifierAppleTest, IPv4PrimaryInterfaceChange) {
   net::IPAddress ip_address;
   EXPECT_TRUE(ip_address.AssignFromIPLiteral(kIPv4PrivateAddrString1));
   network_interface_list_->push_back(net::NetworkInterface(
@@ -336,7 +359,7 @@ TEST_F(NetworkChangeNotifierAppleTest, IPv4PrimaryInterfaceChange) {
   EXPECT_TRUE(observer.ip_address_changed());
 }
 
-TEST_F(NetworkChangeNotifierAppleTest, IPv6PrimaryInterfaceChange) {
+TEST_P(NetworkChangeNotifierAppleTest, IPv6PrimaryInterfaceChange) {
   net::IPAddress ip_address;
   EXPECT_TRUE(ip_address.AssignFromIPLiteral(kIPv6PublicAddrString1));
   network_interface_list_->push_back(net::NetworkInterface(
@@ -359,76 +382,5 @@ TEST_F(NetworkChangeNotifierAppleTest, IPv6PrimaryInterfaceChange) {
   RunUntilIdle();
   EXPECT_TRUE(observer.ip_address_changed());
 }
-
-#if BUILDFLAG(IS_MAC)
-
-class NetworkChangeNotifierApplePathMonitorTest : public WithTaskEnvironment,
-                                                  public ::testing::Test {
- public:
-  NetworkChangeNotifierApplePathMonitorTest() = default;
-
-  std::unique_ptr<NetworkChangeNotifierApple> CreateNotifier() {
-    auto notifier = std::make_unique<NetworkChangeNotifierApple>();
-    base::RunLoop run_loop;
-    // Wait for initialization to complete to avoid racing with the
-    // background notifier thread.
-    notifier->SetCallbacksForTest(
-        run_loop.QuitClosure(),
-        base::BindRepeating([](NetworkInterfaceList*, int) { return false; }),
-        base::BindRepeating([](SCDynamicStoreRef) { return std::string(); }),
-        base::BindRepeating([](SCDynamicStoreRef) { return std::string(); }));
-    run_loop.Run();
-    return notifier;
-  }
-
- protected:
-  base::test::ScopedFeatureList feature_list_;
-  NetworkChangeNotifier::DisableForTest disable_for_test_;
-
-  bool ShouldUseMonitor(NetworkChangeNotifierApple* notifier) {
-    return notifier->ShouldUseNetworkPathMonitor();
-  }
-  bool EnsureMonitorStarted(NetworkChangeNotifierApple* notifier) {
-    return notifier->EnsureNetworkPathMonitorStarted();
-  }
-  void StopMonitor(NetworkChangeNotifierApple* notifier) {
-    notifier->StopNetworkPathMonitor();
-  }
-};
-
-TEST_F(NetworkChangeNotifierApplePathMonitorTest,
-       MonitorDisabledWhenFeatureOff) {
-  feature_list_.InitAndDisableFeature(
-      features::kUseNetworkPathMonitorForNetworkChangeNotifier);
-
-  auto notifier = CreateNotifier();
-  EXPECT_FALSE(ShouldUseMonitor(notifier.get()));
-  EXPECT_FALSE(EnsureMonitorStarted(notifier.get()));
-  StopMonitor(notifier.get());
-}
-
-TEST_F(NetworkChangeNotifierApplePathMonitorTest, MonitorStartsWhenFeatureOn) {
-  feature_list_.InitAndEnableFeature(
-      features::kUseNetworkPathMonitorForNetworkChangeNotifier);
-
-  auto notifier = CreateNotifier();
-  EXPECT_TRUE(ShouldUseMonitor(notifier.get()));
-  EXPECT_TRUE(EnsureMonitorStarted(notifier.get()));
-  StopMonitor(notifier.get());
-}
-
-TEST_F(NetworkChangeNotifierApplePathMonitorTest, MonitorStartIsIdempotent) {
-  feature_list_.InitAndEnableFeature(
-      features::kUseNetworkPathMonitorForNetworkChangeNotifier);
-
-  auto notifier = CreateNotifier();
-  // Precondition: monitor must start successfully.
-  ASSERT_TRUE(EnsureMonitorStarted(notifier.get()));
-  // Verify idempotency: subsequent starts should also succeed.
-  EXPECT_TRUE(EnsureMonitorStarted(notifier.get()));
-  StopMonitor(notifier.get());
-}
-
-#endif  // BUILDFLAG(IS_MAC)
 
 }  // namespace net

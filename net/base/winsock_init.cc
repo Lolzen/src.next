@@ -6,10 +6,8 @@
 
 #include <winsock2.h>
 
-#include <type_traits>
-
 #include "base/check.h"
-#include "base/no_destructor.h"
+#include "base/lazy_instance.h"
 
 namespace {
 
@@ -34,15 +32,17 @@ class WinsockInitSingleton {
   }
 };
 
+// Worker pool threads that use the Windows Sockets API may still be running at
+// shutdown. Leak instance and skip cleanup.
+static base::LazyInstance<WinsockInitSingleton>::Leaky
+    g_winsock_init_singleton = LAZY_INSTANCE_INITIALIZER;
+
 }  // namespace
 
 namespace net {
 
 void EnsureWinsockInit() {
-  // Worker pool threads that use the Windows Sockets API may still be running
-  // at shutdown. Leak instance and skip cleanup.
-  static_assert(std::is_trivially_destructible<WinsockInitSingleton>::value);
-  static WinsockInitSingleton singleton;
+  g_winsock_init_singleton.Get();
 }
 
 }  // namespace net

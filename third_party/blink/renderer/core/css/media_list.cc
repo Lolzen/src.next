@@ -202,7 +202,7 @@ void MediaList::deleteMedium(ExecutionContext* execution_context,
   if (!new_media_queries) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotFoundError,
-        StrCat({"Failed to delete '", medium, "'."}));
+        WTF::StrCat({"Failed to delete '", medium, "'."}));
     return;
   }
   Owner()->SetMediaQueries(new_media_queries);

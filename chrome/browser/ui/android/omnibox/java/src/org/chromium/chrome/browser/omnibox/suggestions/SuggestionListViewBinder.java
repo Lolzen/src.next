@@ -4,12 +4,14 @@
 
 package org.chromium.chrome.browser.omnibox.suggestions;
 
-import android.graphics.Color;
+import android.content.Context;
 import android.view.View;
+import android.view.ViewGroup;
 
 import androidx.annotation.ColorInt;
 
 import org.chromium.build.annotations.NullMarked;
+import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.omnibox.R;
 import org.chromium.chrome.browser.omnibox.styles.OmniboxResourceProvider;
 import org.chromium.ui.modelutil.ListObservable;
@@ -22,11 +24,10 @@ import org.chromium.ui.modelutil.PropertyModel;
 class SuggestionListViewBinder {
     /** Holds the view components needed to renderer the suggestion list. */
     public static class SuggestionListViewHolder {
-        public final OmniboxSuggestionsContainer container;
+        public final ViewGroup container;
         public final OmniboxSuggestionsDropdown dropdown;
 
-        public SuggestionListViewHolder(
-                OmniboxSuggestionsContainer container, OmniboxSuggestionsDropdown dropdown) {
+        public SuggestionListViewHolder(ViewGroup container, OmniboxSuggestionsDropdown dropdown) {
             this.container = container;
             this.dropdown = dropdown;
         }
@@ -43,15 +44,15 @@ class SuggestionListViewBinder {
             view.dropdown.translateChildrenVertical(
                     model.get(SuggestionListProperties.CHILD_TRANSLATION_Y));
         } else if (SuggestionListProperties.EMBEDDER.equals(propertyKey)) {
-            view.container.setEmbedder(model.get(SuggestionListProperties.EMBEDDER));
+            view.dropdown.setEmbedder(model.get(SuggestionListProperties.EMBEDDER));
         } else if (SuggestionListProperties.OMNIBOX_SESSION_ACTIVE.equals(propertyKey)) {
             updateContainerVisibility(model, view);
-            view.container.onOmniboxSessionStateChange(
+            view.dropdown.onOmniboxSessionStateChange(
                     model.get(SuggestionListProperties.OMNIBOX_SESSION_ACTIVE));
         } else if (SuggestionListProperties.GESTURE_OBSERVER.equals(propertyKey)) {
             view.dropdown.setGestureObserver(model.get(SuggestionListProperties.GESTURE_OBSERVER));
         } else if (SuggestionListProperties.DROPDOWN_HEIGHT_CHANGE_LISTENER.equals(propertyKey)) {
-            view.container.setHeightChangeListener(
+            view.dropdown.setHeightChangeListener(
                     model.get(SuggestionListProperties.DROPDOWN_HEIGHT_CHANGE_LISTENER));
         } else if (SuggestionListProperties.DROPDOWN_SCROLL_LISTENER.equals(propertyKey)) {
             view.dropdown
@@ -67,17 +68,22 @@ class SuggestionListViewBinder {
             if (model.get(SuggestionListProperties.LIST_IS_FINAL)) {
                 view.dropdown.emitWindowContentChangedAnnouncement();
             }
-        } else if (SuggestionListProperties.ROUND_TOP_CORNERS.equals(propertyKey)) {
-            view.container.setShouldRoundTopCorners(
-                    model.get(SuggestionListProperties.ROUND_TOP_CORNERS));
         } else if (SuggestionListProperties.SUGGESTION_MODELS.equals(propertyKey)) {
             ModelList listItems = model.get(SuggestionListProperties.SUGGESTION_MODELS);
             listItems.addObserver(
-                    new ListObservable.ListObserver<>() {
+                    new ListObservable.ListObserver<Void>() {
+                        @Override
+                        public void onItemRangeChanged(
+                                ListObservable<Void> source,
+                                int index,
+                                int count,
+                                @Nullable Void payload) {
+                            view.dropdown.resetSelection();
+                        }
+
                         @Override
                         public void onItemRangeInserted(
                                 ListObservable source, int index, int count) {
-                            view.dropdown.resetSelection();
                             updateContainerVisibility(model, view);
                         }
 
@@ -91,46 +97,27 @@ class SuggestionListViewBinder {
             // elements. Be sure to capture and reflect this fact appropriately.
             updateContainerVisibility(model, view);
         } else if (SuggestionListProperties.COLOR_SCHEME.equals(propertyKey)) {
-            updateColorScheme(model, view);
+            view.dropdown.refreshPopupBackground(model.get(SuggestionListProperties.COLOR_SCHEME));
         } else if (SuggestionListProperties.CONTAINER_ALWAYS_VISIBLE.equals(propertyKey)
                 || SuggestionListProperties.ACTIVITY_WINDOW_FOCUSED.equals(propertyKey)) {
             if (model.get(SuggestionListProperties.CONTAINER_ALWAYS_VISIBLE)) {
-                updateColorScheme(model, view);
+                Context context = view.dropdown.getContext();
+                @ColorInt
+                int backgroundColor =
+                        OmniboxResourceProvider.getSuggestionsDropdownBackgroundColor(
+                                context, model.get(SuggestionListProperties.COLOR_SCHEME));
+                view.container.setBackgroundColor(backgroundColor);
             }
             updateContainerVisibility(model, view);
         } else if (SuggestionListProperties.DRAW_OVER_ANCHOR == propertyKey) {
             boolean drawOver = model.get(SuggestionListProperties.DRAW_OVER_ANCHOR);
             // Note: this assumes the anchor view's z hasn't been modified. If this changes, we'll
             // need to wire that z value so that we choose the correct one here.
-            view.container.setTranslationZ(
-                    drawOver
-                            ? view.container
-                                    .getResources()
-                                    .getDimensionPixelSize(
-                                            R.dimen.omnibox_suggestion_list_elevation)
-                            : 0.0f);
-        } else if (SuggestionListProperties.IS_LARGE_SCREEN == propertyKey) {
-            updateColorScheme(model, view);
-            view.container.setShouldClipToOutline(
-                    model.get(SuggestionListProperties.IS_LARGE_SCREEN));
-        } else if (SuggestionListProperties.TOOLBAR_POSITION == propertyKey) {
-            view.dropdown.setToolbarPosition(model.get(SuggestionListProperties.TOOLBAR_POSITION));
-        }
-    }
-
-    private static void updateColorScheme(PropertyModel model, SuggestionListViewHolder holder) {
-        @ColorInt
-        int backgroundColor =
-                OmniboxResourceProvider.getSuggestionsDropdownBackgroundColor(
-                        holder.dropdown.getContext(),
-                        model.get(SuggestionListProperties.COLOR_SCHEME));
-
-        holder.dropdown.setBackgroundColor(backgroundColor);
-
-        if (model.get(SuggestionListProperties.IS_LARGE_SCREEN)) {
-            holder.container.setBackgroundColor(Color.TRANSPARENT);
-        } else {
-            holder.container.setBackgroundColor(backgroundColor);
+            view.container.setZ(drawOver ? 1.0f : 0.0f);
+            view.dropdown.setElevation(
+                    view.dropdown
+                            .getResources()
+                            .getDimensionPixelSize(R.dimen.omnibox_suggestion_list_elevation));
         }
     }
 

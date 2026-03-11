@@ -13,10 +13,7 @@
 #include "base/memory/raw_ptr.h"
 #include "chrome/browser/download/android/download_callback_validator.h"
 #include "components/download/public/common/download_item.h"
-
-namespace ui {
-class WindowAndroid;
-}
+#include "ui/gfx/native_widget_types.h"
 
 // Class for showing dialogs to asks whether user wants to download an insecure
 // URL.
@@ -41,7 +38,7 @@ class InsecureDownloadDialogBridge : public download::DownloadItem::Observer {
                     InsecureDownloadDialogCallback callback);
 
   // Called from Java via JNI.
-  void OnConfirmed(JNIEnv* env, int64_t callback_id, bool accepted);
+  void OnConfirmed(JNIEnv* env, jlong callback_id, jboolean accepted);
 
  private:
   // Download items that are requesting the dialog. Could get deleted while

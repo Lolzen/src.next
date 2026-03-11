@@ -13,8 +13,9 @@ bool ChromeKioskDelegate::IsAutoLaunchedKioskApp(const ExtensionId& id) const {
     return false;
   }
 
-  auto app = ash::KioskChromeAppManager::Get()->GetApp(id);
-  return app.has_value() && app->was_auto_launched_with_zero_delay;
+  ash::KioskChromeAppManager::App app_info;
+  return ash::KioskChromeAppManager::Get()->GetApp(id, &app_info) &&
+         app_info.was_auto_launched_with_zero_delay;
 }
 
 }  // namespace extensions

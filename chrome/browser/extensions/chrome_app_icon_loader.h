@@ -10,12 +10,8 @@
 #include <string>
 
 #include "base/functional/callback.h"
-#include "base/memory/raw_ptr.h"
 #include "chrome/browser/extensions/chrome_app_icon_delegate.h"
-#include "components/app_icon_loader/app_icon_loader.h"
-#include "extensions/buildflags/buildflags.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
+#include "chrome/browser/ui/app_icon_loader.h"
 
 class Profile;
 
@@ -33,8 +29,8 @@ class ChromeAppIconLoader : public AppIconLoader, public ChromeAppIconDelegate {
   using ResizeFunction =
       base::RepeatingCallback<void(const gfx::Size&, gfx::ImageSkia*)>;
 
-  // `resize_function` overrides icon resizing behavior if non-null. Otherwise
-  // IconLoader with perform the resizing. In both cases `resource_size_in_dip`
+  // |resize_function| overrides icon resizing behavior if non-null. Otherwise
+  // IconLoader with perform the resizing. In both cases |resource_size_in_dip|
   // is used to pick the correct icon representation from resources.
   ChromeAppIconLoader(Profile* profile,
                       int icon_size_in_dip,
@@ -55,10 +51,8 @@ class ChromeAppIconLoader : public AppIconLoader, public ChromeAppIconDelegate {
   void ClearImage(const std::string& id) override;
   void UpdateImage(const std::string& id) override;
 
-  // Sets `extensions_only_` as true to load icons for extensions only.
+  // Sets |extensions_only_| as true to load icons for extensions only.
   void SetExtensionsOnly();
-
-  Profile* profile() { return profile_; }
 
  private:
   using ExtensionIDToChromeAppIconMap =
@@ -66,8 +60,6 @@ class ChromeAppIconLoader : public AppIconLoader, public ChromeAppIconDelegate {
 
   // ChromeAppIconDelegate:
   void OnIconUpdated(ChromeAppIcon* icon) override;
-
-  const raw_ptr<Profile, DanglingUntriaged> profile_ = nullptr;
 
   // Maps from extension id to ChromeAppIcon.
   ExtensionIDToChromeAppIconMap map_;

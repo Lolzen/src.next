@@ -9,13 +9,15 @@
 #include "chrome/common/chrome_switches.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
 #include "extensions/test/result_catcher.h"
 #include "extensions/test/test_extension_dir.h"
 #include "net/dns/mock_host_resolver.h"
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
+#if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/ui/browser.h"
+#include "chrome/test/base/ui_test_utils.h"
+#endif
 
 namespace extensions {
 
@@ -121,7 +123,10 @@ IN_PROC_BROWSER_TEST_F(
   ASSERT_TRUE(RunExtensionTest(test_dir.UnpackedPath(), {}, {})) << message_;
 }
 
+#if !BUILDFLAG(IS_ANDROID)
 // Tests that MV3 disallows localhost in packed extensions.
+// TODO(https://crbug.com/391924202): Enable on Android once packed extensions
+// are supported.
 IN_PROC_BROWSER_TEST_F(ExtensionCspApiTest,
                        ManifestV3DisallowsLocalhostForPackedExtensions) {
   ASSERT_TRUE(StartEmbeddedTestServer());
@@ -176,16 +181,18 @@ IN_PROC_BROWSER_TEST_F(ExtensionCspApiTest,
   ASSERT_FALSE(Manifest::IsUnpackedLocation(extension->location()));
 
   // Blocking the script load should emit a log.
-  content::WebContents* web_contents = GetActiveWebContents();
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   content::WebContentsConsoleObserver console_observer(web_contents);
-  console_observer.SetPattern("Loading the script '*' violates the following*");
+  console_observer.SetPattern("Refused to load the script '*");
 
-  ASSERT_TRUE(
-      NavigateToURL(web_contents, extension->GetResourceURL("page.html")));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), extension->GetResourceURL("page.html")));
   ASSERT_TRUE(result_catcher.GetNextResult()) << result_catcher.message();
 
   EXPECT_EQ(2u, console_observer.messages().size());
 }
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 // A simple subclass that also sets up page navigation with the host resolver.
 class ExtensionCspApiTestWithPageNavigation : public ExtensionCspApiTest {

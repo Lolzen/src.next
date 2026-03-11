@@ -5,12 +5,14 @@
 #include "chrome/browser/extensions/manifest_v2_experiment_manager.h"
 
 #include "base/auto_reset.h"
+#include "base/functional/callback_forward.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/one_shot_event.h"
 #include "base/strings/stringprintf.h"
 #include "base/types/pass_key.h"
 #include "chrome/browser/extensions/chrome_extension_system_factory.h"
 #include "chrome/browser/extensions/extension_management.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/mv2_experiment_stage.h"
 #include "chrome/browser/extensions/profile_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -26,13 +28,10 @@
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/browser/pref_types.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_features.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -158,13 +157,21 @@ MV2ExperimentStage CalculateCurrentExperimentStage() {
     return MV2ExperimentStage::kDisableWithReEnable;
   }
 
-  return MV2ExperimentStage::kWarning;
+  if (base::FeatureList::IsEnabled(
+          extensions_features::kExtensionManifestV2DeprecationWarning)) {
+    return MV2ExperimentStage::kWarning;
+  }
+
+  return MV2ExperimentStage::kNone;
 }
 
 // Returns the pref that stores whether the user has acknowledged the MV2
 // deprecation notice for a given extension in `experiment_stage`.
 PrefMap GetExtensionAcknowledgedPrefFor(MV2ExperimentStage experiment_stage) {
   switch (experiment_stage) {
+    case MV2ExperimentStage::kNone:
+      // There is no notice for this stage, thus it cannot be acknowledged.
+      NOTREACHED();
     case MV2ExperimentStage::kWarning:
       return kMV2DeprecationExtensionWarningAcknowledgedPref;
     case MV2ExperimentStage::kDisableWithReEnable:
@@ -179,6 +186,9 @@ PrefMap GetExtensionAcknowledgedPrefFor(MV2ExperimentStage experiment_stage) {
 PrefMap GetGlobalNoticeAcknowledgedPrefFor(
     MV2ExperimentStage experiment_stage) {
   switch (experiment_stage) {
+    case MV2ExperimentStage::kNone:
+      // There is no notice for this stage, thus it cannot be acknowledged.
+      NOTREACHED();
     case MV2ExperimentStage::kWarning:
       return kMV2DeprecationWarningAcknowledgedGloballyPref;
     case MV2ExperimentStage::kDisableWithReEnable:
@@ -197,6 +207,7 @@ bool ShouldDisableLegacyExtensions(MV2ExperimentStage stage) {
   }
 
   switch (stage) {
+    case MV2ExperimentStage::kNone:
     case MV2ExperimentStage::kWarning:
       return false;
     case MV2ExperimentStage::kDisableWithReEnable:
@@ -217,6 +228,7 @@ bool ShouldBlockLegacyExtensionEnableForStage(MV2ExperimentStage stage) {
   // We only block extension enablement in the `kUnsupported` phase.
   // (We use a switch just to ensure compile errors if we ever add a new phase.)
   switch (stage) {
+    case MV2ExperimentStage::kNone:
     case MV2ExperimentStage::kWarning:
     case MV2ExperimentStage::kDisableWithReEnable:
       return false;
@@ -247,6 +259,7 @@ bool ShouldBlockUnpackedExtensions(MV2ExperimentStage stage) {
 // given experiment `stage`.
 bool UserCanReEnableExtensionsForStage(MV2ExperimentStage stage) {
   switch (stage) {
+    case MV2ExperimentStage::kNone:
     case MV2ExperimentStage::kWarning:
     case MV2ExperimentStage::kDisableWithReEnable:
       return true;
@@ -264,6 +277,7 @@ ManifestV2ExperimentManager::ManifestV2ExperimentManager(
       // the `impact_checker_` because this class is a KeyedService that depends
       // on `ExtensionManagement`.
       impact_checker_(
+          experiment_stage_,
           ExtensionManagementFactory::GetForBrowserContext(browser_context)),
       browser_context_(browser_context) {
   registry_observation_.Observe(ExtensionRegistry::Get(browser_context));
@@ -360,8 +374,10 @@ bool ManifestV2ExperimentManager::ShouldBlockExtensionEnable(
 
 bool ManifestV2ExperimentManager::DidUserAcknowledgeNotice(
     const ExtensionId& extension_id) {
+  // There is no notice for kNone stage, thus it cannot be acknowledged.
   // The notice cannot be acknowledged in kUnsupported stage.
-  if (experiment_stage_ == MV2ExperimentStage::kUnsupported) {
+  if (experiment_stage_ == MV2ExperimentStage::kNone ||
+      experiment_stage_ == MV2ExperimentStage::kUnsupported) {
     return false;
   }
 
@@ -374,8 +390,10 @@ bool ManifestV2ExperimentManager::DidUserAcknowledgeNotice(
 
 void ManifestV2ExperimentManager::MarkNoticeAsAcknowledged(
     const ExtensionId& extension_id) {
-  // The notice cannot be acknowledged in kUnsupported stage.
-  if (experiment_stage_ == MV2ExperimentStage::kUnsupported) {
+  // There is no notice for kNone stage, thus it cannot be acknowledged. The
+  // notice cannot be acknowledged in kUnsupported stage.
+  if (experiment_stage_ == MV2ExperimentStage::kNone ||
+      experiment_stage_ == MV2ExperimentStage::kUnsupported) {
     return;
   }
 
@@ -384,11 +402,21 @@ void ManifestV2ExperimentManager::MarkNoticeAsAcknowledged(
 }
 
 bool ManifestV2ExperimentManager::DidUserAcknowledgeNoticeGlobally() {
+  // There is no notice for kNone stage, thus it cannot be acknowledged.
+  if (experiment_stage_ == MV2ExperimentStage::kNone) {
+    return false;
+  }
+
   PrefMap pref = GetGlobalNoticeAcknowledgedPrefFor(experiment_stage_);
   return extension_prefs()->GetPrefAsBoolean(pref);
 }
 
 void ManifestV2ExperimentManager::MarkNoticeAsAcknowledgedGlobally() {
+  // There is no notice for kNone stage, thus it cannot be acknowledged.
+  if (experiment_stage_ == MV2ExperimentStage::kNone) {
+    return;
+  }
+
   PrefMap pref = GetGlobalNoticeAcknowledgedPrefFor(experiment_stage_);
   extension_prefs()->SetBooleanPref(pref, true);
 }
@@ -461,11 +489,11 @@ void ManifestV2ExperimentManager::DisableAffectedExtensions() {
     extensions_to_disable.insert(extension);
   }
 
-  auto* registrar = ExtensionRegistrar::Get(browser_context_);
+  ExtensionService* extension_service =
+      ExtensionSystem::Get(browser_context_)->extension_service();
   for (const auto& extension : extensions_to_disable) {
-    registrar->DisableExtension(
-        extension->id(),
-        {disable_reason::DISABLE_UNSUPPORTED_MANIFEST_VERSION});
+    extension_service->DisableExtension(
+        extension->id(), disable_reason::DISABLE_UNSUPPORTED_MANIFEST_VERSION);
     extension_prefs()->SetBooleanPref(extension->id(),
                                       kMV2DeprecationDidDisablePref, true);
   }

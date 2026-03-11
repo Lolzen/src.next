@@ -4,16 +4,16 @@
 
 #include "chrome/browser/ui/browser_location_bar_model_delegate.h"
 
-#include "base/check_deref.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 
 BrowserLocationBarModelDelegate::BrowserLocationBarModelDelegate(
-    TabStripModel* tab_strip_model)
-    : tab_strip_model_(CHECK_DEREF(tab_strip_model)) {}
+    Browser* browser)
+    : browser_(browser) {}
 
 BrowserLocationBarModelDelegate::~BrowserLocationBarModelDelegate() = default;
 
 content::WebContents* BrowserLocationBarModelDelegate::GetActiveWebContents()
     const {
-  return tab_strip_model_->GetActiveWebContents();
+  return browser_->tab_strip_model()->GetActiveWebContents();
 }

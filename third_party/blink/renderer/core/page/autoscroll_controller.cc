@@ -42,7 +42,6 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/cursors.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "ui/base/cursor/cursor.h"
 
 namespace blink {
@@ -483,27 +482,21 @@ void AutoscrollController::Animate() {
         autoscroll_layout_object_->Autoscroll(
             drag_and_drop_autoscroll_reference_position_);
       break;
-    case kAutoscrollForSelection: {
+    case kAutoscrollForSelection:
       if (!event_handler.MousePressed()) {
         StopAutoscroll();
         return;
       }
-
-      if (!RuntimeEnabledFeatures::
-              SelectionUpdateOnlyAfterAutoscrollEnabled() ||
-          scroll_result_) {
-        event_handler.UpdateSelectionForMouseDrag();
-      }
+      event_handler.UpdateSelectionForMouseDrag();
 
       // UpdateSelectionForMouseDrag may call layout to cancel auto scroll
       // animation.
       if (autoscroll_type_ != kNoAutoscroll) {
         DCHECK(autoscroll_layout_object_);
         ScheduleMainThreadAnimation();
-        scroll_result_ = autoscroll_layout_object_->Autoscroll(selection_point);
+        autoscroll_layout_object_->Autoscroll(selection_point);
       }
       break;
-    }
 #if BUILDFLAG(IS_IOS)
     case kAutoscrollForSelectionToPoint:
       ScheduleMainThreadAnimation();

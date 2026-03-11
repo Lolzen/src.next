@@ -28,19 +28,19 @@ using DelegationType = HttpAuth::DelegationType;
 
 namespace {
 
-base::DictValue SecurityStatusToValue(Error mapped_error,
-                                      SECURITY_STATUS status) {
-  base::DictValue params;
+base::Value::Dict SecurityStatusToValue(Error mapped_error,
+                                        SECURITY_STATUS status) {
+  base::Value::Dict params;
   params.Set("net_error", mapped_error);
   params.Set("security_status", static_cast<int>(status));
   return params;
 }
 
-base::DictValue AcquireCredentialsHandleParams(const std::u16string* domain,
-                                               const std::u16string* user,
-                                               Error result,
-                                               SECURITY_STATUS status) {
-  base::DictValue params;
+base::Value::Dict AcquireCredentialsHandleParams(const std::u16string* domain,
+                                                 const std::u16string* user,
+                                                 Error result,
+                                                 SECURITY_STATUS status) {
+  base::Value::Dict params;
   if (domain && user) {
     params.Set("domain", base::UTF16ToUTF8(*domain));
     params.Set("user", base::UTF16ToUTF8(*user));
@@ -49,18 +49,18 @@ base::DictValue AcquireCredentialsHandleParams(const std::u16string* domain,
   return params;
 }
 
-base::DictValue ContextFlagsToValue(DWORD flags) {
-  base::DictValue params;
+base::Value::Dict ContextFlagsToValue(DWORD flags) {
+  base::Value::Dict params;
   params.Set("value", base::StringPrintf("0x%08lx", flags));
   params.Set("delegated", (flags & ISC_RET_DELEGATE) == ISC_RET_DELEGATE);
   params.Set("mutual", (flags & ISC_RET_MUTUAL_AUTH) == ISC_RET_MUTUAL_AUTH);
   return params;
 }
 
-base::DictValue ContextAttributesToValue(SSPILibrary* library,
-                                         PCtxtHandle handle,
-                                         DWORD attributes) {
-  base::DictValue params;
+base::Value::Dict ContextAttributesToValue(SSPILibrary* library,
+                                           PCtxtHandle handle,
+                                           DWORD attributes) {
+  base::Value::Dict params;
 
   SecPkgContext_NativeNames native_names = {0};
   auto qc_result = library->QueryContextAttributesEx(
@@ -94,12 +94,12 @@ base::DictValue ContextAttributesToValue(SSPILibrary* library,
   return params;
 }
 
-base::DictValue InitializeSecurityContextParams(SSPILibrary* library,
-                                                PCtxtHandle handle,
-                                                Error result,
-                                                SECURITY_STATUS status,
-                                                DWORD attributes) {
-  base::DictValue params;
+base::Value::Dict InitializeSecurityContextParams(SSPILibrary* library,
+                                                  PCtxtHandle handle,
+                                                  Error result,
+                                                  SECURITY_STATUS status,
+                                                  DWORD attributes) {
+  base::Value::Dict params;
   params.Set("status", SecurityStatusToValue(result, status));
   if (result == OK) {
     params.Set("context",
@@ -549,7 +549,7 @@ int HttpAuthSSPI::GetNextSecurityToken(const std::string& spn,
     context_flags |= (ISC_REQ_DELEGATE | ISC_REQ_MUTUAL_AUTH);
 
   net_log.BeginEvent(NetLogEventType::AUTH_LIBRARY_INIT_SEC_CTX, [&] {
-    base::DictValue params;
+    base::Value::Dict params;
     params.Set("spn", spn);
     params.Set("flags", ContextFlagsToValue(context_flags));
     return params;

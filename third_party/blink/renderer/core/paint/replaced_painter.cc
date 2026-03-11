@@ -15,10 +15,8 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_root.h"
 #include "third_party/blink/renderer/core/mobile_metrics/mobile_friendliness_checker.h"
-#include "third_party/blink/renderer/core/paint/border_shape_utils.h"
 #include "third_party/blink/renderer/core/paint/box_background_paint_context.h"
 #include "third_party/blink/renderer/core/paint/box_decoration_data.h"
-#include "third_party/blink/renderer/core/paint/box_fragment_painter.h"
 #include "third_party/blink/renderer/core/paint/box_model_object_painter.h"
 #include "third_party/blink/renderer/core/paint/box_painter.h"
 #include "third_party/blink/renderer/core/paint/box_painter_base.h"
@@ -124,7 +122,7 @@ void ReplacedPainter::Paint(const PaintInfo& paint_info) {
 
   const auto& local_paint_info = paint_state.GetPaintInfo();
   auto paint_offset = paint_state.PaintOffset();
-  PhysicalRect border_rect(paint_offset, layout_replaced_.StitchedSize());
+  PhysicalRect border_rect(paint_offset, layout_replaced_.Size());
 
   if (ShouldPaintBoxDecorationBackground(local_paint_info)) {
     bool should_paint_background = false;
@@ -184,17 +182,6 @@ void ReplacedPainter::Paint(const PaintInfo& paint_info) {
     layout_replaced_.PaintReplaced(content_paint_state.GetPaintInfo(),
                                    content_paint_state.PaintOffset());
     MeasureOverflowMetrics();
-
-    // Ad Highlight Logic
-    //
-    // Guard against empty fragments, because the layout results may be missing
-    // in certain paint phases or states.
-    if (!layout_replaced_.PhysicalFragments().IsEmpty()) {
-      const auto& fragment = layout_replaced_.PhysicalFragments().front();
-      BoxFragmentPainter::PaintAdHighlightIfNeeded(
-          local_paint_info, paint_offset, fragment, layout_replaced_,
-          local_paint_info.phase);
-    }
   }
 
   if (layout_replaced_.StyleRef().Visibility() == EVisibility::kVisible &&
@@ -229,7 +216,8 @@ void ReplacedPainter::Paint(const PaintInfo& paint_info) {
     const ComputedStyle& style = layout_replaced_.StyleRef();
     selection_recorder.emplace(selection_state, selection_rect,
                                local_paint_info.context.GetPaintController(),
-                               style.Direction(), style.GetWritingMode());
+                               style.Direction(), style.GetWritingMode(),
+                               layout_replaced_);
   }
 
   if (!DrawingRecorder::UseCachedDrawingIfPossible(
@@ -294,7 +282,7 @@ void ReplacedPainter::MeasureOverflowMetrics() const {
   auto overflow_size = layout_replaced_.VisualOverflowRect().size;
   auto overflow_area = overflow_size.width * overflow_size.height;
 
-  auto content_size = layout_replaced_.StitchedSize();
+  auto content_size = layout_replaced_.Size();
   auto content_area = content_size.width * content_size.height;
 
   DCHECK_GE(overflow_area, content_area);
@@ -369,8 +357,7 @@ void ReplacedPainter::PaintBoxDecorationBackground(
       .RecordHitTestData(paint_info, ToPixelSnappedRect(paint_rect),
                          *background_client);
   BoxPainter(layout_replaced_)
-      .RecordTrackedElementAndRegionCaptureData(paint_info, paint_rect,
-                                                *background_client);
+      .RecordRegionCaptureData(paint_info, paint_rect, *background_client);
 
   // Record the scroll hit test after the non-scrolling background so
   // background squashing is not affected. Hit test order would be equivalent
@@ -416,10 +403,8 @@ void ReplacedPainter::PaintBoxDecorationBackgroundWithRect(
   // shadow should paint, since controls could have custom shadows of their
   // own.
   if (box_decoration_data.ShouldPaintShadow()) {
-    std::optional<BorderShapeReferenceRects> border_shape_rects =
-        ComputeBorderShapeReferenceRects(paint_rect, style, layout_replaced_);
     BoxPainterBase::PaintNormalBoxShadow(
-        paint_info, paint_rect, style, border_shape_rects, PhysicalBoxSides(),
+        paint_info, paint_rect, style, PhysicalBoxSides(),
         !box_decoration_data.ShouldPaintBackground());
   }
 
@@ -460,10 +445,8 @@ void ReplacedPainter::PaintBoxDecorationBackgroundWithRect(
   }
 
   if (box_decoration_data.ShouldPaintShadow()) {
-    std::optional<BorderShapeReferenceRects> border_shape_rects =
-        ComputeBorderShapeReferenceRects(paint_rect, style, layout_replaced_);
-    BoxPainterBase::PaintInsetBoxShadowWithBorderRect(
-        paint_info, paint_rect, style, border_shape_rects);
+    BoxPainterBase::PaintInsetBoxShadowWithBorderRect(paint_info, paint_rect,
+                                                      style);
   }
 
   // The theme will tell us whether or not we should also paint the CSS
@@ -476,13 +459,10 @@ void ReplacedPainter::PaintBoxDecorationBackgroundWithRect(
                                          paint_info, snapped_paint_rect);
     }
     if (!theme_painted) {
-      std::optional<BorderShapeReferenceRects> border_shape_rects =
-          ComputeBorderShapeReferenceRects(paint_rect, style, layout_replaced_);
       BoxPainterBase::PaintBorder(
           layout_replaced_, layout_replaced_.GetDocument(),
           layout_replaced_.GeneratingNode(), paint_info, paint_rect, style,
-          box_decoration_data.GetBackgroundBleedAvoidance(), PhysicalBoxSides(),
-          border_shape_rects ? &*border_shape_rects : nullptr);
+          box_decoration_data.GetBackgroundBleedAvoidance());
     }
   }
 
@@ -524,7 +504,7 @@ void ReplacedPainter::PaintMask(const PaintInfo& paint_info,
     return;
   }
 
-  PhysicalRect paint_rect(paint_offset, layout_replaced_.StitchedSize());
+  PhysicalRect paint_rect(paint_offset, layout_replaced_.Size());
   BoxDrawingRecorder recorder(paint_info.context, layout_replaced_,
                               paint_info.phase, paint_offset);
   PaintMaskImages(paint_info, paint_rect);

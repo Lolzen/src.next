@@ -11,7 +11,6 @@
 
 #include "base/dcheck_is_on.h"
 #include "base/debug/crash_logging.h"
-#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
@@ -20,6 +19,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/no_destructor.h"
+#include "base/not_fatal_until.h"
 #include "base/synchronization/lock.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
@@ -47,7 +47,6 @@
 #include "extensions/browser/service_worker/service_worker_keepalive.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_api.h"
-#include "extensions/common/extension_features.h"
 #include "extensions/common/mojom/renderer.mojom.h"
 #include "third_party/blink/public/mojom/devtools/inspector_issue.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom-forward.h"
@@ -89,7 +88,7 @@ class ExtensionFunctionMemoryDumpProvider
     DCHECK(thread_checker_.CalledOnValidThread());
     DCHECK(function_name);
     auto it = function_map_.find(function_name);
-    CHECK(it != function_map_.end());
+    CHECK(it != function_map_.end(), base::NotFatalUntil::M130);
     DCHECK_GE(it->second, static_cast<uint64_t>(1));
     if (it->second == 1) {
       function_map_.erase(it);
@@ -423,8 +422,8 @@ ExtensionFunction::~ExtensionFunction() {
   if (!response_callback_.is_null()) {
     constexpr char kShouldCallMojoCallback[] = "Ignored did_respond()";
     std::move(response_callback_)
-        .Run(ResponseType::kFailed, base::ListValue(), kShouldCallMojoCallback,
-             nullptr);
+        .Run(ResponseType::kFailed, base::Value::List(),
+             kShouldCallMojoCallback, nullptr);
   }
 #endif  // DCHECK_IS_ON()
 }
@@ -502,12 +501,12 @@ void ExtensionFunction::OnQuotaExceeded(std::string violation_error) {
   RespondWithError(std::move(violation_error));
 }
 
-void ExtensionFunction::SetArgs(base::ListValue args) {
+void ExtensionFunction::SetArgs(base::Value::List args) {
   DCHECK(!args_.has_value());
   args_ = std::move(args);
 }
 
-const base::ListValue* ExtensionFunction::GetResultListForTest() const {
+const base::Value::List* ExtensionFunction::GetResultListForTest() const {
   return results_ ? &(*results_) : nullptr;
 }
 
@@ -609,22 +608,6 @@ bool ExtensionFunction::ShouldKeepWorkerAliveIndefinitely() {
   return false;
 }
 
-const base::ListValue& ExtensionFunction::GetOriginalArgs() const {
-  CHECK(base::FeatureList::IsEnabled(
-      extensions_features::kAvoidCloneArgsOnExtensionFunctionDispatch));
-
-  if (original_args_.has_value()) {
-    // Return `original_args_`, which were copied from `args_` on the first call
-    // to GetMutableArgs().
-    return *original_args_;
-  }
-
-  // Return `args_`, which haven't been modified since they were set by
-  // SetArgs(), since GetMutableArgs() was never called.
-  DCHECK(args_.has_value());
-  return *args_;
-}
-
 void ExtensionFunction::OnResponseAck() {
   // Derived classes must override this if they require and implement an
   // ACK from the renderer.
@@ -632,11 +615,11 @@ void ExtensionFunction::OnResponseAck() {
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::NoArguments() {
-  return CreateArgumentListResponse(base::ListValue());
+  return CreateArgumentListResponse(base::Value::List());
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::ArgumentList(
-    base::ListValue results) {
+    base::Value::List results) {
   return CreateArgumentListResponse(std::move(results));
 }
 
@@ -645,7 +628,7 @@ ExtensionFunction::ResponseValue ExtensionFunction::Error(std::string error) {
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::ErrorWithArgumentsDoNotUse(
-    base::ListValue args,
+    base::Value::List args,
     const std::string& error) {
   return CreateErrorWithArgumentsResponse(std::move(args), error);
 }
@@ -716,19 +699,6 @@ void ExtensionFunction::SetTransferredBlobs(
   transferred_blobs_ = std::move(blobs);
 }
 
-base::ListValue& ExtensionFunction::GetMutableArgs() {
-  DCHECK(args_);
-  if (!original_args_.has_value() &&
-      base::FeatureList::IsEnabled(
-          extensions_features::kAvoidCloneArgsOnExtensionFunctionDispatch)) {
-    // Preserve original args before allowing modification of `args_`. Not
-    // needed when `kAvoidCloneArgsOnExtensionFunctionDispatch` is disabled
-    // since GetOriginalArgs() is disallowed in that configuration.
-    original_args_ = args_->Clone();
-  }
-  return *args_;
-}
-
 void ExtensionFunction::SendResponseImpl(bool success) {
   DCHECK(!response_callback_.is_null());
   DCHECK(!did_respond()) << name_;
@@ -746,7 +716,7 @@ void ExtensionFunction::SendResponseImpl(bool success) {
     results_.emplace();
   }
 
-  base::ListValue results;
+  base::Value::List results;
   if (preserve_results_for_testing_) {
     // Keep |results_| untouched.
     results = results_->Clone();
@@ -775,7 +745,7 @@ ExtensionFunction::ScopedUserGestureForTests::~ScopedUserGestureForTests() {
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::CreateArgumentListResponse(
-    base::ListValue result) {
+    base::Value::List result) {
   SetFunctionResults(std::move(result));
   // It would be nice to DCHECK(error.empty()) but some legacy extension
   // function implementations... I'm looking at chrome.input.ime... do this
@@ -784,7 +754,7 @@ ExtensionFunction::ResponseValue ExtensionFunction::CreateArgumentListResponse(
 }
 
 ExtensionFunction::ResponseValue
-ExtensionFunction::CreateErrorWithArgumentsResponse(base::ListValue result,
+ExtensionFunction::CreateErrorWithArgumentsResponse(base::Value::List result,
                                                     const std::string& error) {
   SetFunctionResults(std::move(result));
   SetFunctionError(error);
@@ -804,7 +774,7 @@ ExtensionFunction::ResponseValue ExtensionFunction::CreateBadMessageResponse() {
   return ResponseValue(false, PassKey());
 }
 
-void ExtensionFunction::SetFunctionResults(base::ListValue results) {
+void ExtensionFunction::SetFunctionResults(base::Value::List results) {
   DCHECK(!results_) << "Function " << name() << " already has results set.";
   results_ = std::move(results);
 }

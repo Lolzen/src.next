@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "base/containers/span.h"
 #include "base/token.h"
 #include "components/sessions/core/session_types.h"
 
@@ -45,7 +44,7 @@ namespace chrome {
 // Returns the WebContents of the restored tab.
 content::WebContents* AddRestoredTab(
     Browser* browser,
-    base::span<const sessions::SerializedNavigationEntry> navigations,
+    const std::vector<sessions::SerializedNavigationEntry>& navigations,
     int tab_index,
     int selected_navigation,
     const std::string& extension_app_id,
@@ -65,7 +64,7 @@ content::WebContents* AddRestoredTab(
 // Returns the WebContents of the restored tab.
 content::WebContents* ReplaceRestoredTab(
     Browser* browser,
-    base::span<const sessions::SerializedNavigationEntry> navigations,
+    const std::vector<sessions::SerializedNavigationEntry>& navigations,
     int selected_navigation,
     const std::string& extension_app_id,
     content::SessionStorageNamespace* session_storage_namespace,

@@ -100,14 +100,17 @@ class CORE_EXPORT CSSPropertyValue {
   Member<const CSSValue> value_;
 };
 
+}  // namespace blink
+
+namespace WTF {
 template <>
-struct VectorTraits<CSSPropertyValue> : VectorTraitsBase<CSSPropertyValue> {
+struct VectorTraits<blink::CSSPropertyValue>
+    : VectorTraitsBase<blink::CSSPropertyValue> {
   static const bool kCanInitializeWithMemset = true;
   static const bool kCanClearUnusedSlotsWithMemset = true;
   static const bool kCanMoveWithMemcpy = true;
   static const bool kCanTraceConcurrently = true;
 };
-
-}  // namespace blink
+}  // namespace WTF
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CSS_PROPERTY_VALUE_H_

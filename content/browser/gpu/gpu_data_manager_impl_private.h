@@ -18,7 +18,7 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/scoped_refptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/observer_list_threadsafe.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -120,7 +120,7 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
   void ProcessCrashed();
 
-  base::ListValue GetLogMessages() const;
+  base::Value::List GetLogMessages() const;
 
   void HandleGpuSwitch();
 
@@ -151,6 +151,7 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
 #if BUILDFLAG(IS_LINUX)
   bool IsGpuMemoryBufferNV12Supported();
+  void SetGpuMemoryBufferNV12Supported(bool supported);
 #endif  // BUILDFLAG(IS_LINUX)
 
   void DisableDomainBlockingFor3DAPIsForTesting();
@@ -184,8 +185,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
                            MultipleTDRsCanBeUnblocked);
 
   // Indicates the reason that access to a given client API (like
-  // WebGL) was blocked or not. This state is distinct from blocklisting of an
-  // entire feature.
+  // WebGL or Pepper 3D) was blocked or not. This state is distinct
+  // from blocklisting of an entire feature.
   enum class DomainBlockStatus {
     kBlocked,
     kAllDomainsBlocked,
@@ -251,6 +252,7 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
   gpu::GpuFeatureInfo gpu_feature_info_;
   FixedGpuInfo fixed_gpu_info_;
   gpu::GPUInfo gpu_info_;
+  gl::GpuPreference active_gpu_heuristic_ = gl::GpuPreference::kDefault;
 #if BUILDFLAG(IS_WIN)
   bool gpu_info_dx_valid_ = false;
   bool gpu_info_dx_requested_ = false;

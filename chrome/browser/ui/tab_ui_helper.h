@@ -6,38 +6,21 @@
 #define CHROME_BROWSER_UI_TAB_UI_HELPER_H_
 
 #include <string>
-#include <vector>
 
-#include "base/callback_list.h"
-#include "base/functional/callback_forward.h"
-#include "chrome/browser/ui/tabs/contents_observing_tab_feature.h"
-#include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
-
-namespace tabs {
-class TabInterface;
-}
-
-namespace ui {
-class ImageModel;
-}  // namespace ui
-
-namespace content {
-class NavigationEntry;
-class Page;
-}
+#include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
+#include "ui/base/models/image_model.h"
 
 // TabUIHelper is used by UI code to obtain the title and favicon for a
 // WebContents. The values returned by TabUIHelper differ from the WebContents
 // when the WebContents hasn't loaded.
-class TabUIHelper : public tabs::ContentsObservingTabFeature {
+class TabUIHelper : public content::WebContentsObserver,
+                    public content::WebContentsUserData<TabUIHelper> {
  public:
-  DECLARE_USER_DATA(TabUIHelper);
+  TabUIHelper(const TabUIHelper&) = delete;
+  TabUIHelper& operator=(const TabUIHelper&) = delete;
 
-  explicit TabUIHelper(tabs::TabInterface& tab);
   ~TabUIHelper() override;
-
-  static TabUIHelper* From(tabs::TabInterface* tab);
-  static const TabUIHelper* From(const tabs::TabInterface* tab);
 
   // Get the title of the tab. When the associated WebContents' title is empty,
   // a customized title is used.
@@ -50,24 +33,10 @@ class TabUIHelper : public tabs::ContentsObservingTabFeature {
   // Return true if the throbber should be hidden during a page load.
   bool ShouldHideThrobber() const;
 
-  void SetWasActiveAtLeastOnce();
-
-  // Returns true if the tab is crashed and false otherwise.
-  bool IsCrashed();
-
-  using TitleUpdatedCallbackList =
-      base::RepeatingCallbackList<void(std::u16string)>;
-  base::CallbackListSubscription AddTitleUpdatedCallback(
-      TitleUpdatedCallbackList::CallbackType callback);
-
-  // tabs::ContentsObservingTabFeature override:
-  void TitleWasSet(content::NavigationEntry* entry) override;
+  // content::WebContentsObserver implementation
   void DidStopLoading() override;
-  void OnVisibilityChanged(content::Visibility visiblity) override;
-#if !BUILDFLAG(IS_ANDROID)
-  void PrimaryPageChanged(content::Page& page) override;
-#endif
 
+  void set_was_active_at_least_once() { was_active_at_least_once_ = true; }
   void set_created_by_session_restore(bool created_by_session_restore) {
     created_by_session_restore_ = created_by_session_restore;
   }
@@ -75,17 +44,15 @@ class TabUIHelper : public tabs::ContentsObservingTabFeature {
     return created_by_session_restore_;
   }
 
-  void set_needs_attention(bool attention) { needs_attention_ = attention; }
-  bool needs_attention() const { return needs_attention_; }
-
  private:
+  friend class content::WebContentsUserData<TabUIHelper>;
+
+  explicit TabUIHelper(content::WebContents* contents);
+
   bool was_active_at_least_once_ = false;
   bool created_by_session_restore_ = false;
-  bool needs_attention_ = false;
 
-  TitleUpdatedCallbackList title_change_callbacks_;
-
-  ui::ScopedUnownedUserData<TabUIHelper> scoped_unowned_user_data_;
+  WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
 
 #endif  // CHROME_BROWSER_UI_TAB_UI_HELPER_H_

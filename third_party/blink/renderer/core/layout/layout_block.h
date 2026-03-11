@@ -105,6 +105,8 @@ class CORE_EXPORT LayoutBlock : public LayoutBox {
  public:
   void Trace(Visitor*) const override;
 
+  bool IsLayoutNGObject() const override;
+
   LayoutObject* FirstChild() const {
     NOT_DESTROYED();
     DCHECK_EQ(Children(), VirtualChildren());
@@ -129,9 +131,12 @@ class CORE_EXPORT LayoutBlock : public LayoutBox {
     return &children_;
   }
 
+  // These two functions are overridden for inline-block.
+  LayoutUnit FirstLineHeight() const override;
+
   const char* GetName() const override;
 
- private:
+ protected:
   // Insert a child correctly into the tree when |before_descendant| isn't a
   // direct child of |this|. This happens e.g. when there's an anonymous block
   // child of |this| and |before_descendant| has been reparented into that one.
@@ -156,14 +161,15 @@ class CORE_EXPORT LayoutBlock : public LayoutBox {
   static LayoutBlock* CreateAnonymousWithParentAndDisplay(
       const LayoutObject*,
       EDisplay = EDisplay::kBlock);
-  LayoutBlock* CreateAnonymousBlock() const {
+  LayoutBlock* CreateAnonymousBlock(EDisplay display = EDisplay::kBlock) const {
     NOT_DESTROYED();
-    return CreateAnonymousWithParentAndDisplay(this, EDisplay::kBlock);
+    return CreateAnonymousWithParentAndDisplay(this, display);
   }
 
   LayoutBox* CreateAnonymousBoxWithSameTypeAs(
       const LayoutObject* parent) const override;
 
+ public:
   RecalcScrollableOverflowResult RecalcScrollableOverflow() override;
 
   void RecalcVisualOverflow() override;
@@ -205,9 +211,14 @@ class CORE_EXPORT LayoutBlock : public LayoutBox {
                    HitTestPhase) override;
 
  protected:
-  void StyleDidChange(StyleDifference,
-                      const ComputedStyle* old_style,
-                      const StyleChangeContext&) override;
+  bool HitTestChildren(HitTestResult&,
+                       const HitTestLocation&,
+                       const PhysicalOffset& accumulated_offset,
+                       HitTestPhase) override;
+
+  void StyleWillChange(StyleDifference,
+                       const ComputedStyle& new_style) override;
+  void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
   bool RespectsCSSOverflow() const override;
 
  protected:
@@ -244,8 +255,7 @@ class CORE_EXPORT LayoutBlock : public LayoutBox {
   void ImageChanged(WrappedImagePtr, CanDeferInvalidation) override;
 
  private:
-  PhysicalRect LocalCaretRect(int caret_offset,
-                              CaretShape caret_shape) const final;
+  PhysicalRect LocalCaretRect(int caret_offset) const final;
   bool IsInlineBoxWrapperActuallyChild() const;
 
   // End helper functions and structs used by layoutBlockChildren.

@@ -185,8 +185,6 @@ void WorkerFetchContext::PrepareRequest(
     ResourceLoaderOptions& options,
     WebScopedVirtualTimePauser& virtual_time_pauser,
     ResourceType resource_type) {
-  GetExecutionContext()->MaybeRecordNetworkRequestUrlForPushEvents(
-      request.Url());
   request.SetUkmSourceId(GetExecutionContext()->UkmSourceID());
 
   String user_agent = global_scope_->UserAgent();
@@ -215,8 +213,6 @@ void WorkerFetchContext::PrepareRequest(
 
   request.SetAllowsDeviceBoundSessionRegistration(
       RuntimeEnabledFeatures::DeviceBoundSessionCredentialsEnabled(
-          GetExecutionContext()) ||
-      RuntimeEnabledFeatures::DeviceBoundSessionCredentials2Enabled(
           GetExecutionContext()));
 }
 
@@ -246,7 +242,7 @@ void WorkerFetchContext::ModifyRequestForMixedContentUpgrade(
   MixedContentChecker::UpgradeInsecureRequest(
       request, &GetResourceFetcherProperties().GetFetchClientSettingsObject(),
       global_scope_, mojom::blink::RequestContextFrameType::kNone,
-      global_scope_->ContentSettingsClient(), nullptr);
+      global_scope_->ContentSettingsClient());
 }
 
 void WorkerFetchContext::PopulateResourceRequestBeforeCacheAccess(

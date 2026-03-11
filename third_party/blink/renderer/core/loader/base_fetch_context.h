@@ -96,9 +96,7 @@ class CORE_EXPORT BaseFetchContext : public FetchContext {
       const ResourceRequestHead& resource_request,
       base::optional_ref<const KURL> alias_url,
       ResourceType type,
-      const FetchInitiatorInfo& initiator_info,
-      bool scan_stack_for_ads,
-      subresource_filter::ScopedRule* out_rule) override;
+      const FetchInitiatorInfo& initiator_info) override;
 
  protected:
   BaseFetchContext(const DetachableResourceFetcherProperties& properties,

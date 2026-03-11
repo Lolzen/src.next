@@ -116,17 +116,15 @@ class PlatformUtilTestBase : public BrowserWithTestWindowTest {
     JSONStringValueDeserializer json_string_deserializer(json_manifest);
     std::unique_ptr<base::Value> manifest =
         json_string_deserializer.Deserialize(&error_code, &error);
-    base::DictValue* manifest_dictionary = manifest->GetIfDict();
+    base::Value::Dict* manifest_dictionary = manifest->GetIfDict();
     ASSERT_TRUE(manifest_dictionary);
 
-    std::u16string utf16_error;
     scoped_refptr<extensions::Extension> extension =
         extensions::Extension::Create(
             test_directory.AppendASCII("invalid-extension"),
             extensions::mojom::ManifestLocation::kInvalidLocation,
-            *manifest_dictionary, extensions::Extension::NO_FLAGS,
-            &utf16_error);
-    ASSERT_TRUE(utf16_error.empty()) << utf16_error;
+            *manifest_dictionary, extensions::Extension::NO_FLAGS, &error);
+    ASSERT_TRUE(error.empty()) << error;
 
     std::vector<apps::AppPtr> apps;
     auto app = std::make_unique<apps::App>(apps::AppType::kChromeApp,

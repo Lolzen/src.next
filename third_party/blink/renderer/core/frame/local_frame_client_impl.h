@@ -36,10 +36,12 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
-#include "base/unguessable_token.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
+#include "third_party/blink/public/common/performance/performance_timeline_constants.h"
 #include "third_party/blink/public/common/subresource_load_metrics.h"
 #include "third_party/blink/public/mojom/devtools/devtools_agent.mojom-blink-forward.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -100,14 +102,12 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
   void DispatchDidLoadResourceFromMemoryCache(const ResourceRequest&,
                                               const ResourceResponse&) override;
   void DispatchDidHandleOnloadEvents() override;
-  void DidFinishSameDocumentNavigation(
-      WebHistoryCommitType,
-      bool is_handled_within_agent,
-      mojom::blink::SameDocumentNavigationType,
-      bool is_client_redirect,
-      bool is_browser_initiated,
-      bool should_skip_screenshot,
-      base::UnguessableToken same_document_metrics_token) override;
+  void DidFinishSameDocumentNavigation(WebHistoryCommitType,
+                                       bool is_handled_within_agent,
+                                       mojom::blink::SameDocumentNavigationType,
+                                       bool is_client_redirect,
+                                       bool is_browser_initiated,
+                                       bool should_skip_screenshot) override;
   void DidFailAsyncSameDocumentCommit() override;
   void DispatchDidOpenDocumentInputStream(const KURL& url) override;
   void DispatchDidReceiveTitle(const String&) override;
@@ -144,19 +144,16 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
       const String& href_translate,
       const std::optional<Impression>& impression,
       const LocalFrameToken* initiator_frame_token,
-      SourceLocation* source_location,
+      std::unique_ptr<SourceLocation> source_location,
       mojo::PendingRemote<mojom::blink::NavigationStateKeepAliveHandle>
           initiator_navigation_state_keep_alive_handle,
       bool is_container_initiated,
-      bool has_rel_opener,
-      mojo::PendingReceiver<
-          mojom::blink::NavigationResumeDeferredCommitListener>) override;
+      bool has_rel_opener) override;
   void DispatchWillSendSubmitEvent(HTMLFormElement*) override;
   void DidStartLoading() override;
   void DidStopLoading() override;
   bool NavigateBackForward(
       int offset,
-      base::TimeTicks actual_navigation_start,
       std::optional<scheduler::TaskAttributionId>
           soft_navigation_heuristics_task_id) const override;
   void DidDispatchPingLoader(const KURL&) override;
@@ -173,10 +170,7 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
   void DidObserveSubresourceLoad(
       const SubresourceLoadMetrics& subresource_load_metrics) override;
   void DidObserveNewFeatureUsage(const UseCounterFeature&) override;
-  void DidObserveSoftNavigation(
-      SoftNavigationMetricsForReporting metrics) override;
-  void DidObserveSoftLargestContentfulPaint(
-      const LargestContentfulPaintDetailsForReporting& lcp) override;
+  void DidObserveSoftNavigation(SoftNavigationMetrics metrics) override;
   void DidObserveLayoutShift(double score, bool after_input_or_scroll) override;
   void SelectorMatchChanged(const Vector<String>& added_selectors,
                             const Vector<String>& removed_selectors) override;
@@ -184,11 +178,11 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
   void DidCreateDocumentLoader(DocumentLoader*) override;
 
   String UserAgentOverride() override;
-  String UserAgent() override;
+  WTF::String UserAgent() override;
   std::optional<blink::UserAgentMetadata> UserAgentMetadata() override;
-  String DoNotTrackValue() override;
+  WTF::String DoNotTrackValue() override;
   void TransitionToCommittedForNewPage() override;
-  LocalFrame* CreateFrame(const AtomicString& name,
+  LocalFrame* CreateFrame(const WTF::AtomicString& name,
                           HTMLFrameOwnerElement*) override;
 
   RemoteFrame* CreateFencedFrame(
@@ -198,9 +192,9 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
 
   WebPluginContainerImpl* CreatePlugin(HTMLPlugInElement&,
                                        const KURL&,
-                                       const Vector<String>&,
-                                       const Vector<String>&,
-                                       const String&,
+                                       const Vector<WTF::String>&,
+                                       const Vector<WTF::String>&,
+                                       const WTF::String&,
                                        bool load_manually) override;
   std::unique_ptr<WebMediaPlayer> CreateWebMediaPlayer(
       HTMLMediaElement&,
@@ -265,8 +259,9 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
   void OnMainFrameViewportRectangleChanged(
       const gfx::Rect& main_frame_viewport_rect) override;
 
-  void OnMainFrameAdRectangleChanged(DOMNodeId element_id,
-                                     const gfx::Rect& ad_rect) override;
+  void OnMainFrameImageAdRectangleChanged(
+      DOMNodeId element_id,
+      const gfx::Rect& image_ad_rect) override;
 
   void OnOverlayPopupAdDetected() override;
 

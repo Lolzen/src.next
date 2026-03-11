@@ -95,14 +95,10 @@ BlockContentAlignment ComputeContentAlignment(const ComputedStyle& style,
           return BlockContentAlignment::kBaseline;
 
         case EVerticalAlign::kMiddle:
-          return RuntimeEnabledFeatures::LayoutTableCellAlignmentSafeEnabled()
-                     ? BlockContentAlignment::kSafeCenter
-                     : BlockContentAlignment::kUnsafeCenter;
+          return BlockContentAlignment::kUnsafeCenter;
 
         case EVerticalAlign::kBottom:
-          return RuntimeEnabledFeatures::LayoutTableCellAlignmentSafeEnabled()
-                     ? BlockContentAlignment::kSafeEnd
-                     : BlockContentAlignment::kUnsafeEnd;
+          return BlockContentAlignment::kUnsafeEnd;
       }
       break;
 
@@ -157,11 +153,8 @@ LayoutUnit CalculateOutOfFlowStaticInlineLevelOffset(
     inline_offset += opportunity.rect.InlineSize() - line_offset;
 
   // Adjust for the text-indent.
-  const Length& text_indent = container_style.TextIndent();
-  if (!text_indent.IsZero() && !container_style.IsTextIndentHanging()) {
-    inline_offset +=
-        MinimumValueForLength(text_indent, child_available_inline_size);
-  }
+  inline_offset += MinimumValueForLength(container_style.TextIndent(),
+                                         child_available_inline_size);
 
   return inline_offset;
 }
@@ -200,8 +193,7 @@ void AlignBlockContent(const ComputedStyle& style,
     if (builder.Node().IsButtonOrInputButton()) {
       free_space = free_space.ClampNegativeToZero();
     }
-    builder.MoveChildrenInDirection(free_space / 2,
-                                    /*is_block_direction=*/true);
+    builder.MoveChildrenInBlockDirection(free_space / 2);
     return;
   }
 
@@ -224,105 +216,11 @@ void AlignBlockContent(const ComputedStyle& style,
       break;
     case BlockContentAlignment::kSafeCenter:
     case BlockContentAlignment::kUnsafeCenter:
-      builder.MoveChildrenInDirection(free_space / 2,
-                                      /*is_block_direction=*/true);
+      builder.MoveChildrenInBlockDirection(free_space / 2);
       break;
     case BlockContentAlignment::kSafeEnd:
     case BlockContentAlignment::kUnsafeEnd:
-      builder.MoveChildrenInDirection(free_space, /*is_block_direction=*/true);
-  }
-}
-
-LogicalStaticPosition::InlineEdge InlineStaticPositionEdge(
-    const BlockNode& oof_node,
-    const ComputedStyle* justify_items_style,
-    WritingDirectionMode parent_writing_direction,
-    bool should_swap_inline_axis) {
-  CHECK(oof_node.IsOutOfFlowPositioned());
-  StyleSelfAlignmentData normal_value_behavior = {ItemPosition::kStart,
-                                                  OverflowAlignment::kDefault};
-  const ItemPosition align_self =
-      oof_node.Style()
-          .ResolvedJustifySelf(normal_value_behavior, justify_items_style)
-          .GetPosition();
-
-  switch (align_self) {
-    case ItemPosition::kEnd:
-    case ItemPosition::kFlexEnd:
-    case ItemPosition::kLastBaseline:
-    case ItemPosition::kRight: {
-      return should_swap_inline_axis ? LogicalStaticPosition::kInlineStart
-                                     : LogicalStaticPosition::kInlineEnd;
-    }
-    case ItemPosition::kAnchorCenter:
-    case ItemPosition::kCenter:
-      return LogicalStaticPosition::kInlineCenter;
-    case ItemPosition::kBaseline:
-    case ItemPosition::kFlexStart:
-    case ItemPosition::kLeft:
-    case ItemPosition::kStart:
-    case ItemPosition::kStretch: {
-      return should_swap_inline_axis ? LogicalStaticPosition::kInlineEnd
-                                     : LogicalStaticPosition::kInlineStart;
-    }
-    case ItemPosition::kSelfEnd:
-    case ItemPosition::kSelfStart: {
-      LogicalToLogical<LogicalStaticPosition::InlineEdge> logical(
-          oof_node.Style().GetWritingDirection(), parent_writing_direction,
-          LogicalStaticPosition::kInlineStart,
-          LogicalStaticPosition::kInlineEnd,
-          LogicalStaticPosition::kInlineStart,
-          LogicalStaticPosition::kInlineEnd);
-      return (align_self == ItemPosition::kSelfStart) ? logical.InlineStart()
-                                                      : logical.InlineEnd();
-    }
-    case ItemPosition::kAuto:
-    case ItemPosition::kLegacy:
-    case ItemPosition::kNormal:
-      NOTREACHED();
-  }
-}
-
-LogicalStaticPosition::BlockEdge BlockStaticPositionEdge(
-    const BlockNode& oof_node,
-    const ComputedStyle* align_items_style,
-    WritingDirectionMode parent_writing_direction) {
-  CHECK(oof_node.IsOutOfFlowPositioned());
-  StyleSelfAlignmentData normal_value_behavior = {ItemPosition::kStart,
-                                                  OverflowAlignment::kDefault};
-  const ItemPosition align_self =
-      oof_node.Style()
-          .ResolvedAlignSelf(normal_value_behavior, align_items_style)
-          .GetPosition();
-
-  switch (align_self) {
-    case ItemPosition::kEnd:
-    case ItemPosition::kFlexEnd:
-    case ItemPosition::kLastBaseline:
-      return LogicalStaticPosition::kBlockEnd;
-    case ItemPosition::kAnchorCenter:
-    case ItemPosition::kCenter:
-      return LogicalStaticPosition::kBlockCenter;
-    case ItemPosition::kBaseline:
-    case ItemPosition::kFlexStart:
-    case ItemPosition::kStart:
-    case ItemPosition::kStretch:
-      return LogicalStaticPosition::kBlockStart;
-    case ItemPosition::kSelfEnd:
-    case ItemPosition::kSelfStart: {
-      LogicalToLogical<LogicalStaticPosition::BlockEdge> logical(
-          oof_node.Style().GetWritingDirection(), parent_writing_direction,
-          LogicalStaticPosition::kBlockStart, LogicalStaticPosition::kBlockEnd,
-          LogicalStaticPosition::kBlockStart, LogicalStaticPosition::kBlockEnd);
-      return (align_self == ItemPosition::kSelfStart) ? logical.BlockStart()
-                                                      : logical.BlockEnd();
-    }
-    case ItemPosition::kAuto:
-    case ItemPosition::kLeft:
-    case ItemPosition::kRight:
-    case ItemPosition::kLegacy:
-    case ItemPosition::kNormal:
-      NOTREACHED();
+      builder.MoveChildrenInBlockDirection(free_space);
   }
 }
 

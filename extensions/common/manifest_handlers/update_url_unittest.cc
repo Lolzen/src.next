@@ -25,7 +25,7 @@ TEST_F(UpdateURLManifestTest, UpdateUrls) {
                Extension::NO_FLAGS),
       Testcase("update_url_valid_4.json", ManifestLocation::kInternal,
                Extension::NO_FLAGS)};
-  RunTestcases(testcases, ExpectType::kSuccess);
+  RunTestcases(testcases, EXPECT_TYPE_SUCCESS);
 
   // Test some invalid update urls
   const Testcase testcases2[] = {
@@ -35,5 +35,5 @@ TEST_F(UpdateURLManifestTest, UpdateUrls) {
                ManifestLocation::kInternal, Extension::NO_FLAGS),
       Testcase("update_url_invalid_3.json", errors::kInvalidUpdateURL,
                ManifestLocation::kInternal, Extension::NO_FLAGS)};
-  RunTestcases(testcases2, ExpectType::kError);
+  RunTestcases(testcases2, EXPECT_TYPE_ERROR);
 }

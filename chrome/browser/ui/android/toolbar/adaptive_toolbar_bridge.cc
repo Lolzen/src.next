@@ -21,6 +21,7 @@
 #include "chrome/browser/ui/android/toolbar/jni_headers/AdaptiveToolbarBridge_jni.h"
 
 using base::android::AttachCurrentThread;
+using base::android::JavaParamRef;
 using base::android::JavaRef;
 using base::android::ScopedJavaLocalRef;
 using segmentation_platform::InputContext;
@@ -54,13 +55,8 @@ std::map<std::string, AdaptiveToolbarButtonVariant> GetEnumLabelMapping() {
                AdaptiveToolbarButtonVariant::kAddToBookmarks,
            },
            {
-
                segmentation_platform::kAdaptiveToolbarModelLabelReadAloud,
                AdaptiveToolbarButtonVariant::kReadAloud,
-           },
-           {
-               segmentation_platform::kAdaptiveToolbarModelLabelOpenInBrowser,
-               AdaptiveToolbarButtonVariant::kOpenInBrowser,
            }});
 
   return *enum_label_mapping;
@@ -198,12 +194,12 @@ void RunJavaCallbackWithRankedButtons(
 
 }  // namespace
 
-static void JNI_AdaptiveToolbarBridge_GetRankedSessionVariantButtons(
+void JNI_AdaptiveToolbarBridge_GetRankedSessionVariantButtons(
     JNIEnv* env,
     Profile* profile,
-    bool j_use_raw_results,
-    const JavaRef<jobject>& j_callback) {
-  bool use_raw_results = j_use_raw_results;
+    jboolean j_use_raw_results,
+    const JavaParamRef<jobject>& j_callback) {
+  bool use_raw_results = static_cast<bool>(j_use_raw_results);
   base::OnceCallback<void(bool, std::vector<int>)> wrapped_callback =
       base::BindOnce(&RunJavaCallbackWithRankedButtons,
                      base::android::ScopedJavaGlobalRef<jobject>(j_callback));
@@ -211,10 +207,10 @@ static void JNI_AdaptiveToolbarBridge_GetRankedSessionVariantButtons(
                                                    std::move(wrapped_callback));
 }
 
-static void JNI_AdaptiveToolbarBridge_GetSessionVariantButton(
+void JNI_AdaptiveToolbarBridge_GetSessionVariantButton(
     JNIEnv* env,
     Profile* profile,
-    const JavaRef<jobject>& j_callback) {
+    const JavaParamRef<jobject>& j_callback) {
   if (!profile) {
     RunGetClassificationSingleResultCallback(
         j_callback, segmentation_platform::ClassificationResult(
@@ -300,5 +296,3 @@ void GetRankedSessionVariantButtons(
   }
 }
 }  // namespace adaptive_toolbar
-
-DEFINE_JNI(AdaptiveToolbarBridge)

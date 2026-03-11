@@ -78,7 +78,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
       return;
     DCHECK_NE(orthogonal_fallback_inline_size_, kIndefiniteSize);
     *inline_size = orthogonal_fallback_inline_size_;
-    EnsureRareData()->uses_orthogonal_fallback_inline_size = true;
+    space_.EnsureRareData()->uses_orthogonal_fallback_inline_size = true;
   }
 
   // |available_size| is logical for the writing-mode of the container.
@@ -135,7 +135,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     DCHECK(replaced_child_percentage_resolution_size.block_size !=
            space_.PercentageResolutionBlockSize());
 
-    EnsureRareData()->replaced_child_percentage_resolution_block_size =
+    space_.EnsureRareData()->replaced_child_percentage_resolution_block_size =
         replaced_child_percentage_resolution_size.block_size;
   }
 
@@ -148,7 +148,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
   void SetPageName(const AtomicString& name) {
     if (!name && !space_.rare_data_)
       return;
-    EnsureRareData()->page_name = name;
+    space_.EnsureRareData()->page_name = name;
   }
 
   void SetFragmentainerBlockSize(LayoutUnit size) {
@@ -157,7 +157,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_fragmentainer_block_size_set_ = true;
 #endif
     if (size != kIndefiniteSize)
-      EnsureRareData()->fragmentainer_block_size = size;
+      space_.EnsureRareData()->fragmentainer_block_size = size;
   }
 
   // This function may be called after having set available size (and thus
@@ -184,9 +184,9 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
 #if DCHECK_IS_ON()
     DCHECK(is_fragmentainer_block_size_set_);
 #endif
-    rare_data_->fragmentainer_block_size -= space;
-    rare_data_->fragmentainer_block_size =
-        rare_data_->fragmentainer_block_size.ClampNegativeToZero();
+    space_.rare_data_->fragmentainer_block_size -= space;
+    space_.rare_data_->fragmentainer_block_size =
+        space_.rare_data_->fragmentainer_block_size.ClampNegativeToZero();
   }
 
   void SetFragmentainerOffset(LayoutUnit offset) {
@@ -195,29 +195,24 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_fragmentainer_offset_set_ = true;
 #endif
     if (offset != LayoutUnit())
-      EnsureRareData()->fragmentainer_offset = offset;
+      space_.EnsureRareData()->fragmentainer_offset = offset;
   }
 
   void SetIsAtFragmentainerStart() {
-    EnsureRareData()->is_at_fragmentainer_start = true;
+    space_.EnsureRareData()->is_at_fragmentainer_start = true;
   }
 
-  void SetShouldRepeat(bool b) { EnsureRareData()->should_repeat = b; }
+  void SetShouldRepeat(bool b) { space_.EnsureRareData()->should_repeat = b; }
 
   void SetIsInsideRepeatableContent(bool b) {
     if (!b && !space_.rare_data_)
       return;
-    EnsureRareData()->is_inside_repeatable_content = b;
+    space_.EnsureRareData()->is_inside_repeatable_content = b;
   }
 
-  void DisableFurtherFragmentation() {
-    if (space_.HasBlockFragmentation()) {
-      rare_data_->block_direction_fragmentation_type = kFragmentNone;
-      rare_data_->is_block_fragmentation_forced_off = true;
-    }
-  }
+  void DisableFurtherFragmentation() { space_.DisableFurtherFragmentation(); }
   void DisableMonolithicOverflowPropagation() {
-    EnsureRareData()->is_monolithic_overflow_propagation_disabled = true;
+    space_.DisableMonolithicOverflowPropagation();
   }
 
   void SetIsHiddenForPaint(bool is_hidden_for_paint) {
@@ -283,50 +278,40 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_block_direction_fragmentation_type_set_ = true;
 #endif
     if (fragmentation_type != FragmentationType::kFragmentNone) {
-      EnsureRareData()->block_direction_fragmentation_type = fragmentation_type;
+      space_.EnsureRareData()->block_direction_fragmentation_type =
+          fragmentation_type;
     }
-  }
-
-  void SetPaperEdgeAdjacentSides(LogicalBoxSides sides) {
-    auto* rare_data = EnsureRareData();
-    rare_data->is_adjacent_to_paper_edge_inline_start = sides.inline_start;
-    rare_data->is_adjacent_to_paper_edge_inline_end = sides.inline_end;
-    rare_data->is_adjacent_to_paper_edge_block_start = sides.block_start;
-    rare_data->is_adjacent_to_paper_edge_block_end = sides.block_end;
-  }
-
-  void SetSafePrintableInset(LayoutUnit inset) {
-    EnsureRareData()->safe_printable_inset = inset;
   }
 
   void SetRequiresContentBeforeBreaking(bool b) {
     if (!b && !space_.rare_data_) {
       return;
     }
-    EnsureRareData()->requires_content_before_breaking = b;
+    space_.EnsureRareData()->requires_content_before_breaking = b;
   }
 
   void SetIsInsideBalancedColumns() {
-    EnsureRareData()->is_inside_balanced_columns = true;
+    space_.EnsureRareData()->is_inside_balanced_columns = true;
   }
 
   void SetShouldIgnoreForcedBreaks() {
-    EnsureRareData()->should_ignore_forced_breaks = true;
+    space_.EnsureRareData()->should_ignore_forced_breaks = true;
   }
 
-  void SetIsInColumnBfc() { EnsureRareData()->is_in_column_bfc = true; }
+  void SetIsInColumnBfc() { space_.EnsureRareData()->is_in_column_bfc = true; }
 
-  void SetIsPastBreak() { EnsureRareData()->is_past_break = true; }
+  void SetIsPastBreak() { space_.EnsureRareData()->is_past_break = true; }
 
   void SetMinBlockSizeShouldEncompassIntrinsicSize() {
-    EnsureRareData()->min_block_size_should_encompass_intrinsic_size = true;
+    space_.EnsureRareData()->min_block_size_should_encompass_intrinsic_size =
+        true;
   }
 
   void SetMinBreakAppeal(BreakAppeal min_break_appeal) {
     if (!space_.rare_data_ && min_break_appeal == kBreakAppealLastResort) {
       return;
     }
-    EnsureRareData()->min_break_appeal = min_break_appeal;
+    space_.EnsureRareData()->min_break_appeal = min_break_appeal;
   }
 
   void SetShouldPropagateChildBreakValues(
@@ -336,12 +321,12 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     if (!space_.rare_data_ && !propagate_child_break_values) {
       return;
     }
-    EnsureRareData()->propagate_child_break_values =
+    space_.EnsureRareData()->propagate_child_break_values =
         propagate_child_break_values;
   }
 
   void SetIsTableCell(bool is_table_cell) {
-    EnsureRareData()->SetIsTableCell();
+    space_.EnsureRareData()->SetIsTableCell();
   }
 
   void SetIsRestrictedBlockSizeTableCell(bool b) {
@@ -349,13 +334,13 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     if (!b && !space_.rare_data_) {
       return;
     }
-    EnsureRareData()->is_restricted_block_size_table_cell = b;
+    space_.EnsureRareData()->is_restricted_block_size_table_cell = b;
   }
 
   void SetHideTableCellIfEmpty(bool b) {
     if (!b && !space_.rare_data_)
       return;
-    EnsureRareData()->hide_table_cell_if_empty = b;
+    space_.EnsureRareData()->hide_table_cell_if_empty = b;
   }
 
   void SetIsAnonymous(bool b) { space_.bitfields_.is_anonymous = b; }
@@ -385,7 +370,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
 
   void SetBlockStartAnnotationSpace(LayoutUnit space) {
     if (space)
-      EnsureRareData()->SetBlockStartAnnotationSpace(space);
+      space_.EnsureRareData()->SetBlockStartAnnotationSpace(space);
   }
 
   void SetIgnoreMarginsForStretch(WritingMode parent_mode,
@@ -395,7 +380,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_ignored_margins_set_ = true;
 #endif
     if (!sides.IsEmpty()) {
-      EnsureRareData()->ignore_margins_for_stretch =
+      space_.EnsureRareData()->ignore_margins_for_stretch =
           PhysicalBoxSides(sides, parent_mode)
               .ToLogical(space_.GetWritingDirection());
     }
@@ -407,7 +392,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_margin_strut_set_ = true;
 #endif
     if (!is_new_fc_ && margin_strut != MarginStrut()) {
-      EnsureRareData()->SetMarginStrut(margin_strut);
+      space_.EnsureRareData()->SetMarginStrut(margin_strut);
     }
   }
 
@@ -423,7 +408,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_optimistic_bfc_block_offset_set_ = true;
 #endif
     if (!is_new_fc_) [[likely]] {
-      EnsureRareData()->SetOptimisticBfcBlockOffset(
+      space_.EnsureRareData()->SetOptimisticBfcBlockOffset(
           optimistic_bfc_block_offset);
     }
   }
@@ -434,7 +419,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_forced_bfc_block_offset_set_ = true;
 #endif
     DCHECK(!is_new_fc_);
-    EnsureRareData()->SetForcedBfcBlockOffset(forced_bfc_block_offset);
+    space_.EnsureRareData()->SetForcedBfcBlockOffset(forced_bfc_block_offset);
   }
 
   LayoutUnit ExpectedBfcBlockOffset() const {
@@ -447,7 +432,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_clearance_offset_set_ = true;
 #endif
     if (!is_new_fc_ && clearance_offset != LayoutUnit::Min())
-      EnsureRareData()->SetClearanceOffset(clearance_offset);
+      space_.EnsureRareData()->SetClearanceOffset(clearance_offset);
   }
 
   void SetTableCellBorders(const BoxStrut& table_cell_borders,
@@ -458,7 +443,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_table_cell_borders_set_ = true;
 #endif
     if (table_cell_borders != BoxStrut()) {
-      EnsureRareData()->SetTableCellBorders(
+      space_.EnsureRareData()->SetTableCellBorders(
           table_cell_borders.ConvertToPhysical(table_writing_direction)
               .ConvertToLogical(cell_writing_direction));
     }
@@ -471,7 +456,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_table_cell_alignment_baseline_set_ = true;
 #endif
     if (is_in_parallel_flow_ && table_cell_alignment_baseline) {
-      EnsureRareData()->SetTableCellAlignmentBaseline(
+      space_.EnsureRareData()->SetTableCellAlignmentBaseline(
           *table_cell_alignment_baseline);
     }
   }
@@ -481,7 +466,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     DCHECK(!is_table_cell_column_index_set_);
     is_table_cell_column_index_set_ = true;
 #endif
-    EnsureRareData()->SetTableCellColumnIndex(column_index);
+    space_.EnsureRareData()->SetTableCellColumnIndex(column_index);
   }
 
   void SetIsTableCellWithCollapsedBorders(bool has_collapsed_borders) {
@@ -490,7 +475,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_table_cell_with_collapsed_borders_set_ = true;
 #endif
     if (has_collapsed_borders) {
-      EnsureRareData()->SetIsTableCellWithCollapsedBorders(
+      space_.EnsureRareData()->SetIsTableCellWithCollapsedBorders(
           has_collapsed_borders);
     }
   }
@@ -515,7 +500,8 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     is_custom_layout_data_set_ = true;
 #endif
     if (custom_layout_data) {
-      EnsureRareData()->SetCustomLayoutData(std::move(custom_layout_data));
+      space_.EnsureRareData()->SetCustomLayoutData(
+          std::move(custom_layout_data));
     }
   }
 
@@ -525,7 +511,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     DCHECK(!is_table_row_data_set_);
     is_table_row_data_set_ = true;
 #endif
-    EnsureRareData()->SetTableRowData(std::move(table_data), row_index);
+    space_.EnsureRareData()->SetTableRowData(std::move(table_data), row_index);
   }
 
   void SetTableSectionData(
@@ -535,7 +521,8 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     DCHECK(!is_table_section_data_set_);
     is_table_section_data_set_ = true;
 #endif
-    EnsureRareData()->SetTableSectionData(std::move(table_data), section_index);
+    space_.EnsureRareData()->SetTableSectionData(std::move(table_data),
+                                                 section_index);
   }
 
   void SetLineClampData(LineClampData data) {
@@ -545,7 +532,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
 #endif
     DCHECK(!is_new_fc_);
     if (data.state != LineClampData::kDisabled) {
-      EnsureRareData()->SetLineClampData(data);
+      space_.EnsureRareData()->SetLineClampData(data);
     }
   }
 
@@ -556,62 +543,71 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
 #endif
     DCHECK(!is_new_fc_);
     if (!end_margin_strut.IsEmpty()) {
-      EnsureRareData()->SetLineClampEndMarginStrut(end_margin_strut);
+      space_.EnsureRareData()->SetLineClampEndMarginStrut(end_margin_strut);
+    }
+  }
+
+  void SetLineClampEndPadding(LayoutUnit end_padding) {
+#if DCHECK_IS_ON()
+    DCHECK(!is_line_clamp_end_padding_set_);
+    is_line_clamp_end_padding_set_ = true;
+#endif
+    DCHECK(!is_new_fc_);
+    if (end_padding) {
+      space_.EnsureRareData()->SetLineClampEndPadding(end_padding);
     }
   }
 
   void SetShouldTextBoxTrimNodeStart(bool b) {
     if (b || space_.rare_data_) {
-      EnsureRareData()->should_text_box_trim_node_start = b;
+      space_.EnsureRareData()->should_text_box_trim_node_start = b;
     }
   }
   void SetShouldTextBoxTrimNodeEnd(bool b) {
     if (b || space_.rare_data_) {
-      EnsureRareData()->should_text_box_trim_node_end = b;
+      space_.EnsureRareData()->should_text_box_trim_node_end = b;
     }
   }
   void SetShouldTextBoxTrimFragmentainerStart(bool b) {
     if (b || space_.rare_data_) {
-      EnsureRareData()->should_text_box_trim_fragmentainer_start = b;
+      space_.EnsureRareData()->should_text_box_trim_fragmentainer_start = b;
     }
   }
   void SetShouldTextBoxTrimFragmentainerEnd(bool b) {
     if (b || space_.rare_data_) {
-      EnsureRareData()->should_text_box_trim_fragmentainer_end = b;
+      space_.EnsureRareData()->should_text_box_trim_fragmentainer_end = b;
     }
   }
   void SetShouldTextBoxTrimInsideWhenLineClamp(bool b) {
     if (b || space_.rare_data_) {
-      EnsureRareData()->should_text_box_trim_inside_when_line_clamp = b;
+      space_.EnsureRareData()->should_text_box_trim_inside_when_line_clamp = b;
     }
   }
 
-  void SetShouldForceTextBoxTrimEnd() {
-    EnsureRareData()->should_force_text_box_trim_end = true;
-  }
-
-  void SetShouldForceMarginTrimEnd() {
-    EnsureRareData()->should_force_margin_trim_end = true;
-  }
+  void SetShouldForceTextBoxTrimEnd() { space_.SetShouldForceTextBoxTrimEnd(); }
 
   void SetDecorationPercentageResolutionType(
       DecorationPercentageResolutionType type) {
-    EnsureRareData()->decoration_percentage_resolution_type =
+    space_.EnsureRareData()->decoration_percentage_resolution_type =
         static_cast<unsigned>(type);
   }
 
-  void SetIsPushedByFloats() { EnsureRareData()->is_pushed_by_floats = true; }
+  void SetIsPushedByFloats() {
+    space_.EnsureRareData()->is_pushed_by_floats = true;
+  }
 
   void SetTargetStretchInlineSize(LayoutUnit target_stretch_inline_size) {
     DCHECK_GE(target_stretch_inline_size, LayoutUnit());
-    EnsureRareData()->SetTargetStretchInlineSize(target_stretch_inline_size);
+    space_.EnsureRareData()->SetTargetStretchInlineSize(
+        target_stretch_inline_size);
   }
 
   void SetTargetStretchBlockSizes(
       ConstraintSpace::MathTargetStretchBlockSizes target_stretch_block_sizes) {
     DCHECK_GE(target_stretch_block_sizes.ascent, LayoutUnit());
     DCHECK_GE(target_stretch_block_sizes.descent, LayoutUnit());
-    EnsureRareData()->SetTargetStretchBlockSizes(target_stretch_block_sizes);
+    space_.EnsureRareData()->SetTargetStretchBlockSizes(
+        target_stretch_block_sizes);
   }
 
   void SetGridLayoutSubtree(GridLayoutSubtree&& grid_layout_subtree) {
@@ -619,7 +615,8 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
     DCHECK(!is_grid_layout_subtree_set_);
     is_grid_layout_subtree_set_ = true;
 #endif
-    EnsureRareData()->SetGridLayoutSubtree(std::move(grid_layout_subtree));
+    space_.EnsureRareData()->SetGridLayoutSubtree(
+        std::move(grid_layout_subtree));
   }
 
   // Creates a new constraint space.
@@ -644,15 +641,6 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
 
  private:
   ConstraintSpace space_;
-  ConstraintSpace::RareData* rare_data_ = nullptr;
-
-  ConstraintSpace::RareData* EnsureRareData() {
-    if (!rare_data_) {
-      rare_data_ = MakeGarbageCollected<ConstraintSpace::RareData>();
-      space_.rare_data_ = rare_data_;
-    }
-    return rare_data_;
-  }
 
   // Orthogonal writing mode roots may need a fallback, to prevent available
   // inline size from being indefinite, which isn't allowed. This is the
@@ -681,6 +669,7 @@ class CORE_EXPORT ConstraintSpaceBuilder final {
   bool is_table_cell_with_collapsed_borders_set_ = false;
   bool is_custom_layout_data_set_ = false;
   bool is_line_clamp_data_set_ = false;
+  bool is_line_clamp_end_padding_set_ = false;
   bool is_line_clamp_end_margin_strut_set_ = false;
   bool is_table_row_data_set_ = false;
   bool is_table_section_data_set_ = false;

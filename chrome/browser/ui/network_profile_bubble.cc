@@ -15,62 +15,54 @@
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/scoped_observation.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_window/public/browser_collection_observer.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+#include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
-#include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
 
 namespace {
 
 // The duration of the silent period before we start nagging the user again.
 const int kSilenceDurationDays = 100;
 
-// The number of warnings to be shown on consecutive starts of Chrome before the
+// The number of warnings to be shown on consequtive starts of Chrome before the
 // silent period starts.
 const int kMaxWarnings = 2;
 
-// Implementation of BrowserCollectionObserver used to wait for a browser
+// Implementation of BrowserListObserver used to wait for a browser
 // window.
-class NetworkProfileBubbleBrowserCollectionObserver
-    : public BrowserCollectionObserver {
- public:
-  NetworkProfileBubbleBrowserCollectionObserver();
-
+class NetworkProfileBubbleBrowserListObserver : public BrowserListObserver {
  private:
-  ~NetworkProfileBubbleBrowserCollectionObserver() override;
+  ~NetworkProfileBubbleBrowserListObserver() override;
 
-  // Overridden from ::BrowserCollectionObserver:
-  void OnBrowserActivated(BrowserWindowInterface* browser) override;
-
-  base::ScopedObservation<GlobalBrowserCollection, BrowserCollectionObserver>
-      browser_collection_observation_{this};
+  // Overridden from ::BrowserListObserver:
+  void OnBrowserAdded(Browser* browser) override;
+  void OnBrowserRemoved(Browser* browser) override;
+  void OnBrowserSetLastActive(Browser* browser) override;
 };
 
-NetworkProfileBubbleBrowserCollectionObserver::
-    NetworkProfileBubbleBrowserCollectionObserver() {
-  browser_collection_observation_.Observe(
-      GlobalBrowserCollection::GetInstance());
+NetworkProfileBubbleBrowserListObserver::
+    ~NetworkProfileBubbleBrowserListObserver() = default;
+
+void NetworkProfileBubbleBrowserListObserver::OnBrowserAdded(Browser* browser) {
 }
 
-NetworkProfileBubbleBrowserCollectionObserver::
-    ~NetworkProfileBubbleBrowserCollectionObserver() = default;
+void NetworkProfileBubbleBrowserListObserver::OnBrowserRemoved(
+    Browser* browser) {}
 
-void NetworkProfileBubbleBrowserCollectionObserver::OnBrowserActivated(
-    BrowserWindowInterface* browser) {
+void NetworkProfileBubbleBrowserListObserver::OnBrowserSetLastActive(
+    Browser* browser) {
   NetworkProfileBubble::ShowNotification(browser);
+  // No need to observe anymore.
+  BrowserList::RemoveObserver(this);
   delete this;
 }
 
@@ -116,7 +108,7 @@ void NetworkProfileBubble::CheckNetworkProfile(
     return;
   }
 
-  LPWSTR buffer = nullptr;
+  LPWSTR buffer = NULL;
   DWORD buffer_length = 0;
   // Checking for RDP is cheaper than checking for a network drive so do this
   // one first.
@@ -127,32 +119,38 @@ void NetworkProfileBubble::CheckNetworkProfile(
     return;
   }
 
-  absl::Cleanup wts_deleter = [buffer] { ::WTSFreeMemory(buffer); };
-  auto* type = reinterpret_cast<unsigned short*>(buffer);
-  if (*type != WTS_PROTOCOL_TYPE_CONSOLE) {
-    RecordUmaEvent(METRIC_REMOTE_SESSION);
-    return;
-  }
-
+  unsigned short* type = reinterpret_cast<unsigned short*>(buffer);
   // We should warn the users if they have their profile on a network share only
   // if running on a local session.
-  bool profile_on_network = false;
-  if (!profile_folder.empty()) {
-    base::FilePath normalized_profile_folder;
-    if (!base::NormalizeFilePath(profile_folder, &normalized_profile_folder)) {
-      RecordUmaEvent(METRIC_CHECK_IO_FAILED);
-      return;
+  if (*type == WTS_PROTOCOL_TYPE_CONSOLE) {
+    bool profile_on_network = false;
+    if (!profile_folder.empty()) {
+      base::FilePath temp_file;
+      // Try to create some non-empty temp file in the profile dir and use
+      // it to check if there is a reparse-point free path to it.
+      if (base::CreateTemporaryFileInDir(profile_folder, &temp_file) &&
+          base::WriteFile(temp_file, ".")) {
+        base::FilePath normalized_temp_file;
+        if (!base::NormalizeFilePath(temp_file, &normalized_temp_file)) {
+          profile_on_network = true;
+        }
+      } else {
+        RecordUmaEvent(METRIC_CHECK_IO_FAILED);
+      }
+      base::DeleteFile(temp_file);
     }
-    profile_on_network = normalized_profile_folder.IsNetwork();
-  }
-  if (!profile_on_network) {
-    RecordUmaEvent(METRIC_PROFILE_NOT_ON_NETWORK);
-    return;
+    if (profile_on_network) {
+      RecordUmaEvent(METRIC_PROFILE_ON_NETWORK);
+      content::GetUIThreadTaskRunner({})->PostTask(
+          FROM_HERE, base::BindOnce(&NotifyNetworkProfileDetected));
+    } else {
+      RecordUmaEvent(METRIC_PROFILE_NOT_ON_NETWORK);
+    }
+  } else {
+    RecordUmaEvent(METRIC_REMOTE_SESSION);
   }
 
-  RecordUmaEvent(METRIC_PROFILE_ON_NETWORK);
-  content::GetUIThreadTaskRunner({})->PostTask(
-      FROM_HERE, base::BindOnce(&NotifyNetworkProfileDetected));
+  ::WTSFreeMemory(buffer);
 }
 
 // static
@@ -181,7 +179,6 @@ void NetworkProfileBubble::NotifyNetworkProfileDetected() {
   if (browser) {
     ShowNotification(browser);
   } else {
-    // Won't leak because the observer is self-deleting.
-    new NetworkProfileBubbleBrowserCollectionObserver();
+    BrowserList::AddObserver(new NetworkProfileBubbleBrowserListObserver());
   }
 }

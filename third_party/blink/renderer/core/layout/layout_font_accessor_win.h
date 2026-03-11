@@ -14,7 +14,7 @@ namespace blink {
 class LocalFrame;
 
 struct FontFamilyNames {
-  HashSet<String> font_names;
+  WTF::HashSet<WTF::String> font_names;
 };
 
 void GetFontsUsedByFrame(const LocalFrame& frame, FontFamilyNames& result);

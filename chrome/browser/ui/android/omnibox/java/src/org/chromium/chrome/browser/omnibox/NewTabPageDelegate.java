@@ -10,6 +10,7 @@ import android.view.MotionEvent;
 
 import org.chromium.base.Callback;
 import org.chromium.build.annotations.NullMarked;
+import org.chromium.build.annotations.Nullable;
 
 /**
  * Delegate that provides the toolbar with the info of the NTP for the current tab.
@@ -29,14 +30,6 @@ public interface NewTabPageDelegate {
      * @return {@code true} if the NewTabPage is currently visible.
      */
     default boolean isCurrentlyVisible() {
-        return false;
-    }
-
-    /**
-     * Whether the incognito version of the NewTabPage {@link
-     * org.chromium.chrome.browser.ntp.IncognitoNewTabPage} is currently visible.
-     */
-    default boolean isIncognitoNewTabPageCurrentlyVisible() {
         return false;
     }
 
@@ -68,7 +61,7 @@ public interface NewTabPageDelegate {
      *
      * @param scrollCallback Callback to be invoked when the event occurs.
      */
-    default void setSearchBoxScrollListener(Callback<Float> scrollCallback) {}
+    default void setSearchBoxScrollListener(@Nullable Callback<Float> scrollCallback) {}
 
     /**
      * Get the bounds of the search box in relation to the top level NewTabPage view.
@@ -78,16 +71,6 @@ public interface NewTabPageDelegate {
      *     to the NewTabPage view.
      */
     default void getSearchBoxBounds(Rect bounds, Point translation) {}
-
-    /**
-     * Get the vertical inset applied to the search box bounds. This is used to adjust the search
-     * box bounds to match the toolbar's location bar position.
-     *
-     * @return The vertical inset in pixels.
-     */
-    default int getSearchBoxBoundsVerticalInset() {
-        return 0;
-    }
 
     /**
      * Updates the opacity of the search box when scrolling.
@@ -122,5 +105,5 @@ public interface NewTabPageDelegate {
     }
 
     /** Empty implementation of NewTabDelegate. Used for a default before initialization. */
-    NewTabPageDelegate EMPTY = new NewTabPageDelegate() {};
+    public static final NewTabPageDelegate EMPTY = new NewTabPageDelegate() {};
 }

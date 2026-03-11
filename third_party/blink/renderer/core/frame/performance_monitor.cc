@@ -33,11 +33,12 @@ base::TimeDelta PerformanceMonitor::Threshold(ExecutionContext* context,
 }
 
 // static
-void PerformanceMonitor::ReportGenericViolation(ExecutionContext* context,
-                                                Violation violation,
-                                                const String& text,
-                                                base::TimeDelta time,
-                                                SourceLocation* location) {
+void PerformanceMonitor::ReportGenericViolation(
+    ExecutionContext* context,
+    Violation violation,
+    const String& text,
+    base::TimeDelta time,
+    std::unique_ptr<SourceLocation> location) {
   // Calling InstrumentingMonitorExcludingLongTasks wouldn't work properly if
   // this is a longtask violation.
   DCHECK(violation != kLongTask);
@@ -46,7 +47,7 @@ void PerformanceMonitor::ReportGenericViolation(ExecutionContext* context,
   if (!monitor)
     return;
   monitor->InnerReportGenericViolation(context, violation, text, time,
-                                       location);
+                                       std::move(location));
 }
 
 // static
@@ -350,11 +351,12 @@ void PerformanceMonitor::DidProcessTask(base::TimeTicks start_time,
   }
 }
 
-void PerformanceMonitor::InnerReportGenericViolation(ExecutionContext* context,
-                                                     Violation violation,
-                                                     const String& text,
-                                                     base::TimeDelta time,
-                                                     SourceLocation* location) {
+void PerformanceMonitor::InnerReportGenericViolation(
+    ExecutionContext* context,
+    Violation violation,
+    const String& text,
+    base::TimeDelta time,
+    std::unique_ptr<SourceLocation> location) {
   auto subscriptions_it = subscriptions_.find(violation);
   if (subscriptions_it == subscriptions_.end())
     return;
@@ -365,7 +367,7 @@ void PerformanceMonitor::InnerReportGenericViolation(ExecutionContext* context,
   ClientThresholds* client_thresholds = subscriptions_it->value;
   for (const auto& it : *client_thresholds) {
     if (it.value < time)
-      it.key->ReportGenericViolation(violation, text, time, location);
+      it.key->ReportGenericViolation(violation, text, time, location.get());
   }
 }
 

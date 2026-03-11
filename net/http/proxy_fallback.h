@@ -47,7 +47,6 @@
 namespace net {
 
 class ProxyChain;
-class ProxyDelegate;
 
 // Returns true if a failed request issued through a proxy chain should be
 // re-tried using the next proxy chain in the fallback list.
@@ -62,13 +61,12 @@ class ProxyDelegate;
 //  - `final_error` is an out parameter that is set with the "final" error to
 //    report to the caller. The error is only re-written in cases where
 //    CanFalloverToNextProxy() returns false.
-//  - `proxy_delegate` if present, is used to possibly override the return value
-//    of this function. See ProxyDelegate::CanFalloverToNextProxyOverride
-//    documentation.
+//  - `is_for_ip_protection` is true if this request is to an IP Protection
+//    proxy.
 NET_EXPORT bool CanFalloverToNextProxy(const ProxyChain& proxy_chain,
                                        int error,
                                        int* final_error,
-                                       net::ProxyDelegate* proxy_delegate);
+                                       bool is_for_ip_protection = false);
 
 }  // namespace net
 

@@ -23,7 +23,7 @@ class CORE_EXPORT FrameCallback : public GarbageCollected<FrameCallback>,
                                   public NameClient {
  public:
   virtual void Trace(Visitor* visitor) const {}
-  const char* GetHumanReadableName() const override { return "FrameCallback"; }
+  const char* NameInHeapSnapshot() const override { return "FrameCallback"; }
   ~FrameCallback() override = default;
   virtual void Invoke(double) = 0;
 
@@ -53,9 +53,7 @@ class CORE_EXPORT FrameCallback : public GarbageCollected<FrameCallback>,
 class CORE_EXPORT V8FrameCallback : public FrameCallback {
  public:
   void Trace(Visitor*) const override;
-  const char* GetHumanReadableName() const override {
-    return "V8FrameCallback";
-  }
+  const char* NameInHeapSnapshot() const override { return "V8FrameCallback"; }
 
   explicit V8FrameCallback(V8FrameRequestCallback*);
   ~V8FrameCallback() override = default;
@@ -83,7 +81,7 @@ class CORE_EXPORT FrameRequestCallbackCollection final : public NameClient {
   bool IsEmpty() const { return !HasFrameCallback(); }
 
   void Trace(Visitor*) const;
-  const char* GetHumanReadableName() const override {
+  const char* NameInHeapSnapshot() const override {
     return "FrameRequestCallbackCollection";
   }
 

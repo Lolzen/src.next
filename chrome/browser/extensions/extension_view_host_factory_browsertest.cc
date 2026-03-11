@@ -24,12 +24,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionViewHostFactoryTest, CreateExtensionHosts) {
                         .AppendASCII("none"));
   ASSERT_TRUE(extension.get());
 
-  content::BrowserContext* browser_context = profile();
+  content::BrowserContext* browser_context = browser()->profile();
 
   // Popup hosts are created with the correct type and profile.
   std::unique_ptr<ExtensionViewHost> host =
-      ExtensionViewHostFactory::CreatePopupHost(*extension, extension->url(),
-                                                browser());
+      ExtensionViewHostFactory::CreatePopupHost(extension->url(), browser());
   EXPECT_EQ(extension.get(), host->extension());
   EXPECT_EQ(browser_context, host->browser_context());
   EXPECT_EQ(mojom::ViewType::kExtensionPopup, host->extension_host_type());
@@ -46,14 +45,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionViewHostFactoryTest,
                         .AppendASCII("simple_default"));
   ASSERT_TRUE(extension.get());
 
-  content::BrowserContext* browser_context = profile();
+  content::BrowserContext* browser_context = browser()->profile();
 
   {
     // Create a side panel host with a browser passed in.
     std::unique_ptr<ExtensionViewHost> host =
-        ExtensionViewHostFactory::CreateSidePanelHost(
-            *extension, extension->url(), browser(),
-            /*tab_interface=*/nullptr);
+        ExtensionViewHostFactory::CreateSidePanelHost(extension->url(),
+                                                      browser(),
+                                                      /*web_contents=*/nullptr);
     EXPECT_EQ(extension.get(), host->extension());
     EXPECT_EQ(browser_context, host->browser_context());
     EXPECT_EQ(mojom::ViewType::kExtensionSidePanel,
@@ -64,7 +63,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionViewHostFactoryTest,
     // Create a side panel host with a tab based WebContents passed in.
     std::unique_ptr<ExtensionViewHost> host =
         ExtensionViewHostFactory::CreateSidePanelHost(
-            *extension, extension->url(), /*browser=*/nullptr,
+            extension->url(), /*browser=*/nullptr,
             browser()->tab_strip_model()->GetActiveTab());
     EXPECT_EQ(extension.get(), host->extension());
     EXPECT_EQ(browser_context, host->browser_context());

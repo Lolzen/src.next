@@ -23,6 +23,7 @@
 
 #include <algorithm>
 
+#include "base/files/file_util.h"
 #include "base/numerics/checked_math.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -41,10 +42,6 @@
 #include <immintrin.h>  // For _xgetbv()
 #include <intrin.h>
 #endif
-#endif
-
-#if BUILDFLAG(IS_MAC)
-#include "base/mac/mac_util.h"
 #endif
 
 namespace base {
@@ -102,31 +99,33 @@ namespace {
 #if defined(__pic__) && defined(__i386__)
 
 // Requests extended feature information via |ecx|.
-void __cpuidex(base::span<int, 4> cpu_info, int eax, int ecx) {
-  __asm__ volatile(
-      "mov %%ebx, %%edi\n"
-      "cpuid\n"
-      "xchg %%edi, %%ebx\n"
-      : "=a"(cpu_info[0]), "=D"(cpu_info[1]), "=c"(cpu_info[2]),
-        "=d"(cpu_info[3])
-      : "a"(eax), "c"(ecx));
+void __cpuidex(int cpu_info[4], int eax, int ecx) {
+  // SAFETY: `cpu_info` has length 4 and therefore all accesses below are valid.
+  UNSAFE_BUFFERS(
+      __asm__ volatile("mov %%ebx, %%edi\n"
+                       "cpuid\n"
+                       "xchg %%edi, %%ebx\n"
+                       : "=a"(cpu_info[0]), "=D"(cpu_info[1]),
+                         "=c"(cpu_info[2]), "=d"(cpu_info[3])
+                       : "a"(eax), "c"(ecx)));
 }
 
-void __cpuid(base::span<int, 4> cpu_info, int info_type) {
+void __cpuid(int cpu_info[4], int info_type) {
   __cpuidex(cpu_info, info_type, /*ecx=*/0);
 }
 
 #else
 
 // Requests extended feature information via |ecx|.
-void __cpuidex(base::span<int, 4> cpu_info, int eax, int ecx) {
-  __asm__ volatile("cpuid\n"
-                   : "=a"(cpu_info[0]), "=b"(cpu_info[1]), "=c"(cpu_info[2]),
-                     "=d"(cpu_info[3])
-                   : "a"(eax), "c"(ecx));
+void __cpuidex(int cpu_info[4], int eax, int ecx) {
+  // SAFETY: `cpu_info` has length 4 and therefore all accesses below are valid.
+  UNSAFE_BUFFERS(__asm__ volatile("cpuid\n"
+                                  : "=a"(cpu_info[0]), "=b"(cpu_info[1]),
+                                    "=c"(cpu_info[2]), "=d"(cpu_info[3])
+                                  : "a"(eax), "c"(ecx)));
 }
 
-void __cpuid(base::span<int, 4> cpu_info, int info_type) {
+void __cpuid(int cpu_info[4], int info_type) {
   __cpuidex(cpu_info, info_type, /*ecx=*/0);
 }
 
@@ -153,10 +152,6 @@ DEFINE_PROTECTED_DATA base::ProtectedMemory<CPU> g_cpu_instance;
 }  // namespace
 
 void CPU::Initialize() {
-#if BUILDFLAG(IS_MAC)
-  is_running_in_vm_ = mac::IsVirtualMachine();
-#endif
-
 #if defined(ARCH_CPU_X86_FAMILY)
   int cpu_info[4] = {-1, 0, 0, 0};
 
@@ -210,9 +205,7 @@ void CPU::Initialize() {
     // This is checking for any hypervisor. Hypervisors may choose not to
     // announce themselves. Hypervisors trap CPUID and sometimes return
     // different results to underlying hardware.
-#if !BUILDFLAG(IS_MAC)
     is_running_in_vm_ = (static_cast<uint32_t>(cpu_info[2]) & 0x80000000) != 0;
-#endif
 
     // AVX instructions will generate an illegal instruction exception unless
     //   a) they are supported by the CPU,
@@ -242,7 +235,6 @@ void CPU::Initialize() {
     }
 
     has_pku_ = (cpu_info7[2] & 0x00000010) != 0;
-    has_pclmul_ = (cpu_info[2] & 0x00000002) != 0;
   }
 
   // Get the brand string of the cpu.

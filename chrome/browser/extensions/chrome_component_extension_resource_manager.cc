@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
@@ -19,10 +20,10 @@
 #include "chrome/grit/component_extension_resources_map.h"
 #include "chrome/grit/theme_resources.h"
 #include "content/public/browser/browser_thread.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_id.h"
 #include "pdf/buildflags.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -34,15 +35,21 @@
 #include "ui/file_manager/grit/file_manager_gen_resources_map.h"
 #include "ui/file_manager/grit/file_manager_resources_map.h"
 
+#if BUILDFLAG(ENABLE_INK)
+#include "chromeos/grit/chromeos_media_app_bundle_resources.h"
+#endif  // BUILDFLAG(ENABLE_INK)
+
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(ENABLE_PDF)
 #include <utility>
-
 #include "chrome/browser/pdf/pdf_extension_util.h"
+#include "chrome/grit/pdf_resources_map.h"
 #endif  // BUILDFLAG(ENABLE_PDF)
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+#include "chrome/grit/tts_engine_resources_map.h"
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
 
 namespace extensions {
 
@@ -89,6 +96,12 @@ ChromeComponentExtensionResourceManager::Data::Data() {
 #if BUILDFLAG(IS_CHROMEOS)
     {"chrome_app/chrome_app_icon_32.png", IDR_CHROME_APP_ICON_32},
     {"chrome_app/chrome_app_icon_192.png", IDR_CHROME_APP_ICON_192},
+#if BUILDFLAG(ENABLE_INK)
+    // Built in go/bbsrc/lib/BUILD
+    {"pdf/ink/ink_engine_ink.wasm", IDR_MEDIA_APP_INK_ENGINE_INK_WASM},
+    {"pdf/ink/ink_lib_binary.js", IDR_MEDIA_APP_EXPORT_CANVAS_BIN_JS},
+    {"pdf/ink/ink_loader.js", IDR_MEDIA_APP_INK_JS},
+#endif  // BUILDFLAG(ENABLE_INK)
 #endif  // BUILDFLAG(IS_CHROMEOS)
   };
 
@@ -108,20 +121,16 @@ ChromeComponentExtensionResourceManager::Data::Data() {
         base::FilePath("file_manager").AppendASCII(resource.path);
     resource_path = resource_path.NormalizePathSeparators();
 
-    DCHECK(!path_to_resource_id_.contains(resource_path));
+    DCHECK(!base::Contains(path_to_resource_id_, resource_path));
     path_to_resource_id_[resource_path] = resource.id;
   }
 
   // ResourceBundle and g_browser_process are not always initialized in unit
   // tests.
   if (ui::ResourceBundle::HasSharedInstance() && g_browser_process) {
-    // TODO(crbug.com/404131876): Remove g_browser_process usage.
-    const std::string& application_locale =
-        g_browser_process->GetApplicationLocale();
-
     ui::TemplateReplacements file_manager_replacements;
-    ui::TemplateReplacementsFromDictionaryValue(
-        GetFileManagerStrings(application_locale), &file_manager_replacements);
+    ui::TemplateReplacementsFromDictionaryValue(GetFileManagerStrings(),
+                                                &file_manager_replacements);
     template_replacements_[extension_misc::kFilesManagerAppId] =
         std::move(file_manager_replacements);
   }
@@ -130,13 +139,13 @@ ChromeComponentExtensionResourceManager::Data::Data() {
 #endif
 
 #if BUILDFLAG(ENABLE_PDF)
-  AddComponentResourceEntries(pdf_extension_util::GetResources(
-      pdf_extension_util::PdfViewerContext::kPdfViewer));
+  AddComponentResourceEntries(kPdfResources);
 
   // ResourceBundle is not always initialized in unit tests.
   if (ui::ResourceBundle::HasSharedInstance()) {
-    base::DictValue dict = pdf_extension_util::GetStrings(
-        pdf_extension_util::PdfViewerContext::kPdfViewer);
+    base::Value::Dict dict;
+    pdf_extension_util::AddStrings(
+        pdf_extension_util::PdfViewerContext::kPdfViewer, &dict);
 
     ui::TemplateReplacements pdf_viewer_replacements;
     ui::TemplateReplacementsFromDictionaryValue(dict, &pdf_viewer_replacements);
@@ -144,6 +153,10 @@ ChromeComponentExtensionResourceManager::Data::Data() {
         std::move(pdf_viewer_replacements);
   }
 #endif
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+  AddComponentResourceEntries(kTtsEngineResources);
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
 }
 
 void ChromeComponentExtensionResourceManager::Data::AddComponentResourceEntries(
@@ -152,7 +165,7 @@ void ChromeComponentExtensionResourceManager::Data::AddComponentResourceEntries(
     base::FilePath resource_path = base::FilePath().AppendASCII(entry.path);
     resource_path = resource_path.NormalizePathSeparators();
 
-    DCHECK(!path_to_resource_id_.contains(resource_path));
+    DCHECK(!base::Contains(path_to_resource_id_, resource_path));
     path_to_resource_id_[resource_path] = entry.id;
   }
 }

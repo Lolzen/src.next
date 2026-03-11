@@ -41,7 +41,7 @@
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom-forward.h"
 
 namespace base {
-class ListValue;
+class Value;
 }
 
 namespace content {
@@ -88,8 +88,8 @@ inline bool FunctionValidateInternalReturnParam(bool param) {
 #define EXTENSION_FUNCTION_PRERUN_VALIDATE(test) CHECK(test)
 #endif  // NDEBUG
 
-// Declares a callable extension function with the given `name`. You must also
-// supply a unique `histogramvalue` used for histograms of extension function
+// Declares a callable extension function with the given |name|. You must also
+// supply a unique |histogramvalue| used for histograms of extension function
 // invocation (add new ones at the end of the enum in
 // extension_function_histogram_value.h).
 // TODO(devlin): This would be nicer if instead we defined the constructor
@@ -147,7 +147,7 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
 
   using ResponseCallback = base::OnceCallback<void(
       ResponseType type,
-      base::ListValue results,
+      base::Value::List results,
       const std::string& error,
       extensions::mojom::ExtraResponseDataPtr response_data)>;
 
@@ -165,7 +165,7 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   // checks in Run(), such as for specific host permissions or user gestures.
   bool HasPermission() const;
 
-  // Sends `error` as an error response.
+  // Sends |error| as an error response.
   void RespondWithError(std::string error);
 
   using PassKey = base::PassKey<ExtensionFunction>;
@@ -286,8 +286,8 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   virtual bool ShouldSkipQuotaLimiting() const;
 
   // Optionally adds one or multiple QuotaLimitHeuristic instances suitable for
-  // this function to `heuristics`. The ownership of the new QuotaLimitHeuristic
-  // instances is passed to the owner of `heuristics`.
+  // this function to |heuristics|. The ownership of the new QuotaLimitHeuristic
+  // instances is passed to the owner of |heuristics|.
   // No quota limiting by default.
   //
   // Only called once per lifetime of the QuotaService.
@@ -299,11 +299,11 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   virtual void OnQuotaExceeded(std::string violation_error);
 
   // Specifies the raw arguments to the function, as a JSON value.
-  void SetArgs(base::ListValue args);
+  void SetArgs(base::Value::List args);
 
-  // Retrieves the results of the function as a base::ListValue for testing
+  // Retrieves the results of the function as a base::Value::List for testing
   // purposes.
-  const base::ListValue* GetResultListForTest() const;
+  const base::Value::List* GetResultListForTest() const;
 
   std::unique_ptr<extensions::ContextData> GetContextData() const;
 
@@ -364,8 +364,6 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
     response_callback_ = std::move(callback);
   }
 
-  bool response_callback_is_null() { return response_callback_.is_null(); }
-
   void set_source_context_type(extensions::mojom::ContextType type) {
     source_context_type_ = type;
   }
@@ -402,9 +400,6 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
 
   bool is_from_service_worker() const { return worker_id_.has_value(); }
 
-  bool did_initialize() const { return did_initialize_; }
-  void set_did_initialize() { did_initialize_ = true; }
-
   ResponseType* response_type() const { return response_type_.get(); }
 
   // Whether this function has responded.
@@ -433,7 +428,7 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
     return worker_id_ ? worker_id_->thread_id : extensions::kMainThreadId;
   }
 
-  // Returns the web contents associated with the sending `render_frame_host_`.
+  // Returns the web contents associated with the sending |render_frame_host_|.
   // This can be null.
   content::WebContents* GetSenderWebContents();
 
@@ -450,12 +445,6 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   // browser. The function will only receive this notification if it registers
   // via `AddResponseTarget()`.
   virtual void OnResponseAck();
-
-  // Returns original args, as they were set by SetArgs() (doesn't include
-  // modifications via GetMutableArgs()). Can only be called when the
-  // "AvoidCloneArgsOnExtensionFunctionDispatch" feature is enabled (otherwise
-  // the `ExtensionFunction` owner has preserved the original args).
-  const base::ListValue& GetOriginalArgs() const;
 
   // Sets did_respond_ to true so that the function won't DCHECK if it never
   // sends a response. Typically, this shouldn't be used, even in testing. It's
@@ -484,8 +473,8 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   //
   // Success, no arguments to pass to caller.
   ResponseValue NoArguments();
-  // Success, a list of arguments `results` to pass to caller.
-  ResponseValue ArgumentList(base::ListValue results);
+  // Success, a list of arguments |results| to pass to caller.
+  ResponseValue ArgumentList(base::Value::List results);
 
   // Success, a variadic list of arguments to pass to the caller.
   template <typename... Args>
@@ -493,13 +482,13 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
     static_assert(sizeof...(Args) > 0,
                   "Use NoArguments(), as there are no arguments in this call.");
 
-    base::ListValue params;
+    base::Value::List params;
     params.reserve(sizeof...(Args));
     (params.Append(std::forward<Args&&>(args)), ...);
     return ArgumentList(std::move(params));
   }
 
-  // Error. chrome.runtime.lastError.message will be set to `error`.
+  // Error. chrome.runtime.lastError.message will be set to |error|.
   ResponseValue Error(std::string error);
   // Error with formatting. Args are processed using
   // ErrorUtils::FormatErrorMessage, that is, each occurrence of * is replaced
@@ -510,13 +499,13 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
     return CreateErrorResponseValue(
         extensions::ErrorUtils::FormatErrorMessage(format, args...));
   }
-  // Error with a list of arguments `args` to pass to caller.
+  // Error with a list of arguments |args| to pass to caller.
   // Using this ResponseValue is incompatible with promise based returns and
   // indicates something is wrong with the API. If you are trying to use this,
   // you likely instead want to be returning a value indicating if the API call
   // was a "success" and/or an enum indicating what may have gone wrong.
   // Some legacy APIs do still rely on this though.
-  ResponseValue ErrorWithArgumentsDoNotUse(base::ListValue args,
+  ResponseValue ErrorWithArgumentsDoNotUse(base::Value::List args,
                                            const std::string& error);
   // Bad message. A ResponseValue equivalent to EXTENSION_FUNCTION_VALIDATE(),
   // so this will actually kill the renderer and not respond at all.
@@ -528,7 +517,7 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   // to respond at any other time - but as described below, only after Run()
   // has already executed, and only if it returned RespondLater().
   //
-  // Respond to the extension immediately with `result`.
+  // Respond to the extension immediately with |result|.
   [[nodiscard]] ResponseAction RespondNow(ResponseValue result);
   // Don't respond now, but promise to call Respond(...) later.
   [[nodiscard]] ResponseAction RespondLater();
@@ -549,9 +538,9 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   //
   // Helper::FetchResults(..., base::OnceCallback callback) {
   //   if (...)
-  //     std::move(callback).Run(..);  // Synchronously call `callback`.
+  //     std::move(callback).Run(..);  // Synchronously call |callback|.
   //   else
-  //     // Asynchronously call `callback`.
+  //     // Asynchronously call |callback|.
   // }
   [[nodiscard]] ResponseAction AlreadyResponded();
 
@@ -562,7 +551,7 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
       ExtensionFunction* function);
 
   // If RespondLater() was returned from Run(), functions must at some point
-  // call Respond() with `result` as their result.
+  // call Respond() with |result| as their result.
   //
   // More specifically: call this iff Run() has already executed, it returned
   // RespondLater(), and Respond(...) hasn't already been called.
@@ -585,7 +574,7 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   // observers of KeyedServices.
   virtual void OnBrowserContextShutdown() {}
 
-  // Return true if the argument to this function at `index` was provided and
+  // Return true if the argument to this function at |index| was provided and
   // is non-null.
   bool HasOptionalArgument(size_t index);
 
@@ -601,26 +590,27 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
 
   bool has_args() const { return args_.has_value(); }
 
-  // Returns args. They may have been modified via GetMutableArgs() since they
-  // were set with SetArgs().
-  const base::ListValue& args() const {
+  const base::Value::List& args() const {
     DCHECK(args_);
     return *args_;
   }
 
-  base::ListValue& GetMutableArgs();
+  base::Value::List& mutable_args() {
+    DCHECK(args_);
+    return *args_;
+  }
 
   // The extension that called this function.
   scoped_refptr<const extensions::Extension> extension_;
 
  private:
-  ResponseValue CreateArgumentListResponse(base::ListValue result);
-  ResponseValue CreateErrorWithArgumentsResponse(base::ListValue result,
+  ResponseValue CreateArgumentListResponse(base::Value::List result);
+  ResponseValue CreateErrorWithArgumentsResponse(base::Value::List result,
                                                  const std::string& error);
   ResponseValue CreateErrorResponseValue(std::string error);
   ResponseValue CreateBadMessageResponse();
 
-  void SetFunctionResults(base::ListValue results);
+  void SetFunctionResults(base::Value::List results);
   void SetFunctionError(std::string error);
 
   friend struct content::BrowserThread::DeleteOnThread<
@@ -633,28 +623,18 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   void Shutdown();
 
   // Call with true to indicate success, false to indicate failure. If this
-  // failed, `error_` should be set.
+  // failed, |error_| should be set.
   void SendResponseImpl(bool success);
 
-  // The arguments to the API. Populated by SetArgs(). May be modified via
-  // GetMutableArgs().
-  std::optional<base::ListValue> args_;
-
-  // Original arguments to the API. Populated from `args_` when GetMutableArgs()
-  // is first invoked, otherwise nullopt. This exists because an extension
-  // function may modify its args via GetMutableArgs(), but the owner of this
-  // object may need to access the original args via GetOriginalArgs() (the
-  // owner could also copy the args before passing them to the extension
-  // function, but that would result in an unnecessary copy when the extension
-  // function doesn't modify its args).
-  std::optional<base::ListValue> original_args_;
+  // The arguments to the API. Only non-null if arguments were specified.
+  std::optional<base::Value::List> args_;
 
   base::ElapsedTimer timer_;
 
   // The results of the API. This should be populated through the Respond()/
   // RespondNow() methods. In legacy implementations, this is set directly, and
   // should be set before calling SendResponse().
-  std::optional<base::ListValue> results_;
+  std::optional<base::Value::List> results_;
 
   // Any detailed error from the API. This should be populated by the derived
   // class before Run() returns.
@@ -688,11 +668,6 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   // Any class that gets a malformed message should set this to true before
   // returning.  Usually we want to kill the message sending process.
   bool bad_message_ = false;
-
-  // Set to true when an extension function is created successfully without
-  // error. This implies all setup state should be valid on the function for
-  // some assertions made during destruction.
-  bool did_initialize_ = false;
 
   // Set to true when RunWithValidation() is called, to look for callers using
   // the method more than once on a single ExtensionFunction. Note that some
@@ -729,10 +704,10 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   // The response type of the function, if the response has been sent.
   std::unique_ptr<ResponseType> response_type_;
 
-  // If set to true, preserves `results_`, even after SendResponseImpl() was
+  // If set to true, preserves |results_|, even after SendResponseImpl() was
   // called.
   //
-  // SendResponseImpl() moves the results out of `this` through
+  // SendResponseImpl() moves the results out of |this| through
   // ResponseCallback, and calling this method avoids that. This is necessary
   // for tests that use test_utils::RunFunction*(), as those tests typically
   // retrieve the result afterwards through GetResultListForTest().
@@ -744,7 +719,7 @@ class ExtensionFunction : public base::RefCountedThreadSafe<
   // The dispatcher that will service this extension function call.
   base::WeakPtr<extensions::ExtensionFunctionDispatcher> dispatcher_;
 
-  // Obtained via `dispatcher_` when it is set. It automatically resets to
+  // Obtained via |dispatcher_| when it is set. It automatically resets to
   // nullptr when the BrowserContext is shutdown (much like a WeakPtr).
   raw_ptr<content::BrowserContext> browser_context_ = nullptr;
   raw_ptr<content::BrowserContext> browser_context_for_testing_ = nullptr;

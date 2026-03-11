@@ -4,13 +4,12 @@
 
 package org.chromium.chrome.browser.toolbar.adaptive;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 
 import org.chromium.base.metrics.RecordUserAction;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.tab.Tab;
@@ -23,12 +22,10 @@ import org.chromium.components.feature_engagement.EventConstants;
 import org.chromium.components.feature_engagement.FeatureConstants;
 import org.chromium.components.feature_engagement.Tracker;
 
-import java.util.function.Supplier;
-
 /** Handles the translate button on the toolbar. */
 @NullMarked
 public class TranslateToolbarButtonController extends BaseButtonDataProvider {
-    private final Supplier<@Nullable Tracker> mTrackerSupplier;
+    private final Supplier<Tracker> mTrackerSupplier;
 
     /**
      * Creates a new instance of {@code TranslateButtonController}.
@@ -39,10 +36,10 @@ public class TranslateToolbarButtonController extends BaseButtonDataProvider {
      * @param trackerSupplier  Supplier for the current profile tracker, used for IPH.
      */
     public TranslateToolbarButtonController(
-            Supplier<@Nullable Tab> activeTabSupplier,
+            Supplier<Tab> activeTabSupplier,
             Drawable buttonDrawable,
             String contentDescription,
-            Supplier<@Nullable Tracker> trackerSupplier) {
+            Supplier<Tracker> trackerSupplier) {
         super(
                 activeTabSupplier,
                 /* modalDialogManager= */ null,
@@ -52,7 +49,8 @@ public class TranslateToolbarButtonController extends BaseButtonDataProvider {
                 /* supportsTinting= */ true,
                 null,
                 AdaptiveToolbarButtonVariant.TRANSLATE,
-                /* tooltipTextResId= */ Resources.ID_NULL);
+                /* tooltipTextResId= */ Resources.ID_NULL,
+                /* showBackgroundHighlight= */ true);
         mTrackerSupplier = trackerSupplier;
     }
 
@@ -67,23 +65,23 @@ public class TranslateToolbarButtonController extends BaseButtonDataProvider {
 
     @Override
     public void onClick(View view) {
-        Tab tab = mActiveTabSupplier.get();
-        if (tab == null) return;
+        if (!mActiveTabSupplier.hasValue()) return;
 
         RecordUserAction.record("MobileTopToolbarTranslateButton");
-        Tracker tracker = mTrackerSupplier.get();
-        if (tracker != null) {
-            tracker.notifyEvent(EventConstants.ADAPTIVE_TOOLBAR_CUSTOMIZATION_TRANSLATE_OPENED);
+        if (mTrackerSupplier.hasValue()) {
+            mTrackerSupplier
+                    .get()
+                    .notifyEvent(EventConstants.ADAPTIVE_TOOLBAR_CUSTOMIZATION_TRANSLATE_OPENED);
         }
 
-        TranslateBridge.translateTabWhenReady(tab);
+        TranslateBridge.translateTabWhenReady(mActiveTabSupplier.get());
     }
 
     @Override
     protected boolean shouldShowButton(@Nullable Tab tab) {
         if (tab == null) return false;
         if (!super.shouldShowButton(tab)) return false;
-        if (tab.isNativePage() && assumeNonNull(tab.getNativePage()).isPdf()) return false;
+        if (tab.isNativePage() && tab.getNativePage().isPdf()) return false;
         return UrlUtilities.isHttpOrHttps(tab.getUrl());
     }
 }

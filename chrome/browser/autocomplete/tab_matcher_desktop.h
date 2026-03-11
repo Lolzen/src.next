@@ -20,7 +20,13 @@ class TabMatcherDesktop : public TabMatcher {
 
   // TabMatcher implementation.
   bool IsTabOpenWithURL(const GURL& gurl,
-                        const AutocompleteInput* input) const override;
+                        const AutocompleteInput* input,
+                        bool exclude_active_tab = true) const override;
+  bool IsTabOpenWithSameTitleOrSimilarURL(
+      const std::u16string& title,
+      const GURL& url,
+      const GURL::Replacements& replacements,
+      bool exclude_active_tab) const override;
   std::vector<TabMatcher::TabWrapper> GetOpenTabs(
       const AutocompleteInput* input,
       bool exclude_active_tab = true) const override;
@@ -31,7 +37,8 @@ class TabMatcherDesktop : public TabMatcher {
 
   bool IsStrippedURLEqualToWebContentsURL(
       const GURL& stripped_url,
-      content::WebContents* web_contents) const;
+      content::WebContents* web_contents,
+      const bool keep_search_intent_params) const;
 
   raw_ptr<const TemplateURLService> template_url_service_;
   raw_ptr<Profile> profile_ = nullptr;

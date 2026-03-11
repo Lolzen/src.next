@@ -11,16 +11,13 @@
 #include "base/functional/callback.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/memory/scoped_refptr.h"
-#include "components/update_client/configurator.h"
 #include "components/update_client/update_client.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition_config.h"
 #include "extensions/browser/extension_api_frame_id_map.h"
-#include "extensions/browser/extension_assets_manager.h"
 #include "extensions/browser/extension_error.h"
-#include "extensions/browser/scoped_extension_keep_alive.h"
+#include "extensions/browser/updater/scoped_extension_updater_keep_alive.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/common/permissions/permission_set.h"
@@ -59,25 +56,12 @@ void ExtensionsBrowserClient::AddAPIProvider(
 void ExtensionsBrowserClient::StartTearDown() {}
 
 scoped_refptr<update_client::UpdateClient>
-ExtensionsBrowserClient::CreateUpdateClient(
-    scoped_refptr<update_client::Configurator> configurator) {
+ExtensionsBrowserClient::CreateUpdateClient(content::BrowserContext* context) {
   return scoped_refptr<update_client::UpdateClient>(nullptr);
 }
 
-scoped_refptr<update_client::Configurator>
-ExtensionsBrowserClient::CreateUpdateClientConfigurator(
-    content::BrowserContext* context) {
-  return scoped_refptr<update_client::Configurator>(nullptr);
-}
-
-std::unique_ptr<ScopedBrowserContextKeepAlive>
+std::unique_ptr<ScopedExtensionUpdaterKeepAlive>
 ExtensionsBrowserClient::CreateUpdaterKeepAlive(
-    content::BrowserContext* context) {
-  return nullptr;
-}
-
-std::unique_ptr<ScopedBrowserContextKeepAlive>
-ExtensionsBrowserClient::CreateCrxInstallerKeepAlive(
     content::BrowserContext* context) {
   return nullptr;
 }
@@ -162,6 +146,28 @@ ScriptExecutor* ExtensionsBrowserClient::GetScriptExecutorForTab(
   return nullptr;
 }
 
+void ExtensionsBrowserClient::NotifyExtensionApiTabExecuteScript(
+    content::BrowserContext* context,
+    const ExtensionId& extension_id,
+    const std::string& code) const {}
+
+bool ExtensionsBrowserClient::IsExtensionTelemetryServiceEnabled(
+    content::BrowserContext* context) const {
+  return false;
+}
+
+void ExtensionsBrowserClient::NotifyExtensionApiDeclarativeNetRequest(
+    content::BrowserContext* context,
+    const ExtensionId& extension_id,
+    const std::vector<api::declarative_net_request::Rule>& rules) const {}
+
+void ExtensionsBrowserClient::
+    NotifyExtensionDeclarativeNetRequestRedirectAction(
+        content::BrowserContext* context,
+        const ExtensionId& extension_id,
+        const GURL& request_url,
+        const GURL& redirect_url) const {}
+
 bool ExtensionsBrowserClient::IsUsbDeviceAllowedByPolicy(
     content::BrowserContext* context,
     const ExtensionId& extension_id,
@@ -193,21 +199,21 @@ void ExtensionsBrowserClient::AddAPIActionToActivityLog(
     content::BrowserContext* browser_context,
     const ExtensionId& extension_id,
     const std::string& call_name,
-    base::ListValue args,
+    base::Value::List args,
     const std::string& extra) {}
 
 void ExtensionsBrowserClient::AddEventToActivityLog(
     content::BrowserContext* context,
     const ExtensionId& extension_id,
     const std::string& call_name,
-    base::ListValue args,
+    base::Value::List args,
     const std::string& extra) {}
 
 void ExtensionsBrowserClient::AddDOMActionToActivityLog(
     content::BrowserContext* browser_context,
     const ExtensionId& extension_id,
     const std::string& call_name,
-    base::ListValue args,
+    base::Value::List args,
     const GURL& url,
     const std::u16string& url_title,
     int call_type) {}
@@ -221,7 +227,7 @@ void ExtensionsBrowserClient::GetWebViewStoragePartitionConfig(
         callback) {
   const GURL& owner_site_url = owner_site_instance->GetSiteURL();
   auto partition_config = content::StoragePartitionConfig::Create(
-      browser_context, owner_site_url.GetHost(), partition_name, in_memory);
+      browser_context, owner_site_url.host(), partition_name, in_memory);
 
   if (owner_site_url.SchemeIs(extensions::kExtensionScheme)) {
     const auto& owner_config = owner_site_instance->GetStoragePartitionConfig();
@@ -244,6 +250,9 @@ void ExtensionsBrowserClient::GetWebViewStoragePartitionConfig(
   std::move(callback).Run(partition_config);
 }
 
+void ExtensionsBrowserClient::CreatePasswordReuseDetectionManager(
+    content::WebContents* web_contents) const {}
+
 media_device_salt::MediaDeviceSaltService*
 ExtensionsBrowserClient::GetMediaDeviceSaltService(
     content::BrowserContext* context) {
@@ -254,66 +263,6 @@ bool ExtensionsBrowserClient::HasControlledFrameCapability(
     content::BrowserContext* context,
     const GURL& url) {
   return false;
-}
-
-custom_handlers::ProtocolHandlerRegistry*
-ExtensionsBrowserClient::GetProtocolHandlerRegistry(
-    content::BrowserContext* context) {
-  return nullptr;
-}
-
-void ExtensionsBrowserClient::CheckManagementPolicy(
-    content::BrowserContext* context) {}
-
-scoped_refptr<safe_browsing::SafeBrowsingDatabaseManager>
-ExtensionsBrowserClient::GetSafeBrowsingDatabaseManager() const {
-  return nullptr;
-}
-
-std::optional<safe_browsing::V4ProtocolConfig>
-ExtensionsBrowserClient::GetV4ProtocolConfig() const {
-  return std::nullopt;
-}
-
-void ExtensionsBrowserClient::OnActiveTabPermissionGranted(
-    const Extension* extension,
-    content::WebContents* web_contents) const {}
-
-ExtensionManagementClient*
-ExtensionsBrowserClient::GetExtensionManagementClient(
-    content::BrowserContext* context) {
-  return nullptr;
-}
-
-void ExtensionsBrowserClient::RunBlockActionsIfNeeded(
-    const Extension* extension,
-    content::WebContents* web_contents,
-    SitePermissionsHelper* permission_helper,
-    bool* reload_required) {}
-
-void ExtensionsBrowserClient::ShowReloadBubbleForAllExtensions(
-    const std::vector<const Extension*>& extensions,
-    content::WebContents* web_contents) {}
-
-bool ExtensionsBrowserClient::HasBeenBlocked(
-    const Extension& extension,
-    content::WebContents* web_contents) const {
-  return false;
-}
-
-void ExtensionsBrowserClient::ShowWarningMessageBox(
-    const std::u16string& title,
-    const std::u16string& message) {}
-
-void ExtensionsBrowserClient::RecordCommandLineMetricsOnUnpackedInstallation(
-    content::BrowserContext* context,
-    const Extension* extension) const {}
-
-ExtensionAssetsManager* ExtensionsBrowserClient::GetAssetsManager() {
-  if (!assets_manager_) {
-    assets_manager_ = ExtensionAssetsManager::CreateDefaultInstance();
-  }
-  return assets_manager_.get();
 }
 
 }  // namespace extensions

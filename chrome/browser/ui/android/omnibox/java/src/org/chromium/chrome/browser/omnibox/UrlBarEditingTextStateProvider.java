@@ -10,20 +10,20 @@ import org.chromium.build.annotations.NullMarked;
 @NullMarked
 public interface UrlBarEditingTextStateProvider {
     /** Return the starting selection index for the text. */
-    int getSelectionStart();
+    public int getSelectionStart();
 
     /** Return the ending selection index for the text. */
-    int getSelectionEnd();
+    public int getSelectionEnd();
 
     /** Return whether the view can accept autocomplete. */
-    boolean shouldAutocomplete();
+    public boolean shouldAutocomplete();
 
     /** Return whether the last edit was the result of a paste operation. */
-    boolean wasLastEditPaste();
+    public boolean wasLastEditPaste();
 
     /** Return the full text with any inline autocomplete. */
-    String getTextWithAutocomplete();
+    public String getTextWithAutocomplete();
 
     /** Return the text excluding any inline autocomplete. */
-    String getTextWithoutAutocomplete();
+    public String getTextWithoutAutocomplete();
 }

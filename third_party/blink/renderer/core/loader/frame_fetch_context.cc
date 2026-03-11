@@ -52,7 +52,6 @@
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/client_hints/client_hints.h"
 #include "third_party/blink/public/common/device_memory/approximated_device_memory.h"
-#include "third_party/blink/public/common/permissions_policy/document_policy_features.h"
 #include "third_party/blink/public/common/switches.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
 #include "third_party/blink/public/mojom/loader/request_context_frame_type.mojom-blink.h"
@@ -94,7 +93,6 @@
 #include "third_party/blink/renderer/core/loader/loader_factory_for_frame.h"
 #include "third_party/blink/renderer/core/loader/mixed_content_checker.h"
 #include "third_party/blink/renderer/core/loader/resource/image_resource.h"
-#include "third_party/blink/renderer/core/loader/resource_initiator_helper.h"
 #include "third_party/blink/renderer/core/loader/resource_load_observer_for_frame.h"
 #include "third_party/blink/renderer/core/loader/subresource_filter.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -102,10 +100,8 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image_chrome_client.h"
-#include "third_party/blink/renderer/core/svg/svg_document_resource_tracker.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
 #include "third_party/blink/renderer/core/timing/performance.h"
-#include "third_party/blink/renderer/core/timing/resource_timing_context.h"
 #include "third_party/blink/renderer/core/timing/window_performance.h"
 #include "third_party/blink/renderer/core/url/url_search_params.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
@@ -115,7 +111,6 @@
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/loader/fetch/client_hints_preferences.h"
 #include "third_party/blink/renderer/platform/loader/fetch/detachable_use_counter.h"
-#include "third_party/blink/renderer/platform/loader/fetch/fetch_initiator_type_names.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_priority.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
@@ -124,7 +119,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/unique_identifier.h"
 #include "third_party/blink/renderer/platform/mhtml/mhtml_archive.h"
 #include "third_party/blink/renderer/platform/network/http_names.h"
-#include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
 #include "third_party/blink/renderer/platform/network/network_state_notifier.h"
 #include "third_party/blink/renderer/platform/network/network_utils.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -463,41 +457,7 @@ void FrameFetchContext::PrepareRequest(
 
   request.SetAllowsDeviceBoundSessionRegistration(
       RuntimeEnabledFeatures::DeviceBoundSessionCredentialsEnabled(
-          GetExecutionContext()) ||
-      RuntimeEnabledFeatures::DeviceBoundSessionCredentials2Enabled(
           GetExecutionContext()));
-}
-
-// TODO(crbug.com/422626353): Consider consolidating the initiator info
-// calculation for resource timing and dev tools.
-void FrameFetchContext::FillInitiatorInfo(FetchInitiatorInfo& initiator_info) {
-  CHECK(RuntimeEnabledFeatures::ResourceTimingInitiatorEnabled());
-  if (initiator_info.is_imported_module && !initiator_info.referrer.empty()) {
-    // TODO(crbug.com/40919714): Fill |initiator_url|.
-    // Initiator is a referrer of an imported js file.
-    return;
-  }
-  bool was_requested_by_stylesheet =
-      initiator_info.name == fetch_initiator_type_names::kCSS ||
-      initiator_info.name == fetch_initiator_type_names::kUacss;
-  if (was_requested_by_stylesheet && !initiator_info.referrer.empty()) {
-    // TODO(crbug.com/40919714): Fill |initiator_url|.
-    // Initiator is a css file.
-    return;
-  }
-
-  v8::Isolate* isolate =
-      ResourceInitiatorHelper::GetIsolateIfRunningScriptOnMainThread();
-  if (isolate) {
-    // It is the currently executing JavaScript that is fetching the resource.
-    // The initiator is the JavaScript that originally dispatched currently
-    // executing JavaScript.
-    initiator_info.initiator_url =
-        ResourceInitiatorHelper::GetScriptInitiatorUrl(*isolate);
-    return;
-  }
-
-  initiator_info.initiator_url = document_->Url();
 }
 
 void FrameFetchContext::AddResourceTiming(
@@ -527,92 +487,6 @@ bool FrameFetchContext::AllowImage() const {
     }
   }
   return images_enabled;
-}
-
-void FrameFetchContext::CheckGuardrailsPolicyForAssetSize(
-    GuardrailPolicyAssetType asset_type,
-    size_t bytes,
-    const KURL& url) {
-  GetExecutionContext()->CheckGuardrailsPolicyForAssetSize(asset_type, bytes,
-                                                           url);
-}
-
-// TODO(crbug.com/441240973): add browsertests once prototype has settled.
-void FrameFetchContext::CheckGuardrailsPolicyForRequest(
-    ResourceType resource_type,
-    mojom::blink::RequestContextType request_context,
-    const ResourceResponse& response,
-    const KURL& url) {
-  if (GetResourceFetcherProperties().IsDetached()) {
-    return;
-  }
-
-  // We exclude checks for resources coming from Service Worker as the policy
-  // is applicable to the document only. We also exclude resources from cache
-  // regardless of whether revalidation involved network access.
-  if (response.WasFetchedViaServiceWorker() || response.WasCached() ||
-      !response.NetworkAccessed()) {
-    return;
-  }
-
-  std::optional<mojom::blink::PolicyDisposition> disposition =
-      GetExecutionContext()->GetGuardrailsPolicyState();
-  if (disposition == std::nullopt) {
-    return;
-  }
-
-  bool should_check_for_compression = false;
-  switch (resource_type) {
-    case ResourceType::kScript:
-    case ResourceType::kCSSStyleSheet:
-      should_check_for_compression = true;
-      break;
-    case ResourceType::kRaw:
-      if (MIMETypeRegistry::IsJSONMimeType(response.MimeType()) &&
-          (request_context == mojom::blink::RequestContextType::JSON ||
-           request_context == mojom::blink::RequestContextType::FETCH ||
-           request_context ==
-               mojom::blink::RequestContextType::XML_HTTP_REQUEST)) {
-        should_check_for_compression = true;
-      }
-      break;
-    // Check for oversized images
-    case ResourceType::kImage: {
-      const AtomicString& content_length_header =
-          response.HttpHeaderField(http_names::kLowerContentLength);
-      if (!content_length_header.empty()) {
-        bool conversion_ok = false;
-        int64_t size = content_length_header.Impl()->ToInt64(
-            NumberParsingOptions(), &conversion_ok);
-        if (conversion_ok) {
-          CheckGuardrailsPolicyForAssetSize(GuardrailPolicyAssetType::kImage,
-                                            size, url);
-        }
-      }
-    }
-      return;
-    // List all ResourceTypes so that we can find this by a compile error when
-    // a new ResourceType is added.
-    case ResourceType::kFont:
-    case ResourceType::kSVGDocument:
-    case ResourceType::kXSLStyleSheet:
-    case ResourceType::kLinkPrefetch:
-    case ResourceType::kTextTrack:
-    case ResourceType::kAudio:
-    case ResourceType::kVideo:
-    case ResourceType::kManifest:
-    case ResourceType::kSpeculationRules:
-    case ResourceType::kMock:
-    case ResourceType::kDictionary:
-      return;
-  }
-
-  if (should_check_for_compression &&
-      response.HttpHeaderField(http_names::kContentEncoding).empty()) {
-    GetExecutionContext()->ReportDocumentPolicyViolation(
-        mojom::blink::DocumentPolicyFeature::kNetworkEfficiencyGuardrails,
-        disposition.value(), "resource compression is required", url);
-  }
 }
 
 void FrameFetchContext::ModifyRequestForMixedContentUpgrade(
@@ -1008,15 +882,14 @@ void FrameFetchContext::UpgradeResourceRequestForLoader(
   AddReducedAcceptLanguageIfNecessary(request);
 }
 
-bool FrameFetchContext::StartSpeculativeImageDecode(Resource* resource) {
+bool FrameFetchContext::StartSpeculativeImageDecode(
+    Resource* resource,
+    base::OnceClosure callback) {
   CHECK(resource->GetType() == ResourceType::kImage);
   if (!document_ || !document_->GetFrame()) {
     return false;
   }
   ImageResource* image_resource = To<ImageResource>(resource);
-  if (image_resource->RequestedSpeculativeDecode()) {
-    return false;
-  }
   Image* image = image_resource->GetContent()->GetImage();
   if (IsA<SVGImage>(image)) {
     return false;
@@ -1026,7 +899,6 @@ bool FrameFetchContext::StartSpeculativeImageDecode(Resource* resource) {
   }
   PaintImage paint_image = image->PaintImageForCurrentFrame();
   if (paint_image) {
-    image_resource->OnRequestSpeculativeDecode();
     SkM44 matrix;
     gfx::Size image_size(image->width(), image->height());
     gfx::SizeF content_size(image_resource->GetContent()->MaxSize());
@@ -1052,14 +924,10 @@ bool FrameFetchContext::StartSpeculativeImageDecode(Resource* resource) {
         static_cast<cc::PaintFlags::FilterQuality>(
             image_resource->GetContent()->MaxInterpolationQuality()),
         matrix, PaintImage::kDefaultFrameIndex);
-    auto paint_image_id = image->paint_image_id();
-    TRACE_EVENT_INSTANT2(
-        TRACE_DISABLED_BY_DEFAULT("loading"), "SpeculativeImageDecodeStarted",
-        TRACE_EVENT_SCOPE_THREAD, "url", resource->Url().GetString().Utf8(),
-        "image_id", paint_image_id);
     document_->GetFrame()->GetChromeClient().RequestDecode(
-        document_->GetFrame(), draw_image, base::DoNothingAs<void(bool)>(),
-        /*speculative*/ true);
+        document_->GetFrame(), draw_image,
+        WTF::BindOnce([](base::OnceClosure cb, bool) { std::move(cb).Run(); },
+                      std::move(callback)));
     return true;
   }
   return false;
@@ -1328,16 +1196,6 @@ void FrameFetchContext::AddCSPHashReport(
                                                     integrity_hashes);
 }
 
-String FrameFetchContext::GetSVGCacheIdentifier() const {
-  if (GetResourceFetcherProperties().IsDetached()) {
-    return BaseFetchContext::GetSVGCacheIdentifier();
-  }
-
-  Page* page = document_->GetPage();
-  DCHECK(page);
-  return page->GetSVGDocumentResourceTracker().GetCacheIdentifier();
-}
-
 const ClientHintsPreferences FrameFetchContext::GetClientHintsPreferences()
     const {
   if (GetResourceFetcherProperties().IsDetached()) {
@@ -1404,19 +1262,10 @@ bool FrameFetchContext::CalculateIfAdSubresource(
     const ResourceRequestHead& resource_request,
     base::optional_ref<const KURL> alias_url,
     ResourceType type,
-    const FetchInitiatorInfo& initiator_info,
-    bool scan_stack_for_ads,
-    subresource_filter::ScopedRule* out_rule) {
-  CHECK(!out_rule);
-
+    const FetchInitiatorInfo& initiator_info) {
   // Mark the resource as an Ad if the BaseFetchContext thinks it's an ad.
-  // `scan_stack_for_ads` is only used by the `AdTracker` and is used later in
-  // this function, `BaseFetchContext::CalculateIfAdSubresource` doesn't need
-  // it.
-  subresource_filter::ScopedRule rule;
   bool known_ad = BaseFetchContext::CalculateIfAdSubresource(
-      resource_request, alias_url, type, initiator_info,
-      /*scan_stack_for_ads=*/false, /*out_rule=*/&rule);
+      resource_request, alias_url, type, initiator_info);
   if (GetResourceFetcherProperties().IsDetached() ||
       !GetFrame()->GetAdTracker()) {
     return known_ad;
@@ -1427,8 +1276,7 @@ bool FrameFetchContext::CalculateIfAdSubresource(
   const KURL& url =
       alias_url.has_value() ? alias_url.value() : resource_request.Url();
   return GetFrame()->GetAdTracker()->CalculateIfAdSubresource(
-      document_->domWindow(), url, type, initiator_info, known_ad,
-      scan_stack_for_ads, rule);
+      document_->domWindow(), url, type, initiator_info, known_ad);
 }
 
 void FrameFetchContext::DidObserveLoadingBehavior(
@@ -1454,7 +1302,7 @@ FrameFetchContext::GetContentSecurityNotifier() const {
 }
 
 ExecutionContext* FrameFetchContext::GetExecutionContext() const {
-  return document_ ? document_->GetExecutionContext() : nullptr;
+  return document_->GetExecutionContext();
 }
 
 std::optional<ResourceRequestBlockedReason> FrameFetchContext::CanRequest(
@@ -1472,8 +1320,8 @@ std::optional<ResourceRequestBlockedReason> FrameFetchContext::CanRequest(
         MakeGarbageCollected<ConsoleMessage>(
             mojom::ConsoleMessageSource::kJavaScript,
             mojom::ConsoleMessageLevel::kError,
-            StrCat({"Only fetch keepalive is allowed during onfreeze: ",
-                    url.GetString()})));
+            "Only fetch keepalive is allowed during onfreeze: " +
+                url.GetString()));
     return ResourceRequestBlockedReason::kOther;
   }
   std::optional<ResourceRequestBlockedReason> blocked_reason =

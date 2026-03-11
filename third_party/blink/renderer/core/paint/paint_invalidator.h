@@ -37,6 +37,10 @@ struct CORE_EXPORT PaintInvalidatorContext {
             kSubtreeFullInvalidationForStackedContents);
   }
 
+  // TODO(pdr): Remove this accessor.
+  const PaintInvalidatorContext* ParentContext() const {
+    return parent_context;
+  }
   const PaintInvalidatorContext* parent_context = nullptr;
 
   // When adding new subtree flags, ensure |NeedsSubtreeWalk| is updated.

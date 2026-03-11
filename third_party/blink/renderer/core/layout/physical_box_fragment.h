@@ -10,7 +10,7 @@
 #include "base/dcheck_is_on.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/block_break_token.h"
-#include "third_party/blink/renderer/core/layout/gap/gap_geometry.h"
+#include "third_party/blink/renderer/core/layout/gap_fragment_data.h"
 #include "third_party/blink/renderer/core/layout/geometry/box_sides.h"
 #include "third_party/blink/renderer/core/layout/geometry/box_strut.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
@@ -22,7 +22,6 @@
 #include "third_party/blink/renderer/core/layout/table/table_fragment_data.h"
 #include "third_party/blink/renderer/core/style/style_overflow_clip_margin.h"
 #include "third_party/blink/renderer/platform/graphics/overlay_scrollbar_clip_behavior.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/bit_field.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
@@ -113,9 +112,6 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
     return PostLayoutChildLinkList(base::span(children_));
   }
 
-  void SetChildrenInvalid() const;
-  bool ChildrenValid() const { return children_valid_; }
-
   // This exposes a mutable part of the fragment for |OutOfFlowLayoutPart|.
   class MutableChildrenForOutOfFlow final {
     STACK_ALLOCATED();
@@ -171,7 +167,7 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
            !Style().ShouldIgnoreOverflowPropertyForInlineBlockBaseline();
   }
 
-  const GapGeometry* GetGapGeometry() const {
+  const GapGeometry* GapGeometry() const {
     return rare_data_ ? rare_data_->gap_geometry_.Get() : nullptr;
   }
 
@@ -216,13 +212,10 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
     return nullptr;
   }
 
-  // The page name propagated from descendants of this fragment, not including
-  // any page name specified on this node directly. The page name is propagated
-  // all the way up to the page fragment, which is needed in order to support
-  // named pages.
-  //
-  // See https://drafts.csswg.org/css-page-3/#using-named-pages
-  AtomicString PropagatedPageName() const {
+  // The name of the page (if any) to which this fragment belongs. The page name
+  // is propagated all the way up to the page fragment, which is needed in order
+  // to support e.g. page orientation. See https://drafts.csswg.org/css-page-3
+  AtomicString PageName() const {
     if (const auto* field = GetRareField(FieldId::kPageName)) {
       return field->page_name;
     }
@@ -295,14 +288,6 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
       return field->inflow_bounds;
     }
     return std::nullopt;
-  }
-
-  PhysicalOffset OffsetFromRootFragmentationContext() const {
-    if (const auto* field =
-            GetRareField(FieldId::kOffsetFromRootFragmentationContext)) {
-      return field->offset_from_root_fragmentation_context;
-    }
-    return PhysicalOffset();
   }
 
   // Return true if this is either a container that establishes an inline
@@ -451,15 +436,15 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
     return bit_field_.get<IsMonolithicOverflowPropagationDisabledFlag>();
   }
 
-  // Returns true if we've called moved children in the block or inline
-  // direction (for alignment). See:
-  // `BoxFragmentBuilder::MoveChildrenInDirection`.
-  bool HasMovedChildren() const {
-    return bit_field_.get<HasMovedChildrenFlag>();
+  // Returns true if we've called moved children in the block direction (for
+  // alignment). See: `BoxFragmentBuilder::MoveChildrenInBlockDirection`.
+  bool HasMovedChildrenInBlockDirection() const {
+    return bit_field_.get<HasMovedChildrenInBlockDirectionFlag>();
   }
 
 #if DCHECK_IS_ON()
   void CheckSameForSimplifiedLayout(const PhysicalBoxFragment&,
+                                    bool check_same_block_size,
                                     bool check_no_fragmentation) const;
 #endif
 
@@ -497,7 +482,6 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
     MutableForContainerLayout(base::PassKey<PhysicalBoxFragment>,
                               PhysicalBoxFragment& fragment);
     void SetMargins(const PhysicalBoxStrut& margins);
-    void SetOffsetFromRootFragmentationContext(PhysicalOffset);
 
    private:
     PhysicalBoxFragment& fragment_;
@@ -578,16 +562,14 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
 
    public:
     explicit MutableForOofFragmentation(const PhysicalBoxFragment& fragment)
-        : fragment_(const_cast<PhysicalBoxFragment&>(fragment)) {
-      DCHECK(!RuntimeEnabledFeatures::FragmentedOofInCbEnabled());
-    }
+        : fragment_(const_cast<PhysicalBoxFragment&>(fragment)) {}
 
     // Merge relevant parts of the specified fragmentainer into this one. This
     // means that all children will be copied over, and they will all be assumed
     // to be out-of-flow. All other necessary bits of information will also be
     // merged over. This includes information inside the break token, as well as
-    // anchors. The overflow rectangle may also be updated. It's useful to keep
-    // in mind that the placeholder fragmentainer has been generated by
+    // anchor queries. The overflow rectangle may also be updated. It's useful
+    // to keep in mind that the placeholder fragmentainer has been generated by
     // SimplifiedOofLayoutAlgorithm (which means that we should only copy over
     // information and flags that this algorithm outputs correctly).
     void Merge(const PhysicalBoxFragment& placeholder_fragmentainer);
@@ -624,9 +606,9 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
 #endif
 
  private:
-  using BitField = ConcurrentlyReadBitField<uint32_t>;
+  using BitField = WTF::ConcurrentlyReadBitField<uint32_t>;
   using ConstHasFragmentItemsFlag =
-      BitField::DefineFirstValue<bool, 1, BitFieldValueConstness::kConst>;
+      BitField::DefineFirstValue<bool, 1, WTF::BitFieldValueConstness::kConst>;
   using IsInlineFormattingContextFlag =
       ConstHasFragmentItemsFlag::DefineNextValue<bool, 1>;
   using IncludeBorderTopFlag =
@@ -645,7 +627,7 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
       IsFragmentationContextRootFlag::DefineNextValue<bool, 1>;
   using IsMonolithicOverflowPropagationDisabledFlag =
       IsMonolithicFlag::DefineNextValue<bool, 1>;
-  using HasMovedChildrenFlag =
+  using HasMovedChildrenInBlockDirectionFlag =
       IsMonolithicOverflowPropagationDisabledFlag::DefineNextValue<bool, 1>;
 
   bool IncludeBorderTop() const {
@@ -702,22 +684,6 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
                                    OutlineType include_block_overflows,
                                    bool inline_container_relative,
                                    OutlineRectCollector& collector) const;
-  void AddOutlineRectsForNormalChildren(
-      OutlineRectCollector& collector,
-      PhysicalOffset additional_offset,
-      OutlineType outline_type,
-      const LayoutBoxModelObject* containing_block) const;
-  void AddOutlineRectsForCursor(OutlineRectCollector& collector,
-                                PhysicalOffset additional_offset,
-                                OutlineType outline_type,
-                                const LayoutBoxModelObject* containing_block,
-                                InlineCursor* cursor) const;
-  void AddOutlineRectsForDescendant(
-      const PhysicalFragmentLink& descendant,
-      OutlineRectCollector& collector,
-      PhysicalOffset additional_offset,
-      OutlineType outline_type,
-      const LayoutBoxModelObject* containing_block) const;
 
   PositionWithAffinity PositionForPointByClosestChild(
       PhysicalOffset point_in_contents) const;

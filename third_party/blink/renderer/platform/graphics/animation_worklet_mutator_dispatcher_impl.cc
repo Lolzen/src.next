@@ -26,7 +26,6 @@
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_std.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/wtf.h"
-#include "third_party/perfetto/include/perfetto/tracing/track.h"
 
 namespace blink {
 
@@ -133,7 +132,7 @@ void AnimationWorkletMutatorDispatcherImpl::MutateSynchronously(
 
   base::WaitableEvent event;
   CrossThreadOnceClosure on_done = CrossThreadBindOnce(
-      &base::WaitableEvent::Signal, CrossThreadUnretained(&event));
+      &base::WaitableEvent::Signal, WTF::CrossThreadUnretained(&event));
   RequestMutations(std::move(on_done));
   event.Wait();
 
@@ -200,8 +199,9 @@ void AnimationWorkletMutatorDispatcherImpl::MutateAsynchronouslyInternal(
   DCHECK(host_queue_->BelongsToCurrentThread());
   on_async_mutation_complete_ = std::move(done_callback);
   int next_async_mutation_id = GetNextAsyncMutationId();
-  TRACE_EVENT_BEGIN("cc", "AnimationWorkletMutatorDispatcherImpl::MutateAsync",
-                    perfetto::Track(next_async_mutation_id));
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
+      "cc", "AnimationWorkletMutatorDispatcherImpl::MutateAsync",
+      TRACE_ID_LOCAL(next_async_mutation_id));
 
   CrossThreadOnceClosure on_done = CrossThreadBindOnce(
       [](scoped_refptr<base::SingleThreadTaskRunner> host_queue,
@@ -239,8 +239,9 @@ void AnimationWorkletMutatorDispatcherImpl::AsyncMutationsDone(
   }
   // The trace event deos not include queuing time. It covers the interval
   // between dispatching the request and retrieving the results.
-  TRACE_EVENT_END("cc", /*AnimationWorkletMutatorDispatcherImpl::MutateAsync*/
-                  perfetto::Track(async_mutation_id));
+  TRACE_EVENT_NESTABLE_ASYNC_END0(
+      "cc", "AnimationWorkletMutatorDispatcherImpl::MutateAsync",
+      TRACE_ID_LOCAL(async_mutation_id));
   // The Async mutation duration is the total time between request and
   // completion, and thus includes queuing time.
   UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(

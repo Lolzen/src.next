@@ -34,7 +34,10 @@ class CORE_EXPORT StyleRuleNestedDeclarations : public StyleRuleBase {
         nesting_type_(nesting_type),
         style_rule_(style_rule) {}
 
-  StyleRuleNestedDeclarations(const StyleRuleNestedDeclarations& o) = delete;
+  StyleRuleNestedDeclarations(const StyleRuleNestedDeclarations& o)
+      : StyleRuleBase(o),
+        nesting_type_(o.nesting_type_),
+        style_rule_(o.style_rule_->Copy()) {}
 
   CSSNestingType NestingType() const { return nesting_type_; }
   StyleRule* InnerStyleRule() const { return style_rule_.Get(); }
@@ -48,6 +51,10 @@ class CORE_EXPORT StyleRuleNestedDeclarations : public StyleRuleBase {
     return style_rule_->MutableProperties();
   }
 
+  StyleRuleNestedDeclarations* Copy() const {
+    return MakeGarbageCollected<StyleRuleNestedDeclarations>(*this);
+  }
+
   void TraceAfterDispatch(blink::Visitor* visitor) const {
     visitor->Trace(style_rule_);
     StyleRuleBase::TraceAfterDispatch(visitor);
@@ -59,7 +66,7 @@ class CORE_EXPORT StyleRuleNestedDeclarations : public StyleRuleBase {
   // In the kNesting case the selector list held by `style_rule_` is a deep
   // copy of the outer selector list, but in the kScope case, it's simply
   // the :where(:scope) selector. We need to differentiate between these two
-  // cases during re-nesting; see StyleRuleBase::Clone.
+  // cases during re-nesting; see StyleRuleBase::Renest.
   CSSNestingType nesting_type_;
   Member<StyleRule> style_rule_;
 };

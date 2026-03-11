@@ -104,8 +104,7 @@ class ChromeBrowserAppMacBrowserTest : public InProcessBrowserTest {
   }
 
   bool BrowserIsInCompleteAccessibilityMode() {
-    return BrowserIsInAccessibilityMode(ui::kAXModeComplete |
-                                        ui::AXMode::kScreenReader);
+    return BrowserIsInAccessibilityMode(ui::kAXModeComplete);
   }
 
   bool BrowserIsInBasicAccessibilityMode() {
@@ -321,6 +320,5 @@ IN_PROC_BROWSER_TEST_F(ChromeBrowserAppMacBrowserMacVoiceOverEnabledTest,
 
   // Enable VoiceOver.
   EXPECT_TRUE(VoiceOverEnabled());
-  EXPECT_EQ(accessibility_state->GetAccessibilityMode(),
-            ui::kAXModeComplete | ui::AXMode::kScreenReader);
+  EXPECT_EQ(accessibility_state->GetAccessibilityMode(), ui::kAXModeComplete);
 }

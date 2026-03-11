@@ -45,7 +45,6 @@ public class DangerousDownloadDialogBridge {
      * @param guid GUID of the download.
      * @param fileName Name of the download file.
      * @param totalBytes Total bytes of the file.
-     * @param downloadDomain Domain name to associate with the downloaded file.
      * @param iconId The icon resource for the warning dialog.
      */
     @CalledByNative
@@ -54,10 +53,9 @@ public class DangerousDownloadDialogBridge {
             @JniType("std::string") String guid,
             @JniType("std::u16string") String fileName,
             long totalBytes,
-            String downloadDomain,
             int iconId) {
         Activity activity = windowAndroid.getActivity().get();
-        if (!(activity instanceof ModalDialogManagerHolder)) {
+        if (activity == null) {
             onCancel(guid, windowAndroid);
             return;
         }
@@ -68,7 +66,6 @@ public class DangerousDownloadDialogBridge {
                         ((ModalDialogManagerHolder) activity).getModalDialogManager(),
                         fileName,
                         totalBytes,
-                        downloadDomain,
                         iconId,
                         (accepted) -> {
                             if (accepted) {

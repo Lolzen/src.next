@@ -16,12 +16,10 @@
 #include "base/memory/raw_ptr.h"
 #include "base/notreached.h"
 #include "base/test/gmock_move_support.h"
-#include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
-#include "chrome/browser/signin/binding_key_registration_token_helper.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/account_reconcilor.h"
@@ -38,19 +36,26 @@
 #include "components/signin/public/identity_manager/identity_test_environment.h"
 #include "components/signin/public/identity_manager/identity_test_utils.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
-#include "components/unexportable_keys/fake_unexportable_key_service.h"
-#include "components/unexportable_keys/unexportable_key_id.h"
-#include "components/unexportable_keys/unexportable_key_service.h"
-#include "components/unexportable_keys/unexportable_key_task_manager.h"
 #include "crypto/signature_verifier.h"
 #include "google_apis/gaia/core_account_id.h"
 #include "google_apis/gaia/gaia_id.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+#include "base/test/metrics/histogram_tester.h"
+#include "chrome/browser/signin/bound_session_credentials/registration_token_helper.h"
+#include "components/signin/public/base/signin_switches.h"
+#include "components/unexportable_keys/fake_unexportable_key_service.h"
+#include "components/unexportable_keys/unexportable_key_id.h"
+#include "components/unexportable_keys/unexportable_key_service.h"
+#include "components/unexportable_keys/unexportable_key_task_manager.h"
+#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+
 using signin::DiceAction;
 using signin::DiceResponseParams;
 using testing::_;
+using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
 using testing::Unused;
@@ -61,7 +66,6 @@ constexpr char kAuthorizationCode[] = "authorization_code";
 constexpr char kEmail[] = "test@email.com";
 constexpr int kSessionIndex = 42;
 constexpr char kEligibleForTokenBinding[] = "ES256 RS256";
-
 constexpr crypto::SignatureVerifier::SignatureAlgorithm
     kAcceptableAlgorithms[] = {crypto::SignatureVerifier::ECDSA_SHA256,
                                crypto::SignatureVerifier::RSA_PKCS1_SHA256};
@@ -116,15 +120,15 @@ class DiceTestSigninClient : public TestSigninClient, public GaiaAuthConsumer {
   raw_ptr<GaiaAuthConsumer> consumer_;
 };
 
-class MockBindingKeyRegistrationTokenHelper
-    : public BindingKeyRegistrationTokenHelper {
+#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+class MockRegistrationTokenHelper : public RegistrationTokenHelper {
  public:
-  MockBindingKeyRegistrationTokenHelper()
-      : BindingKeyRegistrationTokenHelper(
+  MockRegistrationTokenHelper()
+      : RegistrationTokenHelper(
             fake_unexportable_key_service_,
             std::vector<crypto::SignatureVerifier::SignatureAlgorithm>{}) {}
 
-  ~MockBindingKeyRegistrationTokenHelper() override = default;
+  ~MockRegistrationTokenHelper() override = default;
 
   MOCK_METHOD(void,
               GenerateForSessionBinding,
@@ -143,6 +147,7 @@ class MockBindingKeyRegistrationTokenHelper
  private:
   unexportable_keys::FakeUnexportableKeyService fake_unexportable_key_service_;
 };
+#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
 
 class DiceResponseHandlerTest : public testing::Test,
                                 public AccountReconcilor::Observer {
@@ -155,9 +160,8 @@ class DiceResponseHandlerTest : public testing::Test,
   }
 
   // Called after the refresh token was fetched and added in the token service.
-  void CompleteChromeSignInAfterGaiaSignin(
-      const CoreAccountInfo& account_info) {
-    complete_profile_signin_account_info_ = account_info;
+  void EnableSync(const CoreAccountInfo& account_info) {
+    enable_sync_account_info_ = account_info;
   }
 
   void HandleTokenExchangeFailure(const std::string& email,
@@ -183,7 +187,7 @@ class DiceResponseHandlerTest : public testing::Test,
     AboutSigninInternals::RegisterPrefs(pref_service_.registry());
     auto account_reconcilor_delegate =
         std::make_unique<signin::DiceAccountReconcilorDelegate>(
-            identity_manager());
+            identity_manager(), &signin_client_);
     account_reconcilor_ = std::make_unique<AccountReconcilor>(
         identity_test_env_.identity_manager(), &signin_client_,
         std::move(account_reconcilor_delegate));
@@ -248,6 +252,7 @@ class DiceResponseHandlerTest : public testing::Test,
       const CoreAccountId& primary_account,
       bool invalid_primary_account);
 
+#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
   void EnableRegistrationTokenHelperFactory() {
     dice_response_handler_->SetRegistrationTokenHelperFactoryForTesting(
         mock_registration_token_helper_factory_.Get());
@@ -255,19 +260,16 @@ class DiceResponseHandlerTest : public testing::Test,
 
   void ExpectRegistrationTokenHelperCreated(
       const std::vector<std::string>& expected_authorization_codes,
-      const BindingKeyRegistrationTokenHelper::KeyInitParam&
-          expected_key_init_param) {
+      const RegistrationTokenHelper::KeyInitParam& expected_key_init_param) {
     EXPECT_CALL(mock_registration_token_helper_factory_,
                 Run(expected_key_init_param))
         .WillOnce(
             Return(BuildRegistrationTokenHelper(expected_authorization_codes)));
   }
 
-  std::unique_ptr<BindingKeyRegistrationTokenHelper>
-  BuildRegistrationTokenHelper(
+  std::unique_ptr<RegistrationTokenHelper> BuildRegistrationTokenHelper(
       const std::vector<std::string>& expected_authorization_codes) {
-    auto helper =
-        std::make_unique<StrictMock<MockBindingKeyRegistrationTokenHelper>>();
+    auto helper = std::make_unique<StrictMock<MockRegistrationTokenHelper>>();
     for (const auto& authorization_code : expected_authorization_codes) {
       EXPECT_CALL(*helper, GenerateForTokenBinding(_, authorization_code, _, _))
           .WillOnce(
@@ -278,11 +280,12 @@ class DiceResponseHandlerTest : public testing::Test,
 
   void SimulateRegistrationTokenHelperResult(
       const std::string& authorization_code,
-      std::optional<BindingKeyRegistrationTokenHelper::Result> result) {
+      std::optional<RegistrationTokenHelper::Result> result) {
     auto node = binding_registration_callbacks_.extract(authorization_code);
     ASSERT_FALSE(node.empty());
     std::move(node.mapped()).Run(std::move(result));
   }
+#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
 
   // AccountReconcilor::Observer:
   void OnBlockReconcile() override { ++reconcilor_blocked_count_; }
@@ -305,19 +308,21 @@ class DiceResponseHandlerTest : public testing::Test,
   int reconcilor_unblocked_count_ = 0;
   CoreAccountId token_exchange_account_id_;
   bool token_exchange_is_new_account_ = false;
-  CoreAccountInfo complete_profile_signin_account_info_;
+  CoreAccountInfo enable_sync_account_info_;
   GoogleServiceAuthError auth_error_;
   std::string auth_error_email_;
+#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
   base::test::ScopedFeatureList feature_list_{
       switches::kEnableChromeRefreshTokenBinding};
-  std::map<std::string,
-           base::OnceCallback<void(
-               std::optional<BindingKeyRegistrationTokenHelper::Result>)>>
+  std::map<
+      std::string,
+      base::OnceCallback<void(std::optional<RegistrationTokenHelper::Result>)>>
       binding_registration_callbacks_;
   StrictMock<
       base::MockCallback<DiceResponseHandler::RegistrationTokenHelperFactory>>
       mock_registration_token_helper_factory_;
   base::HistogramTester histogram_tester_;
+#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
 };
 
 class TestProcessDiceHeaderDelegate : public ProcessDiceHeaderDelegate {
@@ -334,9 +339,8 @@ class TestProcessDiceHeaderDelegate : public ProcessDiceHeaderDelegate {
   }
 
   // Called after the refresh token was fetched and added in the token service.
-  void CompleteChromeSignInAfterGaiaSignin(
-      const CoreAccountInfo& account_info) override {
-    owner_->CompleteChromeSignInAfterGaiaSignin(account_info);
+  void EnableSync(const CoreAccountInfo& account_info) override {
+    owner_->EnableSync(account_info);
   }
 
   void HandleTokenExchangeFailure(
@@ -444,12 +448,15 @@ TEST_F(DiceResponseHandlerTest, Signin) {
   EXPECT_EQ(
       identity_test_env_.GetNumCallsToPrepareForFetchingAccountCapabilities(),
       1);
+#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
   histogram_tester_.ExpectUniqueSample(
       kTokenBindingOutcomeHistogram,
       DiceResponseHandler::TokenBindingOutcome::kNotBoundNotSupported,
       /*expected_bucket_count=*/1);
+#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
 }
 
+#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
 // Checks that a SIGNIN action triggers a token exchange request.
 TEST_F(DiceResponseHandlerTest, SigninWithBoundToken) {
   EnableRegistrationTokenHelperFactory();
@@ -470,9 +477,9 @@ TEST_F(DiceResponseHandlerTest, SigninWithBoundToken) {
   // Simulate successful token generation.
   const std::vector<uint8_t> kWrappedKey = {1, 2, 3};
   SimulateRegistrationTokenHelperResult(
-      authorization_code, BindingKeyRegistrationTokenHelper::Result(
-                              unexportable_keys::UnexportableKeyId(),
-                              kWrappedKey, "test_registration_token"));
+      authorization_code,
+      RegistrationTokenHelper::Result(unexportable_keys::UnexportableKeyId(),
+                                      kWrappedKey, "test_registration_token"));
 
   // Check that a GaiaAuthFetcher has been created.
   GaiaAuthConsumer* consumer = signin_client_.GetAndClearConsumer();
@@ -482,8 +489,10 @@ TEST_F(DiceResponseHandlerTest, SigninWithBoundToken) {
       "refresh_token", "access_token", 10, /*is_child_account=*/false,
       /*is_under_advanced_protection=*/false, /*is_bound_to_key=*/true));
   // Check that the token has been inserted in the token service.
-  EXPECT_TRUE(identity_manager()->HasAccountWithBoundRefreshToken(account_id));
-  EXPECT_EQ(identity_manager()->GetWrappedBindingKey(), kWrappedKey);
+  EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(account_id));
+  EXPECT_EQ(identity_manager()->GetWrappedBindingKeyOfRefreshTokenForAccount(
+                account_id),
+            kWrappedKey);
   EXPECT_TRUE(auth_error_email_.empty());
   EXPECT_EQ(GoogleServiceAuthError::NONE, auth_error_.state());
   histogram_tester_.ExpectUniqueSample(
@@ -515,43 +524,14 @@ TEST_F(DiceResponseHandlerTest, SigninIneligibleForTokenBinding) {
   // Check that the token has been inserted in the token service and it is
   // unbound.
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(account_id));
-  EXPECT_FALSE(identity_manager()->HasAccountWithBoundRefreshToken(account_id));
+  EXPECT_TRUE(identity_manager()
+                  ->GetWrappedBindingKeyOfRefreshTokenForAccount(account_id)
+                  .empty());
   EXPECT_TRUE(auth_error_email_.empty());
   EXPECT_EQ(GoogleServiceAuthError::NONE, auth_error_.state());
   histogram_tester_.ExpectUniqueSample(
       kTokenBindingOutcomeHistogram,
       DiceResponseHandler::TokenBindingOutcome::kNotBoundNotEligible,
-      /*expected_bucket_count=*/1);
-}
-
-// Checks that token binding is skipped if refresh tokens are not loaded yet.
-TEST_F(DiceResponseHandlerTest, SigninWithUnloadedTokensDoesNotBind) {
-  EnableRegistrationTokenHelperFactory();
-  identity_test_env_.ResetToAccountsNotYetLoadedFromDiskState();
-  DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNIN);
-  const auto& account_info = dice_params.signin_info->account_info;
-  CoreAccountId account_id = identity_manager()->PickAccountIdForAccount(
-      account_info.gaia_id, account_info.email);
-  EXPECT_FALSE(identity_manager()->HasAccountWithRefreshToken(account_id));
-
-  dice_response_handler_->ProcessDiceHeader(
-      dice_params, std::make_unique<TestProcessDiceHeaderDelegate>(this));
-  // Check that a GaiaAuthFetcher has been created immediately.
-  GaiaAuthConsumer* consumer = signin_client_.GetAndClearConsumer();
-  ASSERT_THAT(consumer, testing::NotNull());
-  // Simulate GaiaAuthFetcher success.
-  consumer->OnClientOAuthSuccess(GaiaAuthConsumer::ClientOAuthResult(
-      "refresh_token", "access_token", 10, /*is_child_account=*/false,
-      /*is_under_advanced_protection=*/true, /*is_bound_to_key=*/false));
-  // Check that the token has been inserted in the token service and it is
-  // unbound.
-  EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(account_id));
-  EXPECT_FALSE(identity_manager()->HasAccountWithBoundRefreshToken(account_id));
-  EXPECT_TRUE(auth_error_email_.empty());
-  EXPECT_EQ(GoogleServiceAuthError::NONE, auth_error_.state());
-  histogram_tester_.ExpectUniqueSample(
-      kTokenBindingOutcomeHistogram,
-      DiceResponseHandler::TokenBindingOutcome::kNotBoundRefreshTokensNotLoaded,
       /*expected_bucket_count=*/1);
 }
 
@@ -576,9 +556,9 @@ TEST_F(DiceResponseHandlerTest, SigninServerRejectedBinding) {
   // Simulate successful token generation.
   const std::vector<uint8_t> kWrappedKey = {1, 2, 3};
   SimulateRegistrationTokenHelperResult(
-      authorization_code, BindingKeyRegistrationTokenHelper::Result(
-                              unexportable_keys::UnexportableKeyId(),
-                              kWrappedKey, "test_registration_token"));
+      authorization_code,
+      RegistrationTokenHelper::Result(unexportable_keys::UnexportableKeyId(),
+                                      kWrappedKey, "test_registration_token"));
 
   // Check that a GaiaAuthFetcher has been created.
   GaiaAuthConsumer* consumer = signin_client_.GetAndClearConsumer();
@@ -589,7 +569,9 @@ TEST_F(DiceResponseHandlerTest, SigninServerRejectedBinding) {
       /*is_under_advanced_protection=*/false, /*is_bound_to_key=*/false));
   // Check that the token has been inserted in the token service.
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(account_id));
-  EXPECT_FALSE(identity_manager()->HasAccountWithBoundRefreshToken(account_id));
+  EXPECT_TRUE(identity_manager()
+                  ->GetWrappedBindingKeyOfRefreshTokenForAccount(account_id)
+                  .empty());
   EXPECT_TRUE(auth_error_email_.empty());
   EXPECT_EQ(GoogleServiceAuthError::NONE, auth_error_.state());
   histogram_tester_.ExpectUniqueSample(
@@ -621,9 +603,9 @@ TEST_F(DiceResponseHandlerTest, ReuseBindingKeyOtherTokenIsBound) {
   ASSERT_THAT(signin_client_.GetAndClearConsumer(), testing::IsNull());
   // Simulate successful token generation.
   SimulateRegistrationTokenHelperResult(
-      authorization_code, BindingKeyRegistrationTokenHelper::Result(
-                              unexportable_keys::UnexportableKeyId(),
-                              kWrappedKey, "test_registration_token"));
+      authorization_code,
+      RegistrationTokenHelper::Result(unexportable_keys::UnexportableKeyId(),
+                                      kWrappedKey, "test_registration_token"));
   // Check that a GaiaAuthFetcher has been created.
   GaiaAuthConsumer* consumer = signin_client_.GetAndClearConsumer();
   ASSERT_THAT(consumer, testing::NotNull());
@@ -632,8 +614,10 @@ TEST_F(DiceResponseHandlerTest, ReuseBindingKeyOtherTokenIsBound) {
       "refresh_token", "access_token", 10, /*is_child_account=*/false,
       /*is_under_advanced_protection=*/false, /*is_bound_to_key=*/true));
   // Check that the token has been inserted in the token service.
-  EXPECT_TRUE(identity_manager()->HasAccountWithBoundRefreshToken(account_id));
-  EXPECT_EQ(identity_manager()->GetWrappedBindingKey(), kWrappedKey);
+  EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(account_id));
+  EXPECT_EQ(identity_manager()->GetWrappedBindingKeyOfRefreshTokenForAccount(
+                account_id),
+            kWrappedKey);
 }
 
 TEST_F(DiceResponseHandlerTest, ReuseBindingKeyOneTokenBoundOneNonBound) {
@@ -695,16 +679,14 @@ TEST_F(DiceResponseHandlerTest, TwoFetchersReuseRegistrationTokenHelper) {
   const std::vector<uint8_t> kWrappedKey = {1, 2, 3};
   SimulateRegistrationTokenHelperResult(
       authorization_code(dice_params_2),
-      BindingKeyRegistrationTokenHelper::Result(
-          unexportable_keys::UnexportableKeyId(), kWrappedKey,
-          "test_registration_token"));
+      RegistrationTokenHelper::Result(unexportable_keys::UnexportableKeyId(),
+                                      kWrappedKey, "test_registration_token"));
   GaiaAuthConsumer* consumer_2 = signin_client_.GetAndClearConsumer();
   ASSERT_THAT(consumer_2, testing::NotNull());
   SimulateRegistrationTokenHelperResult(
       authorization_code(dice_params_1),
-      BindingKeyRegistrationTokenHelper::Result(
-          unexportable_keys::UnexportableKeyId(), kWrappedKey,
-          "other_registration_token"));
+      RegistrationTokenHelper::Result(unexportable_keys::UnexportableKeyId(),
+                                      kWrappedKey, "other_registration_token"));
   GaiaAuthConsumer* consumer_1 = signin_client_.GetAndClearConsumer();
   ASSERT_THAT(consumer_1, testing::NotNull());
 
@@ -713,14 +695,19 @@ TEST_F(DiceResponseHandlerTest, TwoFetchersReuseRegistrationTokenHelper) {
   consumer_1->OnClientOAuthSuccess(GaiaAuthConsumer::ClientOAuthResult(
       "refresh_token", "access_token", 10, /*is_child_account=*/false,
       /*is_under_advanced_protection=*/false, /*is_bound_to_key=*/true));
-  EXPECT_TRUE(identity_manager()->HasAccountWithBoundRefreshToken(
+  EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
       account_id(dice_params_1)));
+  EXPECT_EQ(identity_manager()->GetWrappedBindingKeyOfRefreshTokenForAccount(
+                account_id(dice_params_1)),
+            kWrappedKey);
   consumer_2->OnClientOAuthSuccess(GaiaAuthConsumer::ClientOAuthResult(
       "refresh_token", "access_token", 10, /*is_child_account=*/false,
       /*is_under_advanced_protection=*/false, /*is_bound_to_key=*/true));
-  EXPECT_TRUE(identity_manager()->HasAccountWithBoundRefreshToken(
+  EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
       account_id(dice_params_2)));
-  EXPECT_EQ(identity_manager()->GetWrappedBindingKey(), kWrappedKey);
+  EXPECT_EQ(identity_manager()->GetWrappedBindingKeyOfRefreshTokenForAccount(
+                account_id(dice_params_2)),
+            kWrappedKey);
   histogram_tester_.ExpectUniqueSample(
       kTokenBindingOutcomeHistogram,
       DiceResponseHandler::TokenBindingOutcome::kBound,
@@ -763,9 +750,8 @@ TEST_F(DiceResponseHandlerTest, TwoFetchersOneEligible) {
   const std::vector<uint8_t> kWrappedKey = {1, 2, 3};
   SimulateRegistrationTokenHelperResult(
       authorization_code(eligible_dice_params_),
-      BindingKeyRegistrationTokenHelper::Result(
-          unexportable_keys::UnexportableKeyId(), kWrappedKey,
-          "test_registration_token"));
+      RegistrationTokenHelper::Result(unexportable_keys::UnexportableKeyId(),
+                                      kWrappedKey, "test_registration_token"));
   ASSERT_THAT(signin_client_.GetAndClearConsumer(), testing::NotNull());
 }
 
@@ -792,9 +778,8 @@ TEST_F(DiceResponseHandlerTest,
   const std::vector<uint8_t> kWrappedKey = {1, 2, 3};
   SimulateRegistrationTokenHelperResult(
       authorization_code(dice_params_1),
-      BindingKeyRegistrationTokenHelper::Result(
-          unexportable_keys::UnexportableKeyId(), kWrappedKey,
-          "test_registration_token"));
+      RegistrationTokenHelper::Result(unexportable_keys::UnexportableKeyId(),
+                                      kWrappedKey, "test_registration_token"));
   GaiaAuthConsumer* consumer_1 = signin_client_.GetAndClearConsumer();
   ASSERT_THAT(consumer_1, testing::NotNull());
 
@@ -804,8 +789,10 @@ TEST_F(DiceResponseHandlerTest,
       /*is_under_advanced_protection=*/false, /*is_bound_to_key=*/false));
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
       account_id(dice_params_1)));
-  EXPECT_FALSE(identity_manager()->HasAccountWithBoundRefreshToken(
-      account_id(dice_params_1)));
+  EXPECT_TRUE(identity_manager()
+                  ->GetWrappedBindingKeyOfRefreshTokenForAccount(
+                      account_id(dice_params_1))
+                  .empty());
 
   // Next request should create a new RegistrationTokenHelper with a new binding
   // key as none of the existing tokens are bound.
@@ -847,7 +834,9 @@ TEST_F(DiceResponseHandlerTest, SigninWithFailedBoundTokenAttempt) {
       /*is_under_advanced_protection=*/false, /*is_bound_to_key=*/false));
   // Check that the token has been inserted in the token service.
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(account_id));
-  EXPECT_FALSE(identity_manager()->HasAccountWithBoundRefreshToken(account_id));
+  EXPECT_TRUE(identity_manager()
+                  ->GetWrappedBindingKeyOfRefreshTokenForAccount(account_id)
+                  .empty());
   EXPECT_TRUE(auth_error_email_.empty());
   EXPECT_EQ(GoogleServiceAuthError::NONE, auth_error_.state());
   histogram_tester_.ExpectUniqueSample(
@@ -856,6 +845,7 @@ TEST_F(DiceResponseHandlerTest, SigninWithFailedBoundTokenAttempt) {
           kNotBoundRegistrationTokenGenerationFailed,
       /*expected_bucket_count=*/1);
 }
+#endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
 
 // Checks that the account reconcilor is blocked when where was OAuth
 // outage in Dice, and unblocked after the timeout.
@@ -962,8 +952,7 @@ TEST_F(DiceResponseHandlerTest, CheckSigninAfterOutageInDice) {
 TEST_F(DiceResponseHandlerTest, Reauth) {
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNIN);
   AccountInfo account_info = identity_test_env_.MakePrimaryAccountAvailable(
-      dice_params.signin_info->account_info.email,
-      signin::ConsentLevel::kSignin);
+      dice_params.signin_info->account_info.email, signin::ConsentLevel::kSync);
   dice_params.signin_info->account_info.gaia_id = account_info.gaia;
   CoreAccountId account_id = account_info.account_id;
   identity_test_env_.UpdatePersistentErrorOfRefreshTokenForAccount(
@@ -1102,8 +1091,7 @@ TEST_F(DiceResponseHandlerTest, SigninWithTwoAccounts) {
 
 // Checks that a ENABLE_SYNC action received after the refresh token is added
 // to the token service, triggers a call to enable sync on the delegate.
-TEST_F(DiceResponseHandlerTest,
-       SigninEnableSyncDiceHeaderAfterRefreshTokenFetched) {
+TEST_F(DiceResponseHandlerTest, SigninEnableSyncAfterRefreshTokenFetched) {
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNIN);
   const auto& account_info = dice_params.signin_info->account_info;
   CoreAccountId account_id = identity_manager()->PickAccountIdForAccount(
@@ -1124,22 +1112,21 @@ TEST_F(DiceResponseHandlerTest,
   EXPECT_EQ(token_exchange_account_id_, account_id);
   EXPECT_TRUE(token_exchange_is_new_account_);
   // Check that delegate was not called to enable sync.
-  EXPECT_TRUE(complete_profile_signin_account_info_.IsEmpty());
+  EXPECT_TRUE(enable_sync_account_info_.IsEmpty());
 
   // Enable sync.
   dice_response_handler_->ProcessDiceHeader(
       MakeDiceParams(DiceAction::ENABLE_SYNC),
       std::make_unique<TestProcessDiceHeaderDelegate>(this));
   // Check that delegate was called to enable sync.
-  EXPECT_EQ(account_info.gaia_id, complete_profile_signin_account_info_.gaia);
-  EXPECT_EQ(account_info.email, complete_profile_signin_account_info_.email);
+  EXPECT_EQ(account_info.gaia_id, enable_sync_account_info_.gaia);
+  EXPECT_EQ(account_info.email, enable_sync_account_info_.email);
 }
 
 // Checks that a ENABLE_SYNC action received before the refresh token is added
 // to the token service, is schedules a call to enable sync on the delegate
 // once the refresh token is received.
-TEST_F(DiceResponseHandlerTest,
-       SigninEnableSyncDiceHeaderBeforeRefreshTokenFetched) {
+TEST_F(DiceResponseHandlerTest, SigninEnableSyncBeforeRefreshTokenFetched) {
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNIN);
   const auto& account_info = dice_params.signin_info->account_info;
   CoreAccountId account_id = identity_manager()->PickAccountIdForAccount(
@@ -1156,7 +1143,7 @@ TEST_F(DiceResponseHandlerTest,
       MakeDiceParams(DiceAction::ENABLE_SYNC),
       std::make_unique<TestProcessDiceHeaderDelegate>(this));
   // Check that delegate was not called to enable sync.
-  EXPECT_TRUE(complete_profile_signin_account_info_.IsEmpty());
+  EXPECT_TRUE(enable_sync_account_info_.IsEmpty());
 
   // Simulate GaiaAuthFetcher success.
   consumer->OnClientOAuthSuccess(GaiaAuthConsumer::ClientOAuthResult(
@@ -1168,8 +1155,8 @@ TEST_F(DiceResponseHandlerTest,
   EXPECT_EQ(token_exchange_account_id_, account_id);
   EXPECT_TRUE(token_exchange_is_new_account_);
   // Check that delegate was called to enable sync.
-  EXPECT_EQ(account_info.gaia_id, complete_profile_signin_account_info_.gaia);
-  EXPECT_EQ(account_info.email, complete_profile_signin_account_info_.email);
+  EXPECT_EQ(account_info.gaia_id, enable_sync_account_info_.gaia);
+  EXPECT_EQ(account_info.email, enable_sync_account_info_.email);
 }
 
 TEST_F(DiceResponseHandlerTest, Timeout) {
@@ -1227,6 +1214,31 @@ TEST_F(DiceResponseHandlerTest, DeleteBeforeTimeout) {
   EXPECT_EQ(1, reconcilor_unblocked_count_);
 }
 
+TEST_F(DiceResponseHandlerTest, SignoutSyncPrimaryAccount) {
+  // Setup.
+  // Configure Dice params.
+  DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNOUT);
+  const char kSecondarySignedOutEmail[] = "secondary_signed_out@gmail.com";
+  dice_params.signout_info->account_infos.push_back(
+      GetDiceResponseParamsAccountInfo(kSecondarySignedOutEmail));
+  const std::string dice_primary_account_email =
+      dice_params.signout_info->account_infos[0].email;
+  // Configure Chrome.
+  AccountInfo primary_account = identity_test_env_.MakePrimaryAccountAvailable(
+      dice_primary_account_email, signin::ConsentLevel::kSync);
+  AccountInfo secondary_signed_out =
+      identity_test_env_.MakeAccountAvailable(kSecondarySignedOutEmail);
+  AccountInfo secondary_not_signed_out =
+      identity_test_env_.MakeAccountAvailable("other@gmail.com");
+  EXPECT_EQ(identity_manager()->GetAccountsWithRefreshTokens().size(), 3U);
+  EXPECT_TRUE(
+      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync));
+
+  // Receive signout response including sync and secondary account.
+  RunSignoutTest(dice_params, {secondary_not_signed_out.account_id},
+                 primary_account.account_id, /*invalid_primary_account=*/true);
+}
+
 TEST_F(DiceResponseHandlerTest, SignoutSigninPrimaryAccount) {
   // Setup.
   // Configure Dice params.
@@ -1262,7 +1274,7 @@ TEST_F(DiceResponseHandlerTest, SignoutSecondaryAccount) {
   // account.
   AccountInfo primary_account_info =
       identity_test_env_.MakePrimaryAccountAvailable(
-          kPrimaryAccount, signin::ConsentLevel::kSignin);
+          kPrimaryAccount, signin::ConsentLevel::kSync);
   AccountInfo secondary_account_info =
       identity_test_env_.MakeAccountAvailable(secondary_account_email);
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
@@ -1270,7 +1282,7 @@ TEST_F(DiceResponseHandlerTest, SignoutSecondaryAccount) {
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
       primary_account_info.account_id));
   EXPECT_TRUE(
-      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
+      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync));
   // Receive signout response for the secondary account.
   RunSignoutTest(dice_params, {}, primary_account_info.account_id,
                  /*invalid_primary_account=*/false);
@@ -1290,7 +1302,7 @@ TEST_F(DiceResponseHandlerTest, SignoutWebOnly) {
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
       secondary_account_info.account_id));
   EXPECT_FALSE(
-      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
+      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync));
   // Receive signout response.
   RunSignoutTest(dice_params, {secondary_account_info.account_id},
                  /*primary_account=*/CoreAccountId(),
@@ -1304,7 +1316,7 @@ TEST_F(DiceResponseHandlerTest, SigninSignoutSameAccount) {
 
   // User is signed in to Chrome.
   AccountInfo account_info = identity_test_env_.MakePrimaryAccountAvailable(
-      dice_account_info.email, signin::ConsentLevel::kSignin);
+      dice_account_info.email, signin::ConsentLevel::kSync);
   EXPECT_TRUE(
       identity_manager()->HasAccountWithRefreshToken(account_info.account_id));
   EXPECT_FALSE(
@@ -1380,7 +1392,8 @@ TEST_F(DiceResponseHandlerTest, SigninSignoutDifferentAccount) {
           account_id_2));
 }
 
-TEST_F(DiceResponseHandlerTest, SignoutPrimaryAccountWithSignoutRestrictions) {
+TEST_F(DiceResponseHandlerTest,
+       SignoutPrimaryNonSyncAccountWithSignoutRestrictions) {
   signin_client_.set_is_clear_primary_account_allowed_for_testing(
       SigninClient::SignoutDecision::CLEAR_PRIMARY_ACCOUNT_DISALLOWED);
   const char kSecondaryEmail[] = "other@gmail.com";
@@ -1396,6 +1409,8 @@ TEST_F(DiceResponseHandlerTest, SignoutPrimaryAccountWithSignoutRestrictions) {
       primary_account.account_id));
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
       secondary_account_info.account_id));
+  EXPECT_FALSE(
+      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync));
   EXPECT_TRUE(
       identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
   // Receive signout response.
@@ -1405,5 +1420,32 @@ TEST_F(DiceResponseHandlerTest, SignoutPrimaryAccountWithSignoutRestrictions) {
   // Check that the reconcilor was not blocked.
   EXPECT_EQ(0, reconcilor_blocked_count_);
   EXPECT_EQ(0, reconcilor_unblocked_count_);
+}
+
+TEST_F(DiceResponseHandlerTest, SignoutImplicitPrimaryAccountSignin) {
+  // Setup.
+  // Configure Dice params.
+  DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNOUT);
+  const char kSecondarySignedOutEmail[] = "secondary_signed_out@gmail.com";
+  dice_params.signout_info->account_infos.push_back(
+      GetDiceResponseParamsAccountInfo(kSecondarySignedOutEmail));
+  const std::string dice_primary_account_email =
+      dice_params.signout_info->account_infos[0].email;
+  // Configure Chrome.
+  AccountInfo primary_account = identity_test_env_.MakePrimaryAccountAvailable(
+      dice_primary_account_email, signin::ConsentLevel::kSignin);
+  // Mark as implicit sign in.
+  pref_service().SetBoolean(prefs::kExplicitBrowserSignin, false);
+  identity_test_env_.MakeAccountAvailable(kSecondarySignedOutEmail);
+  AccountInfo secondary_not_signed_out =
+      identity_test_env_.MakeAccountAvailable("other@gmail.com");
+  EXPECT_EQ(identity_manager()->GetAccountsWithRefreshTokens().size(), 3U);
+  EXPECT_TRUE(
+      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
+
+  // Receive signout response including primary and secondary account.
+  RunSignoutTest(dice_params, {secondary_not_signed_out.account_id},
+                 /*primary_account=*/CoreAccountId(),
+                 /*invalid_primary_account=*/false);
 }
 }  // namespace

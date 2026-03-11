@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "build/build_config.h"
 #include "content/browser/back_forward_cache_browsertest.h"
 
-#include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
-#include "build/build_config.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/test/browser_test.h"
@@ -382,17 +381,9 @@ INSTANTIATE_TEST_SUITE_P(
       }
     });
 
-// TODO(crbug.com/448737648): Flaky on MacOS.
-#if BUILDFLAG(IS_MAC)
-#define MAYBE_PageWithDrainedDatapipeRequestsForScriptStreamerShouldBeEvictedIfStreamedTooMuch \
-  DISABLED_PageWithDrainedDatapipeRequestsForScriptStreamerShouldBeEvictedIfStreamedTooMuch
-#else
-#define MAYBE_PageWithDrainedDatapipeRequestsForScriptStreamerShouldBeEvictedIfStreamedTooMuch \
-  PageWithDrainedDatapipeRequestsForScriptStreamerShouldBeEvictedIfStreamedTooMuch
-#endif
 IN_PROC_BROWSER_TEST_P(
     BackForwardCacheNetworkLimitBrowserTest,
-    MAYBE_PageWithDrainedDatapipeRequestsForScriptStreamerShouldBeEvictedIfStreamedTooMuch) {
+    PageWithDrainedDatapipeRequestsForScriptStreamerShouldBeEvictedIfStreamedTooMuch) {
   net::test_server::ControllableHttpResponse response(embedded_test_server(),
                                                       "/small_script.js");
   ASSERT_TRUE(embedded_test_server()->Start());

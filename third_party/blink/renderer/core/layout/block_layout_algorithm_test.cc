@@ -13,7 +13,6 @@
 #include "third_party/blink/renderer/core/layout/constraint_space.h"
 #include "third_party/blink/renderer/core/layout/constraint_space_builder.h"
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
-#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_result.h"
 #include "third_party/blink/renderer/core/layout/length_utils.h"
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
@@ -109,55 +108,46 @@ TEST_F(BlockLayoutAlgorithmTest, Caching) {
   )HTML");
 
   AdvanceToLayoutPhase();
+  ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
+      {WritingMode::kHorizontalTb, TextDirection::kLtr},
+      LogicalSize(LayoutUnit(100), LayoutUnit(100)));
 
   auto* block_flow = To<LayoutBlockFlow>(GetLayoutObjectByElementId("box"));
   BlockNode node(block_flow);
 
-  {
-    const ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
-        {WritingMode::kHorizontalTb, TextDirection::kLtr},
-        LogicalSize(LayoutUnit(100), LayoutUnit(100)));
+  const LayoutResult* result = node.Layout(space, nullptr);
+  EXPECT_EQ(PhysicalSize(30, 40), result->GetPhysicalFragment().Size());
 
-    const LayoutResult* result = node.Layout(space, nullptr);
-    EXPECT_EQ(PhysicalSize(30, 40), result->GetPhysicalFragment().Size());
+  // Test pointer-equal constraint space.
+  result = RunCachedLayoutResult(space, node);
+  EXPECT_NE(result, nullptr);
 
-    // Test pointer-equal constraint space.
-    result = RunCachedLayoutResult(space, node);
-    EXPECT_NE(result, nullptr);
-  }
+  // Test identical, but not pointer-equal, constraint space.
+  space = ConstructBlockLayoutTestConstraintSpace(
+      {WritingMode::kHorizontalTb, TextDirection::kLtr},
+      LogicalSize(LayoutUnit(100), LayoutUnit(100)));
+  result = RunCachedLayoutResult(space, node);
+  EXPECT_NE(result, nullptr);
 
-  {
-    // Test identical, but not pointer-equal, constraint space.
-    const ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
-        {WritingMode::kHorizontalTb, TextDirection::kLtr},
-        LogicalSize(LayoutUnit(100), LayoutUnit(100)));
-    const LayoutResult* result = RunCachedLayoutResult(space, node);
-    EXPECT_NE(result, nullptr);
-  }
+  // Test different constraint space.
+  space = ConstructBlockLayoutTestConstraintSpace(
+      {WritingMode::kHorizontalTb, TextDirection::kLtr},
+      LogicalSize(LayoutUnit(200), LayoutUnit(100)));
+  result = RunCachedLayoutResult(space, node);
+  EXPECT_NE(result, nullptr);
 
-  {
-    // Test different constraint space.
-    const ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
-        {WritingMode::kHorizontalTb, TextDirection::kLtr},
-        LogicalSize(LayoutUnit(200), LayoutUnit(100)));
-    const LayoutResult* result = RunCachedLayoutResult(space, node);
-    EXPECT_NE(result, nullptr);
-  }
+  // Test a different constraint space that will actually result in a different
+  // sized fragment.
+  space = ConstructBlockLayoutTestConstraintSpace(
+      {WritingMode::kHorizontalTb, TextDirection::kLtr},
+      LogicalSize(LayoutUnit(200), LayoutUnit(200)));
+  result = RunCachedLayoutResult(space, node);
+  EXPECT_EQ(result, nullptr);
 
-  {
-    // Test a different constraint space that will actually result in a
-    // different sized fragment.
-    const ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
-        {WritingMode::kHorizontalTb, TextDirection::kLtr},
-        LogicalSize(LayoutUnit(200), LayoutUnit(200)));
-    const LayoutResult* result = RunCachedLayoutResult(space, node);
-    EXPECT_EQ(result, nullptr);
-
-    // Test layout invalidation
-    block_flow->SetNeedsLayout("");
-    result = RunCachedLayoutResult(space, node);
-    EXPECT_EQ(result, nullptr);
-  }
+  // Test layout invalidation
+  block_flow->SetNeedsLayout("");
+  result = RunCachedLayoutResult(space, node);
+  EXPECT_EQ(result, nullptr);
 }
 
 TEST_F(BlockLayoutAlgorithmTest, MinInlineSizeCaching) {
@@ -165,49 +155,41 @@ TEST_F(BlockLayoutAlgorithmTest, MinInlineSizeCaching) {
     <div id="box" style="min-width:30%; width: 10px; height:40px;"></div>
   )HTML");
 
+  ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
+      {WritingMode::kHorizontalTb, TextDirection::kLtr},
+      LogicalSize(LayoutUnit(100), LayoutUnit(100)));
+
   auto* block_flow = To<LayoutBlockFlow>(GetLayoutObjectByElementId("box"));
   BlockNode node(block_flow);
 
-  {
-    const ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
-        {WritingMode::kHorizontalTb, TextDirection::kLtr},
-        LogicalSize(LayoutUnit(100), LayoutUnit(100)));
+  const LayoutResult* result = node.Layout(space, nullptr);
+  EXPECT_EQ(PhysicalSize(30, 40), result->GetPhysicalFragment().Size());
 
-    const LayoutResult* result = node.Layout(space, nullptr);
-    EXPECT_EQ(PhysicalSize(30, 40), result->GetPhysicalFragment().Size());
+  // Test pointer-equal constraint space.
+  result = RunCachedLayoutResult(space, node);
+  EXPECT_NE(result, nullptr);
 
-    // Test pointer-equal constraint space.
-    result = RunCachedLayoutResult(space, node);
-    EXPECT_NE(result, nullptr);
-  }
+  // Test identical, but not pointer-equal, constraint space.
+  space = ConstructBlockLayoutTestConstraintSpace(
+      {WritingMode::kHorizontalTb, TextDirection::kLtr},
+      LogicalSize(LayoutUnit(100), LayoutUnit(100)));
+  result = RunCachedLayoutResult(space, node);
+  EXPECT_NE(result, nullptr);
 
-  {
-    // Test identical, but not pointer-equal, constraint space.
-    const ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
-        {WritingMode::kHorizontalTb, TextDirection::kLtr},
-        LogicalSize(LayoutUnit(100), LayoutUnit(100)));
-    const LayoutResult* result = RunCachedLayoutResult(space, node);
-    EXPECT_NE(result, nullptr);
-  }
+  // Test different constraint space.
+  space = ConstructBlockLayoutTestConstraintSpace(
+      {WritingMode::kHorizontalTb, TextDirection::kLtr},
+      LogicalSize(LayoutUnit(100), LayoutUnit(200)));
+  result = RunCachedLayoutResult(space, node);
+  EXPECT_NE(result, nullptr);
 
-  {
-    // Test different constraint space.
-    const ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
-        {WritingMode::kHorizontalTb, TextDirection::kLtr},
-        LogicalSize(LayoutUnit(100), LayoutUnit(200)));
-    const LayoutResult* result = RunCachedLayoutResult(space, node);
-    EXPECT_NE(result, nullptr);
-  }
-
-  {
-    // Test a different constraint space that will actually result in a
-    // different size.
-    const ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
-        {WritingMode::kHorizontalTb, TextDirection::kLtr},
-        LogicalSize(LayoutUnit(200), LayoutUnit(100)));
-    const LayoutResult* result = RunCachedLayoutResult(space, node);
-    EXPECT_EQ(result, nullptr);
-  }
+  // Test a different constraint space that will actually result in a different
+  // size.
+  space = ConstructBlockLayoutTestConstraintSpace(
+      {WritingMode::kHorizontalTb, TextDirection::kLtr},
+      LogicalSize(LayoutUnit(200), LayoutUnit(100)));
+  result = RunCachedLayoutResult(space, node);
+  EXPECT_EQ(result, nullptr);
 }
 
 TEST_F(BlockLayoutAlgorithmTest, PercentageBlockSizeQuirkDescendantsCaching) {
@@ -935,8 +917,7 @@ TEST_F(BlockLayoutAlgorithmTest, CollapsingMarginsEmptyBlockWithClearance) {
     LayoutBlockFlow* child;
     // #float
     child = To<LayoutBlockFlow>(GetLayoutObjectByElementId("float"));
-    EXPECT_EQ(PhysicalSize(LayoutUnit(50), LayoutUnit(50)),
-              child->StitchedSize());
+    EXPECT_EQ(PhysicalSize(LayoutUnit(50), LayoutUnit(50)), child->Size());
     EXPECT_EQ(PhysicalOffset(0, 0), child->PhysicalLocation());
 
     // We need to manually test the position of #zero, #abs, #inflow.
@@ -2050,7 +2031,7 @@ TEST_F(BlockLayoutAlgorithmTest, DISABLED_FloatFragmentationParallelFlows) {
   LayoutUnit kFragmentainerSpaceAvailable(150);
 
   BlockNode node(To<LayoutBlockFlow>(GetLayoutObjectByElementId("container")));
-  const ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
+  ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
       {WritingMode::kHorizontalTb, TextDirection::kLtr},
       LogicalSize(LayoutUnit(1000), kIndefiniteSize),
       /* stretch_inline_size_if_auto */ true,
@@ -2073,13 +2054,13 @@ TEST_F(BlockLayoutAlgorithmTest, DISABLED_FloatFragmentationParallelFlows) {
   EXPECT_EQ(PhysicalSize(75, 150), child->Size());
   EXPECT_EQ(PhysicalOffset(65, 10), offset);
 
-  const ConstraintSpace space2 = ConstructBlockLayoutTestConstraintSpace(
+  space = ConstructBlockLayoutTestConstraintSpace(
       {WritingMode::kHorizontalTb, TextDirection::kLtr},
       LogicalSize(LayoutUnit(1000), kIndefiniteSize),
       /* stretch_inline_size_if_auto */ true,
       node.CreatesNewFormattingContext(), kFragmentainerSpaceAvailable);
 
-  fragment = RunBlockLayoutAlgorithm(node, space2, fragment->GetBreakToken());
+  fragment = RunBlockLayoutAlgorithm(node, space, fragment->GetBreakToken());
   EXPECT_EQ(PhysicalSize(150, 0), fragment->Size());
   ASSERT_FALSE(fragment->GetBreakToken());
 
@@ -2175,7 +2156,7 @@ TEST_F(BlockLayoutAlgorithmTest, DISABLED_FloatFragmentationZeroHeight) {
   LayoutUnit kFragmentainerSpaceAvailable(150);
 
   BlockNode node(To<LayoutBlockFlow>(GetLayoutObjectByElementId("container")));
-  const ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
+  ConstraintSpace space = ConstructBlockLayoutTestConstraintSpace(
       {WritingMode::kHorizontalTb, TextDirection::kLtr},
       LogicalSize(LayoutUnit(1000), kIndefiniteSize),
       /* stretch_inline_size_if_auto */ true,
@@ -2195,13 +2176,13 @@ TEST_F(BlockLayoutAlgorithmTest, DISABLED_FloatFragmentationZeroHeight) {
   EXPECT_EQ(PhysicalSize(75, 150), child->Size());
   EXPECT_EQ(PhysicalOffset(10, 10), offset);
 
-  const ConstraintSpace space2 = ConstructBlockLayoutTestConstraintSpace(
+  space = ConstructBlockLayoutTestConstraintSpace(
       {WritingMode::kHorizontalTb, TextDirection::kLtr},
       LogicalSize(LayoutUnit(1000), kIndefiniteSize),
       /* stretch_inline_size_if_auto */ true,
       node.CreatesNewFormattingContext(), kFragmentainerSpaceAvailable);
 
-  fragment = RunBlockLayoutAlgorithm(node, space2, fragment->GetBreakToken());
+  fragment = RunBlockLayoutAlgorithm(node, space, fragment->GetBreakToken());
   EXPECT_EQ(PhysicalSize(150, 0), fragment->Size());
   ASSERT_FALSE(fragment->GetBreakToken());
 
@@ -2405,6 +2386,7 @@ TEST_F(BlockLayoutAlgorithmTest, RootFragmentOffsetInsideLegacy) {
   UpdateAllLifecyclePhasesForTest();
   const LayoutObject* innerNGRoot = GetLayoutObjectByElementId("innerNGRoot");
 
+  ASSERT_TRUE(innerNGRoot->IsLayoutNGObject());
   const PhysicalBoxFragment* fragment =
       CurrentFragmentFor(To<LayoutBlockFlow>(innerNGRoot));
 
@@ -2439,51 +2421,6 @@ input::first-line {
   auto* input = GetElementById("i1");
   input->setAttribute(html_names::kPlaceholderAttr, AtomicString("z"));
   UpdateAllLifecyclePhasesForTest();
-}
-
-TEST_F(BlockLayoutAlgorithmTest, LineClampByLinesOverflowsUseCounter) {
-  // This use counter is triggered whenever (-webkit)-line-clamp is set with a
-  // number of lines, and there is also a height constraint where that number of
-  // lines will not fit.
-  EXPECT_FALSE(
-      GetDocument().IsUseCounted(WebFeature::kLineClampByLinesOverflows));
-
-  SetBodyInnerHTML(R"HTML(
-<style>
-  #test {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    max-height: 1.9lh;
-  }
-</style>
-<div id="test">Line 1 <br> Line 2 <br> Line 3</div>
-)HTML");
-
-  EXPECT_TRUE(
-      GetDocument().IsUseCounted(WebFeature::kLineClampByLinesOverflows));
-}
-
-TEST_F(BlockLayoutAlgorithmTest, LineClampByLinesOverflowsUseCounter2) {
-  // If there is a height constraint, but that is equal or higher to the height
-  // that those lines would have, then this use counter does not trigger.
-  EXPECT_FALSE(
-      GetDocument().IsUseCounted(WebFeature::kLineClampByLinesOverflows));
-
-  SetBodyInnerHTML(R"HTML(
-<style>
-  #test {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    max-height: 2.1lh;
-  }
-</style>
-<div id="test">Line 1 <br> Line 2 <br> Line 3</div>
-)HTML");
-
-  EXPECT_FALSE(
-      GetDocument().IsUseCounted(WebFeature::kLineClampByLinesOverflows));
 }
 
 }  // namespace

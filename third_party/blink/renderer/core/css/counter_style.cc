@@ -29,7 +29,6 @@
 #include "third_party/blink/renderer/core/css/counter_style.h"
 
 #include "base/auto_reset.h"
-#include "third_party/blink/renderer/core/css/cascade_layer.h"
 #include "third_party/blink/renderer/core/css/counter_style_map.h"
 #include "third_party/blink/renderer/core/css/css_custom_ident_value.h"
 #include "third_party/blink/renderer/core/css/css_identifier_value.h"
@@ -49,8 +48,8 @@ namespace {
 
 // User agents must support representations at least 60 Unicode codepoints long,
 // but they may choose to instead use the fallback style for representations
-// that would be longer than 60 codepoints. Since blink::String may use UTF-16,
-// we limit string length at 120.
+// that would be longer than 60 codepoints. Since WTF::String may use UTF-16, we
+// limit string length at 120.
 const wtf_size_t kCounterLengthLimit = 120;
 
 const CounterStyle& GetDisc() {
@@ -169,7 +168,7 @@ Vector<wtf_size_t> AlphabeticAlgorithm(unsigned value, wtf_size_t num_symbols) {
     // Since length is logarithmic to value, we won't exceed the length limit.
     DCHECK_LE(result.size(), kCounterLengthLimit);
   }
-  std::ranges::reverse(result);
+  std::reverse(result.begin(), result.end());
   return result;
 }
 
@@ -188,7 +187,7 @@ Vector<wtf_size_t> NumericAlgorithm(unsigned value, wtf_size_t num_symbols) {
     // Since length is logarithmic to value, we won't exceed the length limit.
     DCHECK_LE(result.size(), kCounterLengthLimit);
   }
-  std::ranges::reverse(result);
+  std::reverse(result.begin(), result.end());
   return result;
 }
 
@@ -474,10 +473,9 @@ String HebrewAlgorithm(unsigned number) {
     return HebrewAlgorithmUnder1000(number);
   }
 
-  return StrCat(
-      {HebrewAlgorithmUnder1000(number / 1000),
-       StringView(base::span_from_ref(uchar::kHebrewPunctuationGeresh)),
-       HebrewAlgorithmUnder1000(number % 1000)});
+  return HebrewAlgorithmUnder1000(number / 1000) +
+         kHebrewPunctuationGereshCharacter +
+         HebrewAlgorithmUnder1000(number % 1000);
 }
 
 String ArmenianAlgorithmUnder10000(unsigned number,
@@ -531,8 +529,8 @@ String ArmenianAlgorithm(unsigned number, bool upper) {
   if (!number || number > 99999999) {
     return String();
   }
-  return StrCat({ArmenianAlgorithmUnder10000(number / 10000, upper, true),
-                 ArmenianAlgorithmUnder10000(number % 10000, upper, false)});
+  return ArmenianAlgorithmUnder10000(number / 10000, upper, true) +
+         ArmenianAlgorithmUnder10000(number % 10000, upper, false);
 }
 
 // https://drafts.csswg.org/css-counter-styles-3/#ethiopic-numeric-counter-style
@@ -557,10 +555,10 @@ String EthiopicNumericAlgorithm(unsigned value) {
     value /= 100;
     if (!odd_group) {
       // This adds an extra character for group 0. We'll remove it in the end.
-      result.push_back(uchar::kEthiopicNumberTenThousand);
+      result.push_back(kEthiopicNumberTenThousandCharacter);
     } else {
       if (group_value) {
-        result.push_back(uchar::kEthiopicNumberHundred);
+        result.push_back(kEthiopicNumberHundredCharacter);
       }
     }
     bool most_significant_group = !value;
@@ -577,7 +575,7 @@ String EthiopicNumericAlgorithm(unsigned value) {
     }
   }
 
-  std::ranges::reverse(result);
+  std::reverse(result.begin(), result.end());
   // Remove the extra character from group 0
   result.pop_back();
   return String(result);
@@ -679,26 +677,22 @@ AtomicString CounterStyle::GetName() const {
 }
 
 // static
-CounterStyle* CounterStyle::Create(
-    const CascadeLayered<const StyleRuleCounterStyle>& rule) {
-  if (!rule.value->HasValidSymbols()) {
+CounterStyle* CounterStyle::Create(const StyleRuleCounterStyle& rule) {
+  if (!rule.HasValidSymbols()) {
     return nullptr;
   }
 
   return MakeGarbageCollected<CounterStyle>(rule);
 }
 
-CounterStyle::CounterStyle(
-    const CascadeLayered<const StyleRuleCounterStyle>& rule)
-    : style_rule_(rule.value),
-      cascade_layer_(rule.layer),
-      style_rule_version_(rule.value->GetVersion()) {
+CounterStyle::CounterStyle(const StyleRuleCounterStyle& rule)
+    : style_rule_(rule), style_rule_version_(rule.GetVersion()) {
   // TODO(sesse): Send the LocalFrame down here, so that we can use
   // MediaValues::CreateDynamicIfFrameExists() instead, which includes
   // the effects of local font settings.
   MediaValues* media_values = MakeGarbageCollected<MediaValuesCached>();
 
-  if (const CSSValue* system = style_rule_->GetSystem()) {
+  if (const CSSValue* system = rule.GetSystem()) {
     system_ = ToCounterStyleSystemEnum(system);
 
     if (system_ == CounterStyleSystem::kUnresolvedExtends) {
@@ -711,27 +705,26 @@ CounterStyle::CounterStyle(
     }
   }
 
-  if (const CSSValue* fallback = style_rule_->GetFallback()) {
+  if (const CSSValue* fallback = rule.GetFallback()) {
     fallback_name_ = To<CSSCustomIdentValue>(fallback)->Value();
   }
 
   if (HasSymbols(system_)) {
     if (system_ == CounterStyleSystem::kAdditive) {
-      for (const auto& symbol :
-           To<CSSValueList>(*style_rule_->GetAdditiveSymbols())) {
+      for (const auto& symbol : To<CSSValueList>(*rule.GetAdditiveSymbols())) {
         const auto& pair = To<CSSValuePair>(*symbol.Get());
         additive_weights_.push_back(
             To<CSSPrimitiveValue>(pair.First()).ComputeInteger(*media_values));
         symbols_.push_back(SymbolToString(pair.Second()));
       }
     } else {
-      for (const auto& symbol : To<CSSValueList>(*style_rule_->GetSymbols())) {
+      for (const auto& symbol : To<CSSValueList>(*rule.GetSymbols())) {
         symbols_.push_back(SymbolToString(*symbol.Get()));
       }
     }
   }
 
-  if (const CSSValue* negative = style_rule_->GetNegative()) {
+  if (const CSSValue* negative = rule.GetNegative()) {
     if (const CSSValuePair* pair = DynamicTo<CSSValuePair>(negative)) {
       negative_prefix_ = SymbolToString(pair->First());
       negative_suffix_ = SymbolToString(pair->Second());
@@ -740,14 +733,14 @@ CounterStyle::CounterStyle(
     }
   }
 
-  if (const CSSValue* pad = style_rule_->GetPad()) {
+  if (const CSSValue* pad = rule.GetPad()) {
     const CSSValuePair& pair = To<CSSValuePair>(*pad);
     pad_length_ =
         To<CSSPrimitiveValue>(pair.First()).ComputeInteger(*media_values);
     pad_symbol_ = SymbolToString(pair.Second());
   }
 
-  if (const CSSValue* range = style_rule_->GetRange()) {
+  if (const CSSValue* range = rule.GetRange()) {
     if (range->IsIdentifierValue()) {
       DCHECK_EQ(CSSValueID::kAuto, To<CSSIdentifierValue>(range)->GetValueID());
       // Empty |range_| already means 'auto'.
@@ -759,15 +752,15 @@ CounterStyle::CounterStyle(
     }
   }
 
-  if (const CSSValue* prefix = style_rule_->GetPrefix()) {
+  if (const CSSValue* prefix = rule.GetPrefix()) {
     prefix_ = SymbolToString(*prefix);
   }
-  if (const CSSValue* suffix = style_rule_->GetSuffix()) {
+  if (const CSSValue* suffix = rule.GetSuffix()) {
     suffix_ = SymbolToString(*suffix);
   }
 
   if (RuntimeEnabledFeatures::CSSAtRuleCounterStyleSpeakAsDescriptorEnabled()) {
-    if (const CSSValue* speak_as = style_rule_->GetSpeakAs()) {
+    if (const CSSValue* speak_as = rule.GetSpeakAs()) {
       if (const auto* keyword = DynamicTo<CSSIdentifierValue>(speak_as)) {
         speak_as_ = ToCounterStyleSpeakAsEnum(*keyword);
       } else {
@@ -1092,10 +1085,10 @@ String CounterStyle::GenerateTextAlternative(int value) const {
   // custom prefix or suffix. Use the suffix of the predefined symbolic
   // styles instead.
   if (EffectiveSpeakAs() == CounterStyleSpeakAs::kBullets) {
-    return StrCat({text_without_prefix_suffix, " "});
+    return text_without_prefix_suffix + " ";
   }
 
-  return StrCat({prefix_, text_without_prefix_suffix, suffix_});
+  return prefix_ + text_without_prefix_suffix + suffix_;
 }
 
 String CounterStyle::GenerateTextAlternativeWithoutPrefixSuffix(
@@ -1122,7 +1115,6 @@ String CounterStyle::GenerateTextAlternativeWithoutPrefixSuffix(
 
 void CounterStyle::Trace(Visitor* visitor) const {
   visitor->Trace(style_rule_);
-  visitor->Trace(cascade_layer_);
   visitor->Trace(extended_style_);
   visitor->Trace(fallback_style_);
   visitor->Trace(speak_as_style_);

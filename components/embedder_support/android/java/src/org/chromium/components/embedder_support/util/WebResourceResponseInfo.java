@@ -12,20 +12,18 @@ import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 
 import java.io.InputStream;
-import java.util.Collections;
 import java.util.Map;
 
 /** The response information that is to be returned for a particular resource fetch. */
 @JNINamespace("embedder_support")
 @NullMarked
 public class WebResourceResponseInfo {
-
     private final @Nullable String mMimeType;
     private final @Nullable String mCharset;
     private @Nullable InputStream mData;
-    private final int mStatusCode;
-    private final @Nullable String mReasonPhrase;
-    private final Map<String, String> mResponseHeaders;
+    private int mStatusCode;
+    private @Nullable String mReasonPhrase;
+    private @Nullable Map<String, String> mResponseHeaders;
 
     /**
      * Helps assert that the native code only transfers the stream once. Only modified on the IO
@@ -35,13 +33,9 @@ public class WebResourceResponseInfo {
 
     public WebResourceResponseInfo(
             @Nullable String mimeType, @Nullable String encoding, @Nullable InputStream data) {
-        this(
-                mimeType,
-                encoding,
-                data,
-                /* statusCode= */ 0,
-                /* reasonPhrase= */ null,
-                Collections.emptyMap());
+        mMimeType = mimeType;
+        mCharset = encoding;
+        mData = data;
     }
 
     public WebResourceResponseInfo(
@@ -51,12 +45,11 @@ public class WebResourceResponseInfo {
             int statusCode,
             @Nullable String reasonPhrase,
             @Nullable Map<String, String> responseHeaders) {
-        mMimeType = mimeType;
-        mCharset = encoding;
-        mData = data;
+        this(mimeType, encoding, data);
+
         mStatusCode = statusCode;
         mReasonPhrase = reasonPhrase;
-        mResponseHeaders = responseHeaders != null ? responseHeaders : Collections.emptyMap();
+        mResponseHeaders = responseHeaders;
     }
 
     @CalledByNative
@@ -73,8 +66,7 @@ public class WebResourceResponseInfo {
         return mCharset;
     }
 
-    @Nullable
-    public InputStream getData() {
+    public @Nullable InputStream getData() {
         return mData;
     }
 
@@ -85,8 +77,7 @@ public class WebResourceResponseInfo {
 
     @CalledByNative
     @JniType("std::unique_ptr<embedder_support::InputStream>")
-    @Nullable
-    private InputStream transferStreamToNative() {
+    private @Nullable InputStream transferStreamToNative() {
         // Only allow to call transferStreamToNative once per object, because this method
         // transfers ownership of the stream and once the unique_ptr<InputStream>
         // is deleted it also closes the original java input stream. This
@@ -106,14 +97,13 @@ public class WebResourceResponseInfo {
 
     @CalledByNative
     @JniType("std::optional<std::string>")
-    @Nullable
-    public String getReasonPhrase() {
+    public @Nullable String getReasonPhrase() {
         return mReasonPhrase;
     }
 
     @CalledByNative
-    @JniType("base::flat_map<std::string, std::string>")
-    public Map<String, String> getResponseHeaders() {
+    @JniType("std::optional<base::flat_map<std::string, std::string>>")
+    public @Nullable Map<String, String> getResponseHeaders() {
         return mResponseHeaders;
     }
 }

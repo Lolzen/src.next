@@ -6,7 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CONTAINER_SELECTOR_H_
 
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/tree_scope.h"
+#include "third_party/blink/renderer/core/css/media_query_exp.h"
 #include "third_party/blink/renderer/core/layout/geometry/axis.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/text/writing_mode.h"
@@ -16,7 +16,6 @@
 namespace blink {
 
 class Element;
-class ConditionalExpNode;
 
 // Not to be confused with regular selectors. This refers to container
 // selection by e.g. a given name, or by implicit container selection
@@ -26,8 +25,8 @@ class ConditionalExpNode;
 class CORE_EXPORT ContainerSelector {
  public:
   ContainerSelector() = default;
-  explicit ContainerSelector(HashTableDeletedValueType) {
-    HashTraits<AtomicString>::ConstructDeletedValue(name_);
+  explicit ContainerSelector(WTF::HashTableDeletedValueType) {
+    WTF::HashTraits<AtomicString>::ConstructDeletedValue(name_);
   }
   // Used for the purpose of finding the closest container for container units.
   explicit ContainerSelector(PhysicalAxes physical_axes)
@@ -38,36 +37,17 @@ class CORE_EXPORT ContainerSelector {
   ContainerSelector(AtomicString name,
                     PhysicalAxes physical_axes,
                     LogicalAxes logical_axes,
-                    bool scroll_state,
-                    bool anchored_query)
+                    bool scroll_state)
       : name_(std::move(name)),
         physical_axes_(physical_axes),
         logical_axes_(logical_axes),
         has_sticky_query_(scroll_state),
         has_snap_query_(scroll_state),
-        has_scrollable_query_(scroll_state),
-        has_scrolled_query_(scroll_state),
-        has_anchored_query_(anchored_query) {}
-  ContainerSelector(AtomicString name, const ConditionalExpNode* query);
-
-  enum FeatureFlag {
-    kFeatureUnknown = 1 << 1,
-    kFeatureWidth = 1 << 2,
-    kFeatureHeight = 1 << 3,
-    kFeatureInlineSize = 1 << 4,
-    kFeatureBlockSize = 1 << 5,
-    kFeatureStyle = 1 << 6,
-    kFeatureSticky = 1 << 7,
-    kFeatureSnap = 1 << 8,
-    kFeatureScrollable = 1 << 9,
-    kFeatureScrolled = 1 << 10,
-    kFeatureAnchored = 1 << 11,
-  };
-  using FeatureFlags = unsigned;
-  static FeatureFlags CollectFeatureFlags(const ConditionalExpNode& root);
+        has_scrollable_query_(scroll_state) {}
+  ContainerSelector(AtomicString name, const MediaQueryExpNode&);
 
   bool IsHashTableDeletedValue() const {
-    return HashTraits<AtomicString>::IsDeletedValue(name_);
+    return WTF::HashTraits<AtomicString>::IsDeletedValue(name_);
   }
 
   bool operator==(const ContainerSelector& o) const {
@@ -76,10 +56,9 @@ class CORE_EXPORT ContainerSelector {
            (has_style_query_ == o.has_style_query_) &&
            (has_sticky_query_ == o.has_sticky_query_) &&
            (has_snap_query_ == o.has_snap_query_) &&
-           (has_scrollable_query_ == o.has_scrollable_query_) &&
-           (has_scrolled_query_ == o.has_scrolled_query_) &&
-           (has_anchored_query_ == o.has_anchored_query_);
+           (has_scrollable_query_ == o.has_scrollable_query_);
   }
+  bool operator!=(const ContainerSelector& o) const { return !(*this == o); }
 
   unsigned GetHash() const;
 
@@ -94,23 +73,19 @@ class CORE_EXPORT ContainerSelector {
            logical_axes_ != kLogicalAxesNone;
   }
 
-  bool SelectsNamedContainers() const { return !name_.IsNull(); }
   bool SelectsStyleContainers() const { return has_style_query_; }
   bool SelectsStickyContainers() const { return has_sticky_query_; }
   bool SelectsSnapContainers() const { return has_snap_query_; }
   bool SelectsScrollableContainers() const { return has_scrollable_query_; }
-  bool SelectsScrolledContainers() const { return has_scrolled_query_; }
   bool SelectsScrollStateContainers() const {
     return SelectsStickyContainers() || SelectsSnapContainers() ||
-           SelectsScrollableContainers() || SelectsScrolledContainers();
+           SelectsScrollableContainers();
   }
-  bool SelectsAnchoredContainers() const { return has_anchored_query_; }
   bool HasUnknownFeature() const { return has_unknown_feature_; }
   bool SelectsAnyContainer() const {
     return !HasUnknownFeature() &&
-           (SelectsNamedContainers() || SelectsSizeContainers() ||
-            SelectsStyleContainers() || SelectsScrollStateContainers() ||
-            SelectsAnchoredContainers());
+           (SelectsSizeContainers() || SelectsStyleContainers() ||
+            SelectsScrollStateContainers());
   }
 
   PhysicalAxes GetPhysicalAxes() const { return physical_axes_; }
@@ -124,8 +99,6 @@ class CORE_EXPORT ContainerSelector {
   bool has_sticky_query_{false};
   bool has_snap_query_{false};
   bool has_scrollable_query_{false};
-  bool has_scrolled_query_{false};
-  bool has_anchored_query_{false};
   bool has_unknown_feature_{false};
 };
 
@@ -138,7 +111,7 @@ class CORE_EXPORT ScopedContainerSelector
 
   unsigned GetHash() const {
     unsigned hash = selector_.GetHash();
-    blink::AddIntToHash(hash, blink::GetHash(tree_scope_.Get()));
+    WTF::AddIntToHash(hash, WTF::GetHash(tree_scope_.Get()));
     return hash;
   }
 
@@ -154,7 +127,7 @@ class CORE_EXPORT ScopedContainerSelector
 };
 
 struct ScopedContainerSelectorHashTraits
-    : MemberHashTraits<ScopedContainerSelector> {
+    : WTF::MemberHashTraits<ScopedContainerSelector> {
   static unsigned GetHash(
       const Member<ScopedContainerSelector>& scoped_selector) {
     return scoped_selector->GetHash();
@@ -180,6 +153,10 @@ struct ScopedContainerSelectorHashTranslator {
   }
 };
 
+}  // namespace blink
+
+namespace WTF {
+
 template <>
 struct HashTraits<blink::ContainerSelector>
     : SimpleClassHashTraits<blink::ContainerSelector> {
@@ -187,9 +164,13 @@ struct HashTraits<blink::ContainerSelector>
     return selector.GetHash();
   }
   static constexpr bool kSafeToCompareToEmptyOrDeleted =
-      HashTraits<blink::AtomicString>::kSafeToCompareToEmptyOrDeleted;
+      HashTraits<AtomicString>::kSafeToCompareToEmptyOrDeleted;
   static const bool kEmptyValueIsZero = false;
 };
+
+}  // namespace WTF
+
+namespace blink {
 
 using ContainerSelectorCache = HeapHashMap<Member<ScopedContainerSelector>,
                                            Member<Element>,

@@ -19,6 +19,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/path_service.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "net/base/io_buffer.h"
@@ -312,8 +313,7 @@ class TestNetworkDelegate : public NetworkDelegateImpl {
       const HttpResponseHeaders* original_response_headers,
       scoped_refptr<HttpResponseHeaders>* override_response_headers,
       const IPEndPoint& endpoint,
-      std::optional<GURL>* preserve_fragment_on_redirect_url,
-      const std::optional<net::SSLInfo>& ssl_info) override;
+      std::optional<GURL>* preserve_fragment_on_redirect_url) override;
   void OnBeforeRedirect(URLRequest* request, const GURL& new_location) override;
   void OnBeforeRetry(URLRequest* request) override;
   void OnResponseStarted(URLRequest* request, int net_error) override;

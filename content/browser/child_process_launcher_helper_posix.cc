@@ -8,6 +8,7 @@
 
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/functional/overloaded.h"
 #include "base/metrics/field_trial.h"
 #include "base/posix/global_descriptors.h"
 #include "base/strings/string_number_conversions.h"
@@ -20,7 +21,6 @@
 #include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_switches.h"
 #include "mojo/public/cpp/platform/platform_channel_endpoint.h"
-#include "third_party/abseil-cpp/absl/functional/overload.h"
 
 namespace content {
 namespace internal {
@@ -51,7 +51,7 @@ base::PlatformFile OpenFileIfNecessary(const base::FilePath& path,
 }  // namespace
 
 std::unique_ptr<PosixFileDescriptorInfo> CreateDefaultPosixFilesToMap(
-    ChildProcessId child_process_id,
+    int child_process_id,
     const mojo::PlatformChannelEndpoint& mojo_channel_remote_endpoint,
     const std::map<std::string, std::variant<base::FilePath, base::ScopedFD>>&
         files_to_preload,
@@ -62,7 +62,14 @@ std::unique_ptr<PosixFileDescriptorInfo> CreateDefaultPosixFilesToMap(
 
 // Mac shared memory doesn't use file descriptors.
 #if !BUILDFLAG(IS_APPLE)
+#if BUILDFLAG(IS_ANDROID)
+  // Android's endpoint may be a file descriptor or a binder. If it's a binder
+  // we share it by other means.
+  const bool share_channel_fd =
+      !mojo_channel_remote_endpoint.platform_handle().is_binder();
+#else
   const bool share_channel_fd = true;
+#endif
   if (share_channel_fd) {
     DCHECK(mojo_channel_remote_endpoint.is_valid());
     files_to_register->Share(
@@ -73,7 +80,7 @@ std::unique_ptr<PosixFileDescriptorInfo> CreateDefaultPosixFilesToMap(
   // TODO(jcivelli): remove this "if defined" by making
   // GetAdditionalMappedFilesForChildProcess a no op on Mac.
   GetContentClient()->browser()->GetAdditionalMappedFilesForChildProcess(
-      *command_line, child_process_id.value(), files_to_register.get());
+      *command_line, child_process_id, files_to_register.get());
 #endif
 
   // Also include the files specified explicitly by |files_to_preload|.
@@ -82,19 +89,19 @@ std::unique_ptr<PosixFileDescriptorInfo> CreateDefaultPosixFilesToMap(
   for (const auto& key_path_iter : files_to_preload) {
     base::MemoryMappedFile::Region region;
     base::PlatformFile file = std::visit(
-        absl::Overload{[&region](const base::FilePath& file_path) {
-                         base::PlatformFile file =
-                             OpenFileIfNecessary(file_path, &region);
-                         if (file == base::kInvalidPlatformFile) {
-                           DLOG(WARNING)
-                               << "Ignoring invalid file " << file_path.value();
-                         }
-                         return file;
-                       },
-                       [&region](const base::ScopedFD& fd) {
-                         region = base::MemoryMappedFile::Region::kWholeFile;
-                         return fd.get();
-                       }},
+        base::Overloaded{[&region](const base::FilePath& file_path) {
+                           base::PlatformFile file =
+                               OpenFileIfNecessary(file_path, &region);
+                           if (file == base::kInvalidPlatformFile) {
+                             DLOG(WARNING) << "Ignoring invalid file "
+                                           << file_path.value();
+                           }
+                           return file;
+                         },
+                         [&region](const base::ScopedFD& fd) {
+                           region = base::MemoryMappedFile::Region::kWholeFile;
+                           return fd.get();
+                         }},
         key_path_iter.second);
     if (file == base::kInvalidPlatformFile) {
       continue;

@@ -4,8 +4,6 @@
 
 package org.chromium.chrome.browser.tabmodel;
 
-import androidx.annotation.IntDef;
-
 import org.chromium.base.Token;
 import org.chromium.base.supplier.LazyOneshotSupplier;
 import org.chromium.build.annotations.NullMarked;
@@ -14,31 +12,12 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabId;
 import org.chromium.components.tab_groups.TabGroupColorId;
 
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
 import java.util.List;
 import java.util.Set;
 
 /** Interface for getting tab groups for the tabs in the {@link TabModel}. */
-// TODO(crbug.com/463685717): Consider merging with TabModel.
 @NullMarked
 public interface TabGroupModelFilter extends SupportsTabModelObserver {
-
-    @IntDef({
-        MergeNotificationType.DONT_NOTIFY,
-        MergeNotificationType.NOTIFY_IF_NOT_NEW_GROUP,
-        MergeNotificationType.NOTIFY_ALWAYS
-    })
-    @Target(ElementType.TYPE_USE)
-    @Retention(RetentionPolicy.SOURCE)
-    @interface MergeNotificationType {
-        int DONT_NOTIFY = 0;
-        int NOTIFY_IF_NOT_NEW_GROUP = 1;
-        int NOTIFY_ALWAYS = 2;
-    }
-
     /**
      * This method adds a {@link TabGroupModelFilterObserver} to be notified on {@link
      * TabGroupModelFilter} changes.
@@ -96,6 +75,26 @@ public interface TabGroupModelFilter extends SupportsTabModelObserver {
 
     /** Returns whether a tab group exists with {@code tabGroupId}. */
     boolean tabGroupExists(@Nullable Token tabGroupId);
+
+    /**
+     * Given a tab group's tab group ID, finds out the root ID, or {@link Tab.INVALID_TAB_ID} if the
+     * tab group doesn't exist in the model.
+     *
+     * @param tabGroupId The tab group ID to look for.
+     * @return The root ID of the tab group or {@link Tab.INVALID_TAB_ID} if the group isn't found
+     *     in the tab model.
+     */
+    @TabId
+    int getRootIdFromTabGroupId(@Nullable Token tabGroupId);
+
+    /**
+     * Given a tab group's root ID, finds out the tab group ID, or null if the tab group doesn't
+     * exist in the model.
+     *
+     * @param rootId The root ID of the tab group.
+     * @return The tab group ID of the tab group or null if the group isn't found in the tab model.
+     */
+    @Nullable Token getTabGroupIdFromRootId(@TabId int rootId);
 
     /**
      * Returns the list of {@link Tab}s that are grouped with the given {@code tabId}.
@@ -195,53 +194,25 @@ public interface TabGroupModelFilter extends SupportsTabModelObserver {
      * @param destinationTab The destination {@link Tab} to be append to.
      * @param notify Whether or not to notify observers about the merging events.
      */
-    default void mergeListOfTabsToGroup(
-            List<Tab> tabs, Tab destinationTab, @MergeNotificationType int notify) {
-        mergeListOfTabsToGroup(tabs, destinationTab, /* index=InGroup */ null, notify);
-    }
-
-    /**
-     * This method merges a list of {@link Tab}s into the destination group that contains the
-     * {@code} destinationTab.
-     *
-     * @param tabs List of {@link Tab}s to be merged. The ordering of this list is preserved.
-     * @param destinationTab The destination {@link Tab}. If not in a group, a new group will be
-     *     created.
-     * @param indexInGroup The index within the destination group to insert the tabs.
-     *     <ul>
-     *       <li>0 - inserts at the front.
-     *       <li>`null` or an index >= group size - inserts at the back.
-     *       <li>Any other value is clamped to the valid range [0, group_size].
-     *     </ul>
-     *
-     * @param notify Whether or not to notify observers about the merging events.
-     */
-    void mergeListOfTabsToGroup(
-            List<Tab> tabs,
-            Tab destinationTab,
-            @Nullable Integer indexInGroup,
-            @MergeNotificationType int notify);
+    void mergeListOfTabsToGroup(List<Tab> tabs, Tab destinationTab, boolean notify);
 
     /** Returns a utility interface to help with that ungrouping tabs from a tab group. */
     TabUngrouper getTabUngrouper();
 
     // TODO(crbug.com/372068933): This method should probably have more restricted access.
     /**
-     * Undoes a group operation performed by this TabGroupModelFilter.
+     * This method undo the given grouped {@link Tab}.
      *
-     * @param undoGroupMetadata Metadata to undo the operation provided by {@link
-     *     TabGroupModelFilterObserver#showUndoGroupSnackbar}.
+     * @param tab undo this grouped {@link Tab}.
+     * @param originalIndex The tab index before grouped.
+     * @param originalRootId The rootId before grouped.
+     * @param originalTabGroupId The tabGroupId before grouped.
      */
-    void performUndoGroupOperation(UndoGroupMetadata undoGroupMetadata);
-
-    /**
-     * Notifies that the undo window for a group operation performed by this TabGroupModelFilter has
-     * expired.
-     *
-     * @param undoGroupMetadata Metadata to undo the operation provided by {@link
-     *     TabGroupModelFilterObserver#showUndoGroupSnackbar}.
-     */
-    void undoGroupOperationExpired(UndoGroupMetadata undoGroupMetadata);
+    void undoGroupedTab(
+            Tab tab,
+            int originalIndex,
+            @TabId int originalRootId,
+            @Nullable Token originalTabGroupId);
 
     /** Get all tab group IDs that are associated with tab groups. */
     Set<Token> getAllTabGroupIds();
@@ -273,70 +244,58 @@ public interface TabGroupModelFilter extends SupportsTabModelObserver {
     LazyOneshotSupplier<Set<Token>> getLazyAllTabGroupIds(
             List<Tab> tabsToExclude, boolean includePendingClosures);
 
+    // TODO(crbug.com/399354986): Migrate these methods to use tabGroupIds instead of rootIds.
+
     /**
-     * Returns the current title of the tab group, or {@link
-     * TabGroupTitleUtils#UNSET_TAB_GROUP_TITLE} if a title is not set. Prefer {@link
+     * Returns the current title of the tab group or null if a title is not set. Prefer {@link
      * TabGroupTitleUtils#getDisplayableTitle} in most cases.
      */
-    String getTabGroupTitle(Token tabGroupId);
-
-    /**
-     * {@see #getTabGroupTitle(Token)}. This looks up the tab group via {@code groupedTab}. This is
-     * primarily to be used if the tab group has already been closed. Prefer the {@link
-     * TabGroupTitleUtils#getDisplayableTitle} or {@link #getTabGroupTitle(Token)} method in most
-     * cases.
-     */
-    String getTabGroupTitle(Tab groupedTab);
+    @Nullable String getTabGroupTitle(@TabId int rootId);
 
     /** Stores the given title for the tab group. */
-    void setTabGroupTitle(Token tabGroupId, String title);
+    void setTabGroupTitle(@TabId int rootId, @Nullable String title);
 
     /** Deletes the stored title for the tab group, defaulting it back to "N tabs." */
-    void deleteTabGroupTitle(Token tabGroupId);
+    void deleteTabGroupTitle(@TabId int rootId);
 
     /**
      * This method fetches tab group colors id for the specified tab group. It will be a {@link
      * TabGroupColorId} if found, otherwise a {@link TabGroupColorUtils.INVALID_COLOR_ID} if there
      * is no color entry for the group.
      */
-    int getTabGroupColor(Token tabGroupId);
+    int getTabGroupColor(@TabId int rootId);
 
     /**
      * This method fetches tab group colors for the related tab group root ID. If the color does not
      * exist, then GREY will be returned. This method is intended to be used by UI surfaces that
      * want to show a color, and they need the color returned to be valid.
      *
-     * @param tabGroupId The tab group ID whose related tab group color will be fetched if found.
+     * @param rootId The tab root ID whose related tab group color will be fetched if found.
      * @return The color that should be used for this group.
      */
     @TabGroupColorId
-    int getTabGroupColorWithFallback(Token tabGroupId);
-
-    /**
-     * {@see #getTabGroupColorWithFallback(Token)}. This looks up the tab group via {@code
-     * groupedTab}. This is primarily to be used if the tab group has already been closed. Prefer
-     * the {@link #getTabGroupColorWithFallback(Token)} method in most cases.
-     */
-    @TabGroupColorId
-    int getTabGroupColorWithFallback(Tab groupedTab);
+    int getTabGroupColorWithFallback(@TabId int rootId);
 
     /** Stores the given color for the tab group. */
-    void setTabGroupColor(Token tabGroupId, @TabGroupColorId int color);
+    void setTabGroupColor(@TabId int rootId, @TabGroupColorId int color);
 
     /** Deletes the color that was recorded for the group. */
-    void deleteTabGroupColor(Token tabGroupId);
+    void deleteTabGroupColor(@TabId int rootId);
 
     /** Returns whether the tab group is expanded or collapsed. */
-    boolean getTabGroupCollapsed(Token tabGroupId);
+    boolean getTabGroupCollapsed(@TabId int rootId);
 
     /** Sets whether the tab group is expanded or collapsed. */
-    default void setTabGroupCollapsed(Token tabGroupId, boolean isCollapsed) {
-        setTabGroupCollapsed(tabGroupId, isCollapsed, /* animate= */ false);
+    default void setTabGroupCollapsed(@TabId int rootId, boolean isCollapsed) {
+        setTabGroupCollapsed(rootId, isCollapsed, /* animate= */ false);
     }
 
     /** Sets whether the tab group is expanded or collapsed, with optional animation. */
-    void setTabGroupCollapsed(Token tabGroupId, boolean isCollapsed, boolean animate);
+    void setTabGroupCollapsed(@TabId int rootId, boolean isCollapsed, boolean animate);
 
     /** Deletes the record that the group is collapsed, setting it to expanded. */
-    void deleteTabGroupCollapsed(Token tabGroupId);
+    void deleteTabGroupCollapsed(@TabId int rootId);
+
+    /** Delete the title, color and collapsed state of a tab group. */
+    void deleteTabGroupVisualData(@TabId int rootId);
 }

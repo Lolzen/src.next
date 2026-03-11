@@ -64,7 +64,6 @@
 #include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
 #include "third_party/blink/renderer/platform/fonts/character_range.h"
 #include "third_party/blink/renderer/platform/heap/disallow_new_wrapper.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/text/character.h"
@@ -202,8 +201,7 @@ bool LayoutText::IsWordBreak() const {
 }
 
 void LayoutText::StyleWillChange(StyleDifference diff,
-                                 const ComputedStyle& new_style,
-                                 StyleChangeContext& style_change_context) {
+                                 const ComputedStyle& new_style) {
   NOT_DESTROYED();
 
   if (const ComputedStyle* current_style = Style()) {
@@ -217,10 +215,8 @@ void LayoutText::StyleWillChange(StyleDifference diff,
   }
 }
 
-void LayoutText::StyleDidChange(
-    StyleDifference diff,
-    const ComputedStyle* old_style,
-    const StyleChangeContext& style_change_context) {
+void LayoutText::StyleDidChange(StyleDifference diff,
+                                const ComputedStyle* old_style) {
   NOT_DESTROYED();
   // There is no need to ever schedule paint invalidations from a style change
   // of a text run, since we already did this for the parent of the text run.
@@ -254,7 +250,7 @@ void LayoutText::StyleDidChange(
   if (!old_style && text_autosizer)
     text_autosizer->Record(this);
 
-  if (diff.needs_reshape) {
+  if (diff.NeedsReshape()) {
     valid_ng_items_ = false;
     SetNeedsCollectInlines();
   }
@@ -265,6 +261,9 @@ void LayoutText::StyleDidChange(
 void LayoutText::RemoveAndDestroyTextBoxes() {
   NOT_DESTROYED();
   if (!DocumentBeingDestroyed()) {
+    if (Parent()) {
+      Parent()->DirtyLinesFromChangedChild(this);
+    }
     if (FirstInlineFragmentItemIndex()) {
       DetachAxHooksIfNeeded();
       FragmentItems::LayoutObjectWillBeDestroyed(*this);
@@ -370,6 +369,7 @@ Vector<LayoutText::TextBoxInfo> LayoutText::GetTextBoxInfo() const {
   NOT_DESTROYED();
   // This function may kick the layout (e.g., |LocalRect()|), but Inspector may
   // call this function outside of the layout phase.
+  FontCachePurgePreventer fontCachePurgePreventer;
 
   Vector<TextBoxInfo> results;
   if (const OffsetMapping* mapping = GetOffsetMapping()) {
@@ -488,13 +488,13 @@ String LayoutText::PlainText() const {
     const unsigned end_offset = text_box.dom_start_offset + text_box.dom_length;
     if (last_end_offset && text_box.dom_start_offset > last_end_offset &&
         !IsASCIISpace(text_[end_offset - 1])) {
-      plain_text_builder.Append(uchar::kSpace);
+      plain_text_builder.Append(kSpaceCharacter);
     }
     last_end_offset = end_offset;
 
     String text =
         text_.Substring(text_box.dom_start_offset, text_box.dom_length)
-            .SimplifyWhiteSpace(kDoNotStripWhiteSpace);
+            .SimplifyWhiteSpace(WTF::kDoNotStripWhiteSpace);
     plain_text_builder.Append(text);
   }
   return plain_text_builder.ToString();
@@ -622,7 +622,9 @@ void LayoutText::AbsoluteQuadsForRange(Vector<gfx::QuadF>& quads,
         // ​​are equal, it signifies a collapsed range. In this case, we
         // should skip processing `item`.
         if (start > offset.end || end < offset.start ||
-            (item.IsLineBreak() && start == end)) {
+            (RuntimeEnabledFeatures::
+                 SkipLineBreakItemWhenIsCollapsedEnabled() &&
+             item.IsLineBreak() && start == end)) {
           is_last_end_included = false;
           continue;
         }
@@ -643,7 +645,7 @@ void LayoutText::AbsoluteQuadsForRange(Vector<gfx::QuadF>& quads,
         rect = text_combine->AdjustRectForBoundingBox(rect);
       }
       gfx::QuadF quad;
-      if (const TextFragmentRareData* svg_data = item.GetSvgFragmentData()) {
+      if (const SvgFragmentData* svg_data = item.GetSvgFragmentData()) {
         gfx::RectF float_rect(rect);
         float_rect.Offset(svg_data->rect.OffsetFromOrigin());
         quad = item.BuildSvgTransformForBoundingBox().MapQuad(
@@ -652,7 +654,7 @@ void LayoutText::AbsoluteQuadsForRange(Vector<gfx::QuadF>& quads,
         quad.Scale(1 / scaling_factor, 1 / scaling_factor);
         quad = LocalToAbsoluteQuad(quad);
       } else {
-        rect.Move(cursor.CurrentOffsetInFirstContainerFragment());
+        rect.Move(cursor.CurrentOffsetInBlockFlow());
         quad = LocalRectToAbsoluteQuad(rect);
       }
       if (!is_collapsed) {
@@ -668,8 +670,7 @@ void LayoutText::AbsoluteQuadsForRange(Vector<gfx::QuadF>& quads,
   }
 }
 
-gfx::RectF LayoutText::LocalBoundingBoxRectForAccessibility(
-    IncludeDescendants include_descendants) const {
+gfx::RectF LayoutText::LocalBoundingBoxRectForAccessibility() const {
   NOT_DESTROYED();
   gfx::RectF result;
   CollectLineBoxRects(
@@ -683,8 +684,8 @@ PositionWithAffinity LayoutText::PositionForPoint(
   NOT_DESTROYED();
   // NG codepath requires |kPrePaintClean|.
   // |SelectionModifier| calls this only in legacy codepath.
-  DCHECK(GetDocument().Lifecycle().GetState() >=
-         DocumentLifecycle::kPrePaintClean);
+  DCHECK(!IsLayoutNGObject() || GetDocument().Lifecycle().GetState() >=
+                                    DocumentLifecycle::kPrePaintClean);
 
   if (IsInLayoutNGInlineFormattingContext()) {
     // Because of Texts in "position:relative" can be outside of line box, we
@@ -732,7 +733,7 @@ PositionWithAffinity LayoutText::PositionForPoint(
   return CreatePositionWithAffinity(0);
 }
 
-PhysicalRect LayoutText::LocalCaretRect(int caret_offset, CaretShape) const {
+PhysicalRect LayoutText::LocalCaretRect(int caret_offset) const {
   NOT_DESTROYED();
   return PhysicalRect();
 }
@@ -744,7 +745,7 @@ bool LayoutText::IsAllCollapsibleWhitespace() const {
   }
 
   const ComputedStyle& style = StyleRef();
-  return VisitCharacters(text_, [&style](auto chars) {
+  return WTF::VisitCharacters(text_, [&style](auto chars) {
     return std::ranges::all_of(
         chars, [&style](auto ch) { return style.IsCollapsibleWhiteSpace(ch); });
   });
@@ -810,7 +811,7 @@ void LayoutText::LogicalStartingPointAndHeight(
       logical_starting_point = {physical_offset.left, physical_offset.top};
       return;
     }
-    PhysicalSize outer_size = ContainingBlock()->StitchedSize();
+    PhysicalSize outer_size = ContainingBlock()->Size();
     logical_starting_point =
         WritingModeConverter(StyleRef().GetWritingDirection(), outer_size)
             .ToLogical(physical_offset, cursor.Current().Size());
@@ -876,14 +877,10 @@ UChar LayoutText::PreviousCharacter() const {
   // find previous text layoutObject if one exists
   const LayoutObject* previous_text = PreviousInPreOrder();
   for (; previous_text; previous_text = previous_text->PreviousInPreOrder()) {
-    if (previous_text->IsOutOfFlowPositioned()) {
-      continue;
-    }
-    if (!IsInlineFlowOrEmptyText(previous_text)) {
+    if (!IsInlineFlowOrEmptyText(previous_text))
       break;
-    }
   }
-  UChar prev = uchar::kSpace;
+  UChar prev = kSpaceCharacter;
   if (previous_text && previous_text->IsText()) {
     if (const String& previous_string =
             To<LayoutText>(previous_text)->TransformedText()) {
@@ -899,7 +896,7 @@ void LayoutText::SetTextInternal(String text) {
   text_ = String(std::move(text));
   DCHECK(text_);
   DCHECK(!IsBR() ||
-         (TransformedTextLength() == 1 && text_[0] == uchar::kLineFeed));
+         (TransformedTextLength() == 1 && text_[0] == kNewlineCharacter));
 }
 
 String LayoutText::TransformAndSecureText(const String& original,
@@ -916,20 +913,24 @@ String LayoutText::TransformAndSecureText(const String& original,
       case ETextSecurity::kNone:
         return transformed;
       case ETextSecurity::kCircle:
-        mask = uchar::kWhiteBullet;
+        mask = kWhiteBulletCharacter;
         break;
       case ETextSecurity::kDisc:
-        mask = uchar::kBullet;
+        mask = kBulletCharacter;
         break;
       case ETextSecurity::kSquare:
-        mask = uchar::kBlackSquare;
+        mask = kBlackSquareCharacter;
         break;
     }
     auto [masked, secure_map] = SecureText(transformed, mask);
     if (!secure_map.IsEmpty()) {
-      offset_map =
-          TextOffsetMap(original.length(), offset_map, transformed.length(),
-                        secure_map, masked.length());
+      if (RuntimeEnabledFeatures::TextOffsetMapCrashFixEnabled()) {
+        offset_map =
+            TextOffsetMap(original.length(), offset_map, transformed.length(),
+                          secure_map, masked.length());
+      } else {
+        offset_map = TextOffsetMap(offset_map, secure_map);
+      }
     }
     return masked;
   }
@@ -1050,17 +1051,8 @@ void LayoutText::TextDidChange() {
 void LayoutText::TextDidChangeWithoutInvalidation() {
   NOT_DESTROYED();
   TextOffsetMap offset_map;
-  Settings* settings = GetDocument().GetSettings();
-  const bool is_password_echo_enabled =
-      settings && (settings->GetPasswordEchoEnabledPhysical() ||
-                   settings->GetPasswordEchoEnabledTouch());
-  String original_text =
-      (RuntimeEnabledFeatures::UseOriginalDomOffsetsForOffsetMapEnabled() &&
-       !OriginalText().empty() && is_password_echo_enabled)
-          ? OriginalText()
-          : text_;
-  wtf_size_t original_length = original_text.length();
-  text_ = TransformAndSecureText(original_text, offset_map);
+  wtf_size_t original_length = text_.length();
+  text_ = TransformAndSecureText(text_, offset_map);
   SetVariableLengthTransformResult(original_length, offset_map);
   if (auto* secure_text_timer = SecureTextTimer::ActiveInstanceFor(this)) {
     // text_ may be updated later before timer fires. We invalidate the
@@ -1324,7 +1316,7 @@ bool LayoutText::ContainsCaretOffset(int text_offset) const {
     // The previous character isn't collapsed. Return `false` if it's a newline,
     // otherwise `true`.
     if (std::optional<UChar> ch = mapping->GetCharacterBefore(position)) {
-      return *ch != uchar::kLineFeed;
+      return *ch != kNewlineCharacter;
     }
     // TODO(crbug.com/326745564): It's not clear when the code reaches here, and
     // thus it's not clear whether it should return `true` or `false`.

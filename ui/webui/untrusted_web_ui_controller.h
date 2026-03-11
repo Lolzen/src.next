@@ -21,8 +21,6 @@ class UntrustedWebUIController : public content::WebUIController {
   ~UntrustedWebUIController() override;
   UntrustedWebUIController(UntrustedWebUIController&) = delete;
   UntrustedWebUIController& operator=(const UntrustedWebUIController&) = delete;
-
-  content::WebUIController::TrustPolicy GetTrustPolicy() override;
 };
 
 }  // namespace ui

@@ -26,7 +26,7 @@
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "chrome/android/chrome_jni_headers/DuplicateDownloadDialogBridge_jni.h"
 
-using base::android::JavaRef;
+using base::android::JavaParamRef;
 
 // static
 DuplicateDownloadDialogBridge* DuplicateDownloadDialogBridge::GetInstance() {
@@ -73,7 +73,7 @@ void DuplicateDownloadDialogBridge::Show(
   // Copy |callback| on the heap to pass the pointer through JNI. This callback
   // will be deleted when it's run.
   CHECK(!callback.is_null());
-  int64_t callback_id = reinterpret_cast<int64_t>(
+  jlong callback_id = reinterpret_cast<jlong>(
       new DuplicateDownloadDialogCallback(std::move(callback)));
   validator_.AddJavaCallback(callback_id);
   Java_DuplicateDownloadDialogBridge_showDialog(
@@ -82,8 +82,8 @@ void DuplicateDownloadDialogBridge::Show(
 }
 
 void DuplicateDownloadDialogBridge::OnConfirmed(JNIEnv* env,
-                                                int64_t callback_id,
-                                                bool accepted) {
+                                                jlong callback_id,
+                                                jboolean accepted) {
   if (!validator_.ValidateAndClearJavaCallback(callback_id))
     return;
   // Convert java long long int to c++ pointer, take ownership.
@@ -91,5 +91,3 @@ void DuplicateDownloadDialogBridge::OnConfirmed(JNIEnv* env,
       reinterpret_cast<DuplicateDownloadDialogCallback*>(callback_id));
   std::move(*cb).Run(accepted);
 }
-
-DEFINE_JNI(DuplicateDownloadDialogBridge)

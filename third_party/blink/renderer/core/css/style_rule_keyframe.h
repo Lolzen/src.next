@@ -26,6 +26,8 @@ struct KeyframeOffset {
     return percent == b.percent && name == b.name;
   }
 
+  bool operator!=(const KeyframeOffset& b) const { return !(*this == b); }
+
   TimelineOffset::NamedRange name;
   double percent;
 };

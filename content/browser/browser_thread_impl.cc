@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/no_destructor.h"
@@ -106,13 +107,14 @@ BrowserThreadImpl::BrowserThreadImpl(
 
   DCHECK_CALLED_ON_VALID_THREAD(globals.main_thread_checker_);
 
-  DCHECK_EQ(globals.states[identifier_].load(std::memory_order_relaxed),
-            BrowserThreadState::UNINITIALIZED);
-  globals.states[identifier_].store(BrowserThreadState::RUNNING,
-                                    std::memory_order_relaxed);
+  DCHECK_EQ(
+      UNSAFE_TODO(globals.states[identifier_]).load(std::memory_order_relaxed),
+      BrowserThreadState::UNINITIALIZED);
+  UNSAFE_TODO(globals.states[identifier_])
+      .store(BrowserThreadState::RUNNING, std::memory_order_relaxed);
 
-  DCHECK(!globals.task_runners[identifier_]);
-  globals.task_runners[identifier_] = std::move(task_runner);
+  DCHECK(UNSAFE_TODO(!globals.task_runners[identifier_]));
+  UNSAFE_TODO(globals.task_runners[identifier_]) = std::move(task_runner);
 
   if (identifier_ == BrowserThread::ID::UI) {
 #if BUILDFLAG(IS_POSIX)
@@ -133,15 +135,16 @@ BrowserThreadImpl::~BrowserThreadImpl() {
   BrowserThreadGlobals& globals = GetBrowserThreadGlobals();
   DCHECK_CALLED_ON_VALID_THREAD(globals.main_thread_checker_);
 
-  DCHECK_EQ(globals.states[identifier_].load(std::memory_order_relaxed),
-            BrowserThreadState::RUNNING);
-  globals.states[identifier_].store(BrowserThreadState::SHUTDOWN,
-                                    std::memory_order_relaxed);
+  DCHECK_EQ(
+      UNSAFE_TODO(globals.states[identifier_]).load(std::memory_order_relaxed),
+      BrowserThreadState::RUNNING);
+  UNSAFE_TODO(globals.states[identifier_])
+      .store(BrowserThreadState::SHUTDOWN, std::memory_order_relaxed);
 
   // The mapping is kept alive after shutdown to avoid requiring a lock only for
   // shutdown (the SingleThreadTaskRunner itself may stop accepting tasks at any
   // point -- usually soon before/after destroying the BrowserThreadImpl).
-  DCHECK(globals.task_runners[identifier_]);
+  DCHECK(UNSAFE_TODO(globals.task_runners[identifier_]));
 }
 
 // static
@@ -149,12 +152,13 @@ void BrowserThreadImpl::ResetGlobalsForTesting(BrowserThread::ID identifier) {
   BrowserThreadGlobals& globals = GetBrowserThreadGlobals();
   DCHECK_CALLED_ON_VALID_THREAD(globals.main_thread_checker_);
 
-  DCHECK_EQ(globals.states[identifier].load(std::memory_order_relaxed),
-            BrowserThreadState::SHUTDOWN);
-  globals.states[identifier].store(BrowserThreadState::UNINITIALIZED,
-                                   std::memory_order_relaxed);
+  DCHECK_EQ(
+      UNSAFE_TODO(globals.states[identifier]).load(std::memory_order_relaxed),
+      BrowserThreadState::SHUTDOWN);
+  UNSAFE_TODO(globals.states[identifier])
+      .store(BrowserThreadState::UNINITIALIZED, std::memory_order_relaxed);
 
-  globals.task_runners[identifier] = nullptr;
+  UNSAFE_TODO(globals.task_runners[identifier]) = nullptr;
 }
 
 // static
@@ -178,8 +182,8 @@ bool BrowserThread::IsThreadInitialized(ID identifier) {
   DCHECK_LT(identifier, ID_COUNT);
 
   BrowserThreadGlobals& globals = GetBrowserThreadGlobals();
-  return globals.states[identifier].load(std::memory_order_relaxed) ==
-         BrowserThreadState::RUNNING;
+  return UNSAFE_TODO(globals.states[identifier])
+             .load(std::memory_order_relaxed) == BrowserThreadState::RUNNING;
 }
 
 // static
@@ -193,9 +197,9 @@ bool BrowserThread::CurrentlyOn(ID identifier) {
   // initialized from main thread (which happens before //content and embedders
   // are kicked off and enabled to call the BrowserThread API from other
   // threads).
-  return globals.task_runners[identifier] &&
-
-         globals.task_runners[identifier]->RunsTasksInCurrentSequence();
+  return UNSAFE_TODO(globals.task_runners[identifier]) &&
+         UNSAFE_TODO(
+             globals.task_runners[identifier]->RunsTasksInCurrentSequence());
 }
 
 // static
@@ -221,8 +225,8 @@ bool BrowserThread::GetCurrentThreadIdentifier(ID* identifier) {
   // are kicked off and enabled to call the BrowserThread API from other
   // threads).
   for (int i = 0; i < ID_COUNT; ++i) {
-    if (globals.task_runners[i] &&
-        globals.task_runners[i]->RunsTasksInCurrentSequence()) {
+    if (UNSAFE_TODO(globals.task_runners[i]) &&
+        UNSAFE_TODO(globals.task_runners[i])->RunsTasksInCurrentSequence()) {
       *identifier = static_cast<ID>(i);
       return true;
     }

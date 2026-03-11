@@ -15,11 +15,11 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/strings/string_view_util.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "crypto/hash.h"
+#include "crypto/secure_hash.h"
+#include "crypto/sha2.h"
 
 namespace extensions {
 
@@ -103,9 +103,8 @@ std::optional<ComputedHashes> ComputedHashes::CreateFromFile(
     return std::nullopt;
   }
 
-  std::optional<base::Value> top_dictionary =
-      base::JSONReader::Read(contents, base::JSON_PARSE_CHROMIUM_EXTENSIONS);
-  base::DictValue* dictionary =
+  std::optional<base::Value> top_dictionary = base::JSONReader::Read(contents);
+  base::Value::Dict* dictionary =
       top_dictionary ? top_dictionary->GetIfDict() : nullptr;
   if (!dictionary) {
     *status = Status::PARSE_FAILED;
@@ -121,7 +120,7 @@ std::optional<ComputedHashes> ComputedHashes::CreateFromFile(
     return std::nullopt;
   }
 
-  const base::ListValue* all_hashes =
+  const base::Value::List* all_hashes =
       dictionary->FindList(computed_hashes::kFileHashesKey);
   if (!all_hashes) {
     *status = Status::PARSE_FAILED;
@@ -130,7 +129,7 @@ std::optional<ComputedHashes> ComputedHashes::CreateFromFile(
 
   ComputedHashes::Data data;
   for (const base::Value& file_hash : *all_hashes) {
-    const base::DictValue* file_hash_dict = file_hash.GetIfDict();
+    const base::Value::Dict* file_hash_dict = file_hash.GetIfDict();
     if (!file_hash_dict) {
       *status = Status::PARSE_FAILED;
       return std::nullopt;
@@ -155,7 +154,7 @@ std::optional<ComputedHashes> ComputedHashes::CreateFromFile(
       return std::nullopt;
     }
 
-    const base::ListValue* block_hashes =
+    const base::Value::List* block_hashes =
         file_hash_dict->FindList(computed_hashes::kBlockHashesKey);
     if (!block_hashes) {
       *status = Status::PARSE_FAILED;
@@ -252,19 +251,19 @@ bool ComputedHashes::WriteToFile(const base::FilePath& path) const {
     return false;
   }
 
-  base::ListValue file_list;
+  base::Value::List file_list;
   for (const auto& resource_info : data_.items()) {
     const Data::HashInfo& hash_info = resource_info.second;
     int block_size = hash_info.block_size;
     const std::vector<std::string>& hashes = hash_info.hashes;
 
-    base::ListValue block_hashes;
+    base::Value::List block_hashes;
     block_hashes.reserve(hashes.size());
     for (const auto& hash : hashes) {
       block_hashes.Append(base::Base64Encode(hash));
     }
 
-    base::DictValue dict;
+    base::Value::Dict dict;
     dict.Set(computed_hashes::kPathKey,
              hash_info.relative_unix_path.AsUTF8Unsafe());
     dict.Set(computed_hashes::kBlockSizeKey, block_size);
@@ -274,7 +273,7 @@ bool ComputedHashes::WriteToFile(const base::FilePath& path) const {
   }
 
   std::string json;
-  base::DictValue top_dictionary;
+  base::Value::Dict top_dictionary;
   top_dictionary.Set(computed_hashes::kVersionKey, computed_hashes::kVersion);
   top_dictionary.Set(computed_hashes::kFileHashesKey, std::move(file_list));
 
@@ -297,11 +296,17 @@ std::vector<std::string> ComputedHashes::GetHashesForContent(
   // Even when the contents is empty, we want to output at least one hash
   // block (the hash of the empty string).
   do {
-    DCHECK_LE(offset, contents.size());
+    const char* block_start = &contents[offset];
+    DCHECK(offset <= contents.size());
     size_t bytes_to_read = std::min(contents.size() - offset, block_size);
-    std::string_view data =
-        std::string_view(contents).substr(offset, bytes_to_read);
-    hashes.emplace_back(base::as_string_view(crypto::hash::Sha256(data)));
+    std::unique_ptr<crypto::SecureHash> hash(
+        crypto::SecureHash::Create(crypto::SecureHash::SHA256));
+    hash->Update(block_start, bytes_to_read);
+
+    std::string buffer;
+    buffer.resize(crypto::kSHA256Length);
+    hash->Finish(std::data(buffer), buffer.size());
+    hashes.push_back(std::move(buffer));
 
     // If |contents| is empty, then we want to just exit here.
     if (bytes_to_read == 0) {

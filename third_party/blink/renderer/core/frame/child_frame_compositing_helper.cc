@@ -93,8 +93,8 @@ void ChildFrameCompositingHelper::MaybeSetUpPaintHolding(
 
     paint_holding_timer_.Start(
         FROM_HERE, kNewContentRenderingDelay,
-        BindOnce(&ChildFrameCompositingHelper::PaintHoldingTimerFired,
-                 base::Unretained(this)));
+        WTF::BindOnce(&ChildFrameCompositingHelper::PaintHoldingTimerFired,
+                      base::Unretained(this)));
   } else {
     surface_layer_->SetOldestAcceptableFallback(viz::SurfaceId());
   }

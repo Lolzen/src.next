@@ -5,15 +5,14 @@
 #ifndef CHROME_BROWSER_UI_BROWSER_COMMAND_CONTROLLER_H_
 #define CHROME_BROWSER_UI_BROWSER_COMMAND_CONTROLLER_H_
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "build/build_config.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/command_updater_delegate.h"
 #include "chrome/browser/command_updater_impl.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
-#include "chrome/browser/ui/views/side_panel/side_panel_enums.h"
 #include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_section.h"
-#include "chrome/common/buildflags.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_member.h"
 #include "components/sessions/core/tab_restore_service_observer.h"
@@ -23,15 +22,10 @@
 
 class Browser;
 class BrowserWindow;
-class BrowserWindowInterface;
 class Profile;
 
 namespace input {
 struct NativeWebKeyboardEvent;
-}
-
-namespace glic::mojom {
-enum class FreWebUiState;
 }
 
 namespace chrome {
@@ -43,7 +37,7 @@ class BrowserCommandController : public CommandUpdater,
                                  public TabStripModelObserver,
                                  public sessions::TabRestoreServiceObserver {
  public:
-  explicit BrowserCommandController(BrowserWindowInterface* bwi);
+  explicit BrowserCommandController(Browser* browser);
 
   BrowserCommandController(const BrowserCommandController&) = delete;
   BrowserCommandController& operator=(const BrowserCommandController&) = delete;
@@ -71,21 +65,11 @@ class BrowserCommandController : public CommandUpdater,
   void LockedFullscreenStateChanged();
 #endif
   void PrintingStateChanged();
-#if BUILDFLAG(ENABLE_GLIC)
-  void GlicWindowActivationChanged(bool active);
-  void GlicFreStateChanged(glic::mojom::FreWebUiState new_state);
-#endif
   void LoadingStateChanged(bool is_loading, bool force);
   void FindBarVisibilityChanged();
   void ExtensionStateChanged();
   void TabKeyboardFocusChangedTo(std::optional<int> index);
   void WebContentsFocusChanged();
-
-  // Helper method to show the customize chrome sidepanel and optionally scroll
-  // to a specific section.
-  void ShowCustomizeChromeSidePanel(
-      SidePanelOpenTrigger trigger,
-      std::optional<CustomizeChromeSection> section = std::nullopt);
 
   // Overriden from CommandUpdater:
   bool SupportsCommand(int id) const override;
@@ -120,7 +104,8 @@ class BrowserCommandController : public CommandUpdater,
       TabStripModel* tab_strip_model,
       const TabStripModelChange& change,
       const TabStripSelectionChange& selection) override;
-  void OnTabBlockedStateChanged(tabs::TabInterface* tab, int index) override;
+  void TabBlockedStateChanged(content::WebContents* contents,
+                              int index) override;
 
   // Overridden from TabRestoreServiceObserver:
   void TabRestoreServiceChanged(sessions::TabRestoreService* service) override;
@@ -186,11 +171,6 @@ class BrowserCommandController : public CommandUpdater,
   // Updates the printing command state.
   void UpdatePrintingState();
 
-#if BUILDFLAG(ENABLE_GLIC)
-  // Updates the Glic command state.
-  void UpdateGlicState();
-#endif
-
   // Updates the SHOW_SYNC_SETUP menu entry.
   void OnSigninAllowedPrefChange();
 
@@ -237,13 +217,18 @@ class BrowserCommandController : public CommandUpdater,
                                      actions::ActionId action_id,
                                      bool enabled);
 
-  BrowserWindow* window();
-  Profile* profile();
+  // Helper method to show the customize chrome sidepanel and optionally scroll
+  // to a specific section.
+  void ShowCustomizeChromeSidePanel(
+      std::optional<CustomizeChromeSection> section = std::nullopt);
+
+  inline BrowserWindow* window();
+  inline Profile* profile();
 
   const raw_ptr<Browser> browser_;
 
   // The CommandUpdaterImpl that manages the browser window commands.
-  CommandUpdaterImpl command_updater_{nullptr};
+  CommandUpdaterImpl command_updater_;
 
   PrefChangeRegistrar profile_pref_registrar_;
   PrefChangeRegistrar local_pref_registrar_;
@@ -256,12 +241,6 @@ class BrowserCommandController : public CommandUpdater,
   // display.
   CustomizeChromeSection customize_chrome_section_ =
       CustomizeChromeSection::kUnspecified;
-
-  // Callback subscription for listening to changes to the Glic window
-  // activation changes.
-  base::CallbackListSubscription glic_window_activation_subscription_;
-  // Callback subscription for listening to changes to the Glic FRE
-  base::CallbackListSubscription glic_fre_state_change_subscription_;
 };
 
 }  // namespace chrome

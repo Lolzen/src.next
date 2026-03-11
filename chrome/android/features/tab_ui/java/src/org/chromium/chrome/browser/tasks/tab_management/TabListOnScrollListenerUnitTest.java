@@ -5,6 +5,7 @@
 package org.chromium.chrome.browser.tasks.tab_management;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -40,7 +41,7 @@ public class TabListOnScrollListenerUnitTest {
 
     @Test
     public void testPostUpdate() {
-        assertFalse(mListener.getYOffsetNonZeroSupplier().get());
+        assertNull(mListener.getYOffsetNonZeroSupplier().get());
 
         when(mRecyclerView.computeVerticalScrollOffset()).thenReturn(0);
         mListener.postUpdate(mRecyclerView);
@@ -57,12 +58,12 @@ public class TabListOnScrollListenerUnitTest {
         when(mRecyclerView.getScrollState()).thenReturn(RecyclerView.SCROLL_STATE_IDLE);
 
         mListener.onScrolled(mRecyclerView, /* dx= */ 0, /* dy= */ 0);
-        assertFalse(mListener.getYOffsetNonZeroSupplier().get());
+        assertNull(mListener.getYOffsetNonZeroSupplier().get());
 
         when(mRecyclerView.getScrollState()).thenReturn(RecyclerView.SCROLL_STATE_SETTLING);
 
         mListener.onScrolled(mRecyclerView, /* dx= */ 0, /* dy= */ 1);
-        assertFalse(mListener.getYOffsetNonZeroSupplier().get());
+        assertNull(mListener.getYOffsetNonZeroSupplier().get());
 
         when(mRecyclerView.computeVerticalScrollOffset()).thenReturn(0);
         when(mRecyclerView.getScrollState()).thenReturn(RecyclerView.SCROLL_STATE_IDLE);

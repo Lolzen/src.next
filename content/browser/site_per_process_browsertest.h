@@ -13,6 +13,7 @@
 #include "content/public/test/content_mock_cert_verifier.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test_utils_internal.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -54,7 +55,6 @@ class SitePerProcessBrowserTest
       public ::testing::WithParamInterface<std::string> {
  public:
   SitePerProcessBrowserTest();
-  ~SitePerProcessBrowserTest() override;
 
   SitePerProcessBrowserTest(const SitePerProcessBrowserTest&) = delete;
   SitePerProcessBrowserTest& operator=(const SitePerProcessBrowserTest&) =

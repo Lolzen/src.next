@@ -30,37 +30,21 @@ namespace blink {
 CSSUrlData::CSSUrlData(const AtomicString& unresolved_url,
                        const KURL& resolved_url,
                        const Referrer& referrer,
-                       bool is_from_origin_clean_style_sheet,
+                       OriginClean origin_clean,
                        bool is_ad_related)
     : relative_url_(unresolved_url),
       absolute_url_(resolved_url.GetString()),
       referrer_(referrer),
+      is_from_origin_clean_style_sheet_(origin_clean == OriginClean::kTrue),
+      is_ad_related_(is_ad_related),
       is_local_(unresolved_url.StartsWith('#')),
-      is_from_origin_clean_style_sheet_(is_from_origin_clean_style_sheet),
-      is_ad_related_(is_ad_related),
       potentially_dangling_markup_(resolved_url.PotentiallyDanglingMarkup()) {}
-
-CSSUrlData::CSSUrlData(base::PassKey<CSSUrlData>,
-                       const AtomicString& unresolved_url,
-                       const AtomicString& resolved_url,
-                       const Referrer& referrer,
-                       bool is_from_origin_clean_style_sheet,
-                       bool is_ad_related,
-                       bool is_local,
-                       bool potentially_dangling_markup)
-    : relative_url_(unresolved_url),
-      absolute_url_(resolved_url),
-      referrer_(referrer),
-      is_local_(is_local),
-      is_from_origin_clean_style_sheet_(is_from_origin_clean_style_sheet),
-      is_ad_related_(is_ad_related),
-      potentially_dangling_markup_(potentially_dangling_markup) {}
 
 CSSUrlData::CSSUrlData(const AtomicString& resolved_url)
     : CSSUrlData(resolved_url,
                  KURL(resolved_url),
                  Referrer(),
-                 /*is_from_origin_clean_style_sheet=*/true,
+                 OriginClean::kTrue,
                  /*is_ad_related=*/false) {}
 
 KURL CSSUrlData::ResolveUrl(const Document& document) const {
@@ -98,48 +82,33 @@ bool CSSUrlData::ReResolveUrl(const Document& document) const {
   return true;
 }
 
-const CSSUrlData* CSSUrlData::MakeComputed() const {
-  if (relative_url_.empty() || is_local_ || absolute_url_.empty()) {
-    return this;
+CSSUrlData CSSUrlData::MakeAbsolute() const {
+  if (relative_url_.empty()) {
+    return *this;
   }
-  return MakeGarbageCollected<CSSUrlData>(
-      base::PassKey<CSSUrlData>(), absolute_url_, absolute_url_, Referrer(),
-      is_from_origin_clean_style_sheet_, is_ad_related_, is_local_,
-      potentially_dangling_markup_);
+  return CSSUrlData(absolute_url_, KURL(absolute_url_), Referrer(),
+                    GetOriginClean(), is_ad_related_);
 }
 
-const CSSUrlData* CSSUrlData::MakeResolved(const KURL& base_url,
-                                           const TextEncoding& charset) const {
+CSSUrlData CSSUrlData::MakeResolved(const KURL& base_url,
+                                    const WTF::TextEncoding& charset) const {
   if (relative_url_.empty()) {
-    return this;
+    return *this;
   }
   const KURL resolved_url = charset.IsValid()
                                 ? KURL(base_url, relative_url_, charset)
                                 : KURL(base_url, relative_url_);
   if (is_local_) {
-    return MakeGarbageCollected<CSSUrlData>(
-        relative_url_, resolved_url, Referrer(),
-        is_from_origin_clean_style_sheet_, is_ad_related_);
+    return CSSUrlData(relative_url_, resolved_url, Referrer(), GetOriginClean(),
+                      is_ad_related_);
   }
-  return MakeGarbageCollected<CSSUrlData>(
-      AtomicString(resolved_url.GetString()), resolved_url, Referrer(),
-      is_from_origin_clean_style_sheet_, is_ad_related_);
+  return CSSUrlData(AtomicString(resolved_url.GetString()), resolved_url,
+                    Referrer(), GetOriginClean(), is_ad_related_);
 }
 
-const CSSUrlData* CSSUrlData::MakeResolvedIfDanglingMarkup(
-    const Document& document) const {
-  if (!potentially_dangling_markup_) {
-    return this;
-  }
-  return MakeGarbageCollected<CSSUrlData>(
-      relative_url_, ResolveUrl(document), referrer_,
-      is_from_origin_clean_style_sheet_, is_ad_related_);
-}
-
-const CSSUrlData* CSSUrlData::MakeWithoutReferrer() const {
-  return MakeGarbageCollected<CSSUrlData>(
-      relative_url_, KURL(absolute_url_), Referrer(),
-      is_from_origin_clean_style_sheet_, is_ad_related_);
+CSSUrlData CSSUrlData::MakeWithoutReferrer() const {
+  return CSSUrlData(relative_url_, KURL(absolute_url_), Referrer(),
+                    GetOriginClean(), is_ad_related_);
 }
 
 bool CSSUrlData::IsLocal(const Document& document) const {

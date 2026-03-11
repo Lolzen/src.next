@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/core/css/resolver/cascade_expansion.h"
+#include "third_party/blink/renderer/core/css/properties/css_property_ref.h"
+#include "third_party/blink/renderer/core/css/resolver/cascade_expansion-inl.h"
 
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/css_selector.h"
 #include "third_party/blink/renderer/core/css/css_test_helpers.h"
 #include "third_party/blink/renderer/core/css/css_unset_value.h"
-#include "third_party/blink/renderer/core/css/properties/css_property_ref.h"
-#include "third_party/blink/renderer/core/css/resolver/cascade_expansion-inl.h"
 #include "third_party/blink/renderer/core/css/resolver/match_result.h"
 #include "third_party/blink/renderer/core/css/rule_set.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -81,9 +81,13 @@ class CascadeExpansionTest : public PageTestBase {
     Vector<CSSPropertyID> all;
     for (CSSPropertyID id : CSSPropertyIDList()) {
       const CSSProperty& property = CSSProperty::Get(id);
-      if (IsInAllExpansion(id) && filter.Accepts(property)) {
-        all.push_back(id);
+      if (!IsInAllExpansion(id)) {
+        continue;
       }
+      if (filter.Rejects(property)) {
+        continue;
+      }
+      all.push_back(id);
     }
     return all;
   }
@@ -114,7 +118,6 @@ class CascadeExpansionTest : public PageTestBase {
 TEST_F(CascadeExpansionTest, UARules) {
   MatchResult result;
   result.AddMatchedProperties(ParseDeclarationBlock("cursor:help;top:1px"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kUserAgent});
 
   ASSERT_EQ(1u, result.GetMatchedProperties().size());
@@ -130,10 +133,8 @@ TEST_F(CascadeExpansionTest, UARules) {
 TEST_F(CascadeExpansionTest, UserRules) {
   MatchResult result;
   result.AddMatchedProperties(ParseDeclarationBlock("cursor:help"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kUser});
   result.AddMatchedProperties(ParseDeclarationBlock("float:left"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kUser});
 
   ASSERT_EQ(2u, result.GetMatchedProperties().size());
@@ -157,10 +158,8 @@ TEST_F(CascadeExpansionTest, AuthorRules) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("cursor:help;top:1px"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
   result.AddMatchedProperties(ParseDeclarationBlock("float:left"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
 
   ASSERT_EQ(2u, result.GetMatchedProperties().size());
@@ -185,21 +184,16 @@ TEST_F(CascadeExpansionTest, AuthorRules) {
 TEST_F(CascadeExpansionTest, AllOriginRules) {
   MatchResult result;
   result.AddMatchedProperties(ParseDeclarationBlock("font-size:2px"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kUserAgent});
   result.AddMatchedProperties(ParseDeclarationBlock("cursor:help;top:1px"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kUser});
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("left:1px"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
   result.AddMatchedProperties(ParseDeclarationBlock("float:left"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("bottom:2px"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
 
   ASSERT_EQ(5u, result.GetMatchedProperties().size());
@@ -246,10 +240,8 @@ TEST_F(CascadeExpansionTest, Name) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("--x:1px;--y:2px"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
   result.AddMatchedProperties(ParseDeclarationBlock("float:left"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
 
   ASSERT_EQ(2u, result.GetMatchedProperties().size());
@@ -275,7 +267,6 @@ TEST_F(CascadeExpansionTest, LinkOmitted) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("color:red"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {
                                   .link_match_type = CSSSelector::kMatchVisited,
                                   .origin = CascadeOrigin::kAuthor,
@@ -292,7 +283,6 @@ TEST_F(CascadeExpansionTest, InternalVisited) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("color:red"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
 
   ASSERT_EQ(1u, result.GetMatchedProperties().size());
@@ -307,7 +297,6 @@ TEST_F(CascadeExpansionTest, InternalVisitedOmitted) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("color:red"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {
                                   .link_match_type = CSSSelector::kMatchLink,
                                   .origin = CascadeOrigin::kAuthor,
@@ -324,7 +313,6 @@ TEST_F(CascadeExpansionTest, InternalVisitedWithTrailer) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("color:red;left:1px"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
 
   ASSERT_EQ(1u, result.GetMatchedProperties().size());
@@ -340,7 +328,6 @@ TEST_F(CascadeExpansionTest, All) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("all:unset"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
 
   ASSERT_EQ(1u, result.GetMatchedProperties().size());
@@ -361,7 +348,7 @@ TEST_F(CascadeExpansionTest, InlineAll) {
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(
       ParseDeclarationBlock("left:1px;all:unset;right:1px"),
-      /*mixin_parameter_bindings=*/nullptr, {.origin = CascadeOrigin::kAuthor});
+      {.origin = CascadeOrigin::kAuthor});
 
   ASSERT_EQ(1u, result.GetMatchedProperties().size());
 
@@ -385,7 +372,6 @@ TEST_F(CascadeExpansionTest, FilterFirstLetter) {
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(
       ParseDeclarationBlock("object-fit:unset;font-size:1px"),
-      /*mixin_parameter_bindings=*/nullptr,
       {
           .valid_property_filter =
               static_cast<uint8_t>(ValidPropertyFilter::kFirstLetter),
@@ -402,7 +388,6 @@ TEST_F(CascadeExpansionTest, FilterFirstLine) {
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(
       ParseDeclarationBlock("display:none;font-size:1px"),
-      /*mixin_parameter_bindings=*/nullptr,
       {
           .valid_property_filter =
               static_cast<uint8_t>(ValidPropertyFilter::kFirstLine),
@@ -419,7 +404,6 @@ TEST_F(CascadeExpansionTest, FilterCue) {
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(
       ParseDeclarationBlock("object-fit:unset;font-size:1px"),
-      /*mixin_parameter_bindings=*/nullptr,
       {
           .valid_property_filter =
               static_cast<uint8_t>(ValidPropertyFilter::kCue),
@@ -436,7 +420,6 @@ TEST_F(CascadeExpansionTest, FilterMarker) {
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(
       ParseDeclarationBlock("object-fit:unset;font-size:1px"),
-      /*mixin_parameter_bindings=*/nullptr,
       {
           .valid_property_filter =
               static_cast<uint8_t>(ValidPropertyFilter::kMarker),
@@ -448,13 +431,31 @@ TEST_F(CascadeExpansionTest, FilterMarker) {
   EXPECT_EQ(CSSPropertyID::kFontSize, e[0].name.Id());
 }
 
+TEST_F(CascadeExpansionTest, FilterHighlightLegacy) {
+  MatchResult result;
+  result.BeginAddingAuthorRulesForTreeScope(GetDocument());
+  result.AddMatchedProperties(
+      ParseDeclarationBlock(
+          "display:block;background-color:lime;forced-color-adjust:none"),
+      {
+          .valid_property_filter =
+              static_cast<uint8_t>(ValidPropertyFilter::kHighlightLegacy),
+          .origin = CascadeOrigin::kAuthor,
+      });
+
+  auto e = ExpansionAt(result, 0);
+  ASSERT_EQ(3u, e.size());
+  EXPECT_EQ(CSSPropertyID::kBackgroundColor, e[0].name.Id());
+  EXPECT_EQ(CSSPropertyID::kInternalVisitedBackgroundColor, e[1].name.Id());
+  EXPECT_EQ(CSSPropertyID::kForcedColorAdjust, e[2].name.Id());
+}
+
 TEST_F(CascadeExpansionTest, FilterHighlight) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(
       ParseDeclarationBlock(
           "display:block;background-color:lime;forced-color-adjust:none"),
-      /*mixin_parameter_bindings=*/nullptr,
       {
           .valid_property_filter =
               static_cast<uint8_t>(ValidPropertyFilter::kHighlight),
@@ -472,7 +473,6 @@ TEST_F(CascadeExpansionTest, FilterPositionFallback) {
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(
       ParseDeclarationBlock("display:inline;position:static;left:auto"),
-      /*mixin_parameter_bindings=*/nullptr,
       {
           .valid_property_filter =
               static_cast<uint8_t>(ValidPropertyFilter::kPositionTry),
@@ -488,7 +488,7 @@ TEST_F(CascadeExpansionTest, Importance) {
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(
       ParseDeclarationBlock("cursor:help;display:block !important"),
-      /*mixin_parameter_bindings=*/nullptr, {.origin = CascadeOrigin::kAuthor});
+      {.origin = CascadeOrigin::kAuthor});
 
   ASSERT_EQ(1u, result.GetMatchedProperties().size());
 
@@ -505,7 +505,6 @@ TEST_F(CascadeExpansionTest, AllImportance) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("all:unset !important"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
 
   ASSERT_EQ(1u, result.GetMatchedProperties().size());
@@ -526,7 +525,6 @@ TEST_F(CascadeExpansionTest, AllNonImportance) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("all:unset"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
 
   ASSERT_EQ(1u, result.GetMatchedProperties().size());
@@ -547,7 +545,6 @@ TEST_F(CascadeExpansionTest, AllVisitedOnly) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("all:unset"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {
                                   .link_match_type = CSSSelector::kMatchVisited,
                                   .valid_property_filter = static_cast<uint8_t>(
@@ -571,7 +568,6 @@ TEST_F(CascadeExpansionTest, AllVisitedOrLink) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("all:unset"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {
                                   .link_match_type = CSSSelector::kMatchAll,
                                   .valid_property_filter = static_cast<uint8_t>(
@@ -595,7 +591,6 @@ TEST_F(CascadeExpansionTest, AllLinkOnly) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("all:unset"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {
                                   .link_match_type = CSSSelector::kMatchLink,
                                   .valid_property_filter = static_cast<uint8_t>(
@@ -614,10 +609,8 @@ TEST_F(CascadeExpansionTest, Position) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   result.AddMatchedProperties(ParseDeclarationBlock("left:1px;top:1px"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
   result.AddMatchedProperties(ParseDeclarationBlock("bottom:1px;right:1px"),
-                              /*mixin_parameter_bindings=*/nullptr,
                               {.origin = CascadeOrigin::kAuthor});
 
   ASSERT_EQ(2u, result.GetMatchedProperties().size());
@@ -659,8 +652,7 @@ TEST_F(CascadeExpansionTest, MatchedPropertiesLimit) {
   MatchResult result;
   result.BeginAddingAuthorRulesForTreeScope(GetDocument());
   for (wtf_size_t i = 0; i < max + 3; ++i) {
-    result.AddMatchedProperties(set, /*mixin_parameter_bindings=*/nullptr,
-                                {.origin = CascadeOrigin::kAuthor});
+    result.AddMatchedProperties(set, {.origin = CascadeOrigin::kAuthor});
   }
 
   ASSERT_EQ(max + 3u, result.GetMatchedProperties().size());
@@ -695,11 +687,11 @@ TEST_F(CascadeExpansionTest, MatchedDeclarationsLimit) {
   result.AddMatchedProperties(
       ImmutableCSSPropertyValueSet::Create(
           base::span(declarations).first(max + 1), kHTMLStandardMode),
-      /*mixin_parameter_bindings=*/nullptr, {.origin = CascadeOrigin::kAuthor});
+      {.origin = CascadeOrigin::kAuthor});
   result.AddMatchedProperties(
       ImmutableCSSPropertyValueSet::Create(
           base::span(declarations).first(max + 2), kHTMLStandardMode),
-      /*mixin_parameter_bindings=*/nullptr, {.origin = CascadeOrigin::kAuthor});
+      {.origin = CascadeOrigin::kAuthor});
 
   EXPECT_GT(ExpansionAt(result, 0).size(), 0u);
   EXPECT_EQ(ExpansionAt(result, 1).size(), 0u);

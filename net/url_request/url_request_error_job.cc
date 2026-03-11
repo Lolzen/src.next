@@ -8,22 +8,9 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/task/single_thread_task_runner.h"
-#include "net/base/features.h"
 #include "net/base/net_errors.h"
-#include "net/base/task/task_runner.h"
 
 namespace net {
-
-namespace {
-const scoped_refptr<base::SingleThreadTaskRunner>& TaskRunner(
-    net::RequestPriority priority) {
-  if (features::kNetTaskSchedulerURLRequestErrorJob.Get()) {
-    return net::GetTaskRunner(priority);
-  }
-  return base::SingleThreadTaskRunner::GetCurrentDefault();
-}
-
-}  // namespace
 
 URLRequestErrorJob::URLRequestErrorJob(URLRequest* request, int error)
     : URLRequestJob(request), error_(error) {}
@@ -31,9 +18,9 @@ URLRequestErrorJob::URLRequestErrorJob(URLRequest* request, int error)
 URLRequestErrorJob::~URLRequestErrorJob() = default;
 
 void URLRequestErrorJob::Start() {
-  TaskRunner(request_->priority())
-      ->PostTask(FROM_HERE, base::BindOnce(&URLRequestErrorJob::StartAsync,
-                                           weak_factory_.GetWeakPtr()));
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&URLRequestErrorJob::StartAsync,
+                                weak_factory_.GetWeakPtr()));
 }
 
 void URLRequestErrorJob::Kill() {

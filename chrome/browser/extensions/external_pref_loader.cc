@@ -8,6 +8,7 @@
 #include <set>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -30,7 +31,6 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_file_task_runner.h"
-#include "extensions/buildflags/buildflags.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ash/constants/ash_features.h"
@@ -45,8 +45,6 @@
 #include "components/sync_preferences/pref_service_syncable.h"
 #include "components/sync_preferences/pref_service_syncable_observer.h"
 #endif
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using content::BrowserThread;
 
@@ -71,8 +69,8 @@ bool SkipInstallForChromeOSTablet(const base::FilePath& file_path) {
       "pjkljhegncpnkpknbcohdijeoejaedia.json",  // Gmail file name.
   };
 
-  return std::ranges::contains(kIdsNotToBeInstalledOnTabletFormFactor,
-                               file_path.BaseName().value());
+  return base::Contains(kIdsNotToBeInstalledOnTabletFormFactor,
+                        file_path.BaseName().value());
 #else
   return false;
 #endif
@@ -260,7 +258,7 @@ void ExternalPrefLoader::OnPrioritySyncReady(
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
 // static.
-base::DictValue ExternalPrefLoader::ExtractExtensionPrefs(
+base::Value::Dict ExternalPrefLoader::ExtractExtensionPrefs(
     base::ValueDeserializer* deserializer,
     const base::FilePath& path) {
   std::string error_msg;
@@ -269,18 +267,18 @@ base::DictValue ExternalPrefLoader::ExtractExtensionPrefs(
   if (!extensions) {
     LOG(WARNING) << "Unable to deserialize json data: " << error_msg
                  << " in file " << path.value() << ".";
-    return base::DictValue();
+    return base::Value::Dict();
   }
 
   if (extensions->is_dict())
     return std::move(*extensions).TakeDict();
 
   LOG(WARNING) << "Expected a JSON dictionary in file " << path.value() << ".";
-  return base::DictValue();
+  return base::Value::Dict();
 }
 
 void ExternalPrefLoader::LoadOnFileThread() {
-  base::DictValue prefs;
+  base::Value::Dict prefs;
 
   // TODO(skerner): Some values of base_path_id_ will cause
   // base::PathService::Get() to return false, because the path does
@@ -311,7 +309,8 @@ void ExternalPrefLoader::LoadOnFileThread() {
                                 std::move(prefs)));
 }
 
-void ExternalPrefLoader::ReadExternalExtensionPrefFile(base::DictValue& prefs) {
+void ExternalPrefLoader::ReadExternalExtensionPrefFile(
+    base::Value::Dict& prefs) {
   base::FilePath json_file = base_path_.Append(kExternalExtensionJson);
 
   if (!base::PathExists(json_file)) {
@@ -344,7 +343,7 @@ void ExternalPrefLoader::ReadExternalExtensionPrefFile(base::DictValue& prefs) {
 }
 
 void ExternalPrefLoader::ReadStandaloneExtensionPrefFiles(
-    base::DictValue& prefs) {
+    base::Value::Dict& prefs) {
   // First list the potential .json candidates.
   std::set<base::FilePath> candidates =
       GetPrefsCandidateFilesFromFolder(base_path_);
@@ -354,9 +353,9 @@ void ExternalPrefLoader::ReadStandaloneExtensionPrefFiles(
   }
 
   // TODO(crbug.com/40887866): Remove this once migration is completed.
-  std::unique_ptr<base::ListValue> default_user_types;
+  std::unique_ptr<base::Value::List> default_user_types;
   if (options_ & USE_USER_TYPE_PROFILE_FILTER) {
-    default_user_types = std::make_unique<base::ListValue>();
+    default_user_types = std::make_unique<base::Value::List>();
     default_user_types->Append(base::Value(apps::kUserTypeUnmanaged));
   }
 

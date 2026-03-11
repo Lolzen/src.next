@@ -5,22 +5,29 @@
 #include "net/http/http_status_code.h"
 
 #include <ostream>
-#include <string_view>
 
 #include "base/notreached.h"
 
 namespace net {
 
-std::string_view GetHttpReasonPhrase(HttpStatusCode code,
-                                     std::string_view default_value) {
+const char* GetHttpReasonPhrase(HttpStatusCode code) {
+  if (const char* phrase = TryToGetHttpReasonPhrase(code)) {
+    return phrase;
+  }
+  DUMP_WILL_BE_NOTREACHED() << "unknown HTTP status code " << code;
+  return nullptr;
+}
+
+const char* TryToGetHttpReasonPhrase(HttpStatusCode code) {
   switch (code) {
 #define HTTP_STATUS_ENUM_VALUE(label, code, reason) \
   case HTTP_##label:                                \
     return reason;
 #include "net/http/http_status_code_list.h"
 #undef HTTP_STATUS_ENUM_VALUE
+
     default:
-      return default_value;
+      return nullptr;
   }
 }
 

@@ -17,7 +17,7 @@ enum class LayerPositionVisibility : uint8_t;
 class Element;
 class IntersectionObserver;
 class IntersectionObserverEntry;
-class PostLayoutSnapshotClient;
+class ScrollSnapshotClient;
 
 // Monitors visibility of an anchor element for an anchored element, to support
 // `position-visibility: anchors-visible` [1]. When the anchor is detected
@@ -47,7 +47,7 @@ class AnchorPositionVisibilityObserver final
   // Update visibility based on the visibility of chained anchor positioned
   // elements. See: AnchorPositionScrollData::DefaultAnchorHasChainedAnchor().
   static void UpdateForChainedAnchorVisibility(
-      const HeapHashSet<WeakMember<PostLayoutSnapshotClient>>&);
+      const HeapHashSet<WeakMember<ScrollSnapshotClient>>&);
 
   void Trace(Visitor*) const;
 

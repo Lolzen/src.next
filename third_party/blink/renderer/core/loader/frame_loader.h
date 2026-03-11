@@ -36,6 +36,7 @@
 #include <memory>
 #include <optional>
 
+#include "base/functional/callback_helpers.h"
 #include "services/network/public/mojom/web_sandbox_flags.mojom-blink-forward.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
@@ -51,6 +52,7 @@
 #include "third_party/blink/renderer/core/frame/frame_types.h"
 #include "third_party/blink/renderer/core/loader/frame_loader_types.h"
 #include "third_party/blink/renderer/core/loader/history_item.h"
+#include "third_party/blink/renderer/core/loader/old_document_info_for_commit.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/loader/fetch/loader_freeze_mode.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
@@ -187,9 +189,7 @@ class CORE_EXPORT FrameLoader final {
   // receive the next document commit, or false otherwise.
   bool DetachDocument();
 
-  bool ShouldClose(bool is_reload,
-                   base::TimeTicks& out_before_unload_dialog_opened_time,
-                   base::TimeTicks& out_before_unload_dialog_closed_time);
+  bool ShouldClose(bool is_reload = false);
 
   // Dispatches the Unload event for the current document and fills in this
   // document's info in OldDocumentInfoForCommit if

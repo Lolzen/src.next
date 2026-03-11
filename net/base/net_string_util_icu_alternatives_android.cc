@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -24,7 +23,7 @@ namespace {
 ScopedJavaLocalRef<jstring> ConvertToJstring(std::string_view text,
                                              const char* charset) {
   JNIEnv* env = base::android::AttachCurrentThread();
-  auto java_byte_buffer = ScopedJavaLocalRef<jobject>::Adopt(
+  ScopedJavaLocalRef<jobject> java_byte_buffer(
       env,
       env->NewDirectByteBuffer(const_cast<char*>(text.data()), text.length()));
   base::android::CheckException(env);
@@ -42,7 +41,7 @@ ScopedJavaLocalRef<jstring> ConvertToJstring(std::string_view text,
 ScopedJavaLocalRef<jstring> ConvertToNormalizedJstring(std::string_view text,
                                                        const char* charset) {
   JNIEnv* env = base::android::AttachCurrentThread();
-  auto java_byte_buffer = ScopedJavaLocalRef<jobject>::Adopt(
+  ScopedJavaLocalRef<jobject> java_byte_buffer(
       env,
       env->NewDirectByteBuffer(const_cast<char*>(text.data()), text.length()));
   base::android::CheckException(env);
@@ -60,7 +59,7 @@ ScopedJavaLocalRef<jstring> ConvertToJstringWithSubstitutions(
     std::string_view text,
     const char* charset) {
   JNIEnv* env = base::android::AttachCurrentThread();
-  auto java_byte_buffer = ScopedJavaLocalRef<jobject>::Adopt(
+  ScopedJavaLocalRef<jobject> java_byte_buffer(
       env,
       env->NewDirectByteBuffer(const_cast<char*>(text.data()), text.length()));
   base::android::CheckException(env);
@@ -127,9 +126,9 @@ bool ConvertToUTF16WithSubstitutions(std::string_view text,
 bool ToUpperUsingLocale(std::u16string_view str, std::u16string* output) {
   output->clear();
   JNIEnv* env = base::android::AttachCurrentThread();
-  auto java_new_str = ScopedJavaLocalRef<jstring>::Adopt(
-      env, env->NewString(reinterpret_cast<const uint16_t*>(str.data()),
-                          str.length()));
+  ScopedJavaLocalRef<jstring> java_new_str(
+      env,
+      env->NewString(reinterpret_cast<const jchar*>(str.data()), str.length()));
   if (java_new_str.is_null())
     return false;
   ScopedJavaLocalRef<jstring> java_result =
@@ -141,5 +140,3 @@ bool ToUpperUsingLocale(std::u16string_view str, std::u16string* output) {
 }
 
 }  // namespace net
-
-DEFINE_JNI(NetStringUtil)

@@ -132,22 +132,28 @@ public class AudioFocusDelegate implements AudioManager.OnAudioFocusChangeListen
         switch (focusChange) {
             case AudioManager.AUDIOFOCUS_GAIN:
                 if (mIsDucking) {
-                    AudioFocusDelegateJni.get().onStopDucking(mNativeAudioFocusDelegateAndroid);
+                    AudioFocusDelegateJni.get()
+                            .onStopDucking(
+                                    mNativeAudioFocusDelegateAndroid, AudioFocusDelegate.this);
                     mIsDucking = false;
                 } else {
-                    AudioFocusDelegateJni.get().onResume(mNativeAudioFocusDelegateAndroid);
+                    AudioFocusDelegateJni.get()
+                            .onResume(mNativeAudioFocusDelegateAndroid, AudioFocusDelegate.this);
                 }
                 break;
             case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
-                AudioFocusDelegateJni.get().onSuspend(mNativeAudioFocusDelegateAndroid);
+                AudioFocusDelegateJni.get()
+                        .onSuspend(mNativeAudioFocusDelegateAndroid, AudioFocusDelegate.this);
                 break;
             case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
                 mIsDucking = true;
-                AudioFocusDelegateJni.get().onStartDucking(mNativeAudioFocusDelegateAndroid);
+                AudioFocusDelegateJni.get()
+                        .onStartDucking(mNativeAudioFocusDelegateAndroid, AudioFocusDelegate.this);
                 break;
             case AudioManager.AUDIOFOCUS_LOSS:
                 abandonAudioFocus();
-                AudioFocusDelegateJni.get().onSuspend(mNativeAudioFocusDelegateAndroid);
+                AudioFocusDelegateJni.get()
+                        .onSuspend(mNativeAudioFocusDelegateAndroid, AudioFocusDelegate.this);
                 break;
             default:
                 Log.w(TAG, "onAudioFocusChange called with unexpected value %d", focusChange);
@@ -157,12 +163,12 @@ public class AudioFocusDelegate implements AudioManager.OnAudioFocusChangeListen
 
     @NativeMethods
     interface Natives {
-        void onSuspend(long nativeAudioFocusDelegateAndroid);
+        void onSuspend(long nativeAudioFocusDelegateAndroid, AudioFocusDelegate caller);
 
-        void onResume(long nativeAudioFocusDelegateAndroid);
+        void onResume(long nativeAudioFocusDelegateAndroid, AudioFocusDelegate caller);
 
-        void onStartDucking(long nativeAudioFocusDelegateAndroid);
+        void onStartDucking(long nativeAudioFocusDelegateAndroid, AudioFocusDelegate caller);
 
-        void onStopDucking(long nativeAudioFocusDelegateAndroid);
+        void onStopDucking(long nativeAudioFocusDelegateAndroid, AudioFocusDelegate caller);
     }
 }

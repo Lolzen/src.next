@@ -12,7 +12,8 @@
 class InterceptOMADownloadNavigationThrottle
     : public content::NavigationThrottle {
  public:
-  static void CreateAndAdd(content::NavigationThrottleRegistry& registry);
+  static std::unique_ptr<content::NavigationThrottle> Create(
+      content::NavigationHandle* handle);
 
   InterceptOMADownloadNavigationThrottle(
       const InterceptOMADownloadNavigationThrottle&) = delete;
@@ -28,7 +29,7 @@ class InterceptOMADownloadNavigationThrottle
 
  private:
   explicit InterceptOMADownloadNavigationThrottle(
-      content::NavigationThrottleRegistry& registry);
+      content::NavigationHandle* handle);
 
   // Helper method to intercept the download.
   void InterceptDownload();

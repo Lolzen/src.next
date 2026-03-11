@@ -10,6 +10,7 @@ import android.animation.ValueAnimator;
 import android.animation.ValueAnimator.AnimatorUpdateListener;
 import android.content.Context;
 
+import org.chromium.base.supplier.Supplier;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.components.omnibox.OmniboxFeatures;
@@ -17,7 +18,6 @@ import org.chromium.ui.interpolators.Interpolators;
 import org.chromium.ui.modelutil.PropertyModel;
 
 import java.util.function.BooleanSupplier;
-import java.util.function.Supplier;
 
 /**
  * {@link SuggestionsListAnimationDriver} that runs an unsynced, fixed duration fade + translate

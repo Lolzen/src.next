@@ -18,14 +18,13 @@ import java.util.function.Function;
  */
 @NullMarked
 public class ArchivedTabModelSelectorHolder {
-    private static @Nullable Function<Profile, @Nullable TabModelSelector>
-            sArchivedTabModelSelectorFn;
+    private static @Nullable Function<Profile, TabModelSelector> sArchivedTabModelSelectorFn;
 
     private ArchivedTabModelSelectorHolder() {}
 
     /** Sets the instance function used to get access to the archved TabModelSelector. */
     public static void setInstanceFn(
-            Function<Profile, @Nullable TabModelSelector> archivedTabModelSelectorFn) {
+            Function<Profile, TabModelSelector> archivedTabModelSelectorFn) {
         sArchivedTabModelSelectorFn = archivedTabModelSelectorFn;
     }
 

@@ -5,6 +5,7 @@
 #include "extensions/common/manifest_handlers/kiosk_mode_info.h"
 
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -18,7 +19,6 @@
 #include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
 #include "extensions/common/manifest_constants.h"
-#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 
 namespace extensions {
 
@@ -78,13 +78,13 @@ KioskModeInfo* KioskModeInfo::Get(const Extension* extension) {
 // static
 bool KioskModeInfo::IsKioskEnabled(const Extension* extension) {
   KioskModeInfo* info = Get(extension);
-  return info && info->kiosk_status != NONE;
+  return info ? info->kiosk_status != NONE : false;
 }
 
 // static
 bool KioskModeInfo::IsKioskOnly(const Extension* extension) {
   KioskModeInfo* info = Get(extension);
-  return info && info->kiosk_status == ONLY;
+  return info ? info->kiosk_status == ONLY : false;
 }
 
 // static
@@ -137,7 +137,7 @@ bool KioskModeHandler::Parse(Extension* extension, std::u16string* error) {
 
   // Kiosk secondary apps key is optional.
   std::vector<SecondaryKioskAppInfo> secondary_apps;
-  absl::flat_hash_set<std::string> secondary_app_ids;
+  std::set<std::string> secondary_app_ids;
   if (manifest->FindKey(keys::kKioskSecondaryApps)) {
     const base::Value* secondary_apps_value = nullptr;
     if (!manifest->GetList(keys::kKioskSecondaryApps, &secondary_apps_value)) {
@@ -155,7 +155,7 @@ bool KioskModeHandler::Parse(Extension* extension, std::u16string* error) {
         return false;
       }
 
-      if (secondary_app_ids.contains(app->id)) {
+      if (secondary_app_ids.count(app->id)) {
         *error = ErrorUtils::FormatErrorMessageUTF16(
             manifest_errors::kInvalidKioskSecondaryAppsDuplicateApp, app->id);
         return false;

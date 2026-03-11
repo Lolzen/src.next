@@ -5,19 +5,23 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
+<!-- The main_preferences file will be reordered with the upcoming autofill
+options. Only the order changes. Each pref should exist here and in the layout
+for the previous order (main_preferences_legacy). -->
+<!-- LINT.IfChange -->
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:orderingFromXml="false">
-    <org.chromium.chrome.browser.ui.settings_promo_card.SettingsPromoCardPreference
-        android:key="settings_promo_card"
-        android:order="0" />
+<!-- `order=0` is reserved and it will be added in code.  -->
+<!-- TODO(crbug.com/364906215): Move SettingsPromoCardPreference here once SyncPromoPreference is removed -->
     <PreferenceCategory
         android:key="account_and_google_services_section"
         android:order="1"
         android:title="@string/prefs_section_account_and_google_services"/>
     <org.chromium.chrome.browser.sync.settings.SignInPreference
         android:key="sign_in"
-        android:order="2"/>
+        android:order="2"
+        android:title="@string/sign_in_to_chrome"/>
     <org.chromium.components.browser_ui.settings.ChromeBasePreference
         android:key="manage_sync"
         android:order="3"
@@ -51,20 +55,22 @@ found in the LICENSE file.
         android:order="8"
         android:title="@string/prefs_privacy_security"/>
     <Preference
-        android:fragment="org.chromium.chrome.browser.safety_hub.SafetyHubFragment"
-        android:key="safety_hub"
+        android:fragment="org.chromium.chrome.browser.safety_check.SafetyCheckSettingsFragment"
+        android:key="safety_check"
         android:order="9"
         android:title="@string/prefs_safety_check"/>
     <Preference
-        android:key="default_browser"
+        android:fragment="org.chromium.chrome.browser.safety_hub.SafetyHubFragment"
+        android:key="safety_hub"
         android:order="10"
-        android:title="@string/default_browser_title" />
+        android:title="@string/prefs_safety_check"/>
 
     <PreferenceCategory
         android:key="autofill_section"
         android:order="11"
         android:title="@string/prefs_section_autofill"/>
     <org.chromium.chrome.browser.password_manager.settings.PasswordsPreference
+        android:fragment="org.chromium.chrome.browser.password_manager.settings.PasswordSettings"
         android:key="passwords"
         android:order="12"
         android:title="@string/password_manager_settings_title"/>
@@ -100,15 +106,15 @@ found in the LICENSE file.
         android:order="18"
         android:title="@string/tabs_settings_title"/>
     <Preference
-        android:fragment="org.chromium.chrome.browser.glic.GlicSettings"
-        android:key="glic"
-        android:order="19"
-        android:title="@string/glic_button_entrypoint_label"/>
-    <Preference
         android:fragment="org.chromium.chrome.browser.homepage.settings.HomepageSettings"
         android:key="homepage"
-        android:order="20"
+        android:order="19"
         android:title="@string/options_homepage_title"/>
+    <Preference
+        android:fragment="org.chromium.chrome.browser.magic_stack.HomeModulesConfigSettings"
+        android:key="home_modules_config"
+        android:order="20"
+        android:title="@string/home_modules_configuration"/>
     <Preference
         android:fragment="org.chromium.chrome.browser.toolbar.adaptive.settings.AdaptiveToolbarSettingsFragment"
         android:key="toolbar_shortcut"
@@ -160,3 +166,4 @@ found in the LICENSE file.
         android:title="@string/prefs_about_chrome"/>
 
 </PreferenceScreen>
+<!-- LINT.ThenChange(//chrome/android/java/res/xml/main_preferences_legacy.xml) -->

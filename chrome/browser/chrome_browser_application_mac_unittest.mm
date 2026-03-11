@@ -13,6 +13,11 @@ TEST(ChromeBrowserApplicationTest, MethodsExist) {
   // if that changes, a test break will be an early alert.
   EXPECT_TRUE([NSApplication
       instancesRespondToSelector:@selector(_customizeFileMenuIfNeeded)]);
-  EXPECT_TRUE([NSApplication
-      instancesRespondToSelector:@selector(_customizeQuitMenuItem)]);
+  if (@available(macos 12, *)) {
+    // Starting with macOS 12, a part of the -_customizeFileMenuIfNeeded
+    // implementation is the method -_customizeQuitMenuItem, so check for that
+    // too.
+    EXPECT_TRUE([NSApplication
+        instancesRespondToSelector:@selector(_customizeQuitMenuItem)]);
+  }
 }

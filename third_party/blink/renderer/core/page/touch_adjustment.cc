@@ -20,7 +20,6 @@
 #include "third_party/blink/renderer/core/page/touch_adjustment.h"
 
 #include "third_party/blink/renderer/core/dom/container_node.h"
-#include "third_party/blink/renderer/core/dom/node-inl.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/editing_behavior.h"
@@ -230,7 +229,8 @@ static inline void AppendContextSubtargetsForNode(
           .ShouldSelectOnContextualMenuClick()) {
     // Make subtargets out of every word.
     String text_value = text_node->data();
-    TextBreakIterator* word_iterator = WordBreakIterator(text_value);
+    TextBreakIterator* word_iterator =
+        WordBreakIterator(text_value, 0, text_value.length());
     int last_offset = word_iterator->first();
     if (last_offset == -1)
       return;
@@ -522,7 +522,7 @@ bool FindNodeWithLowestDistanceMetric(Node*& adjusted_node,
     }
   }
 
-  // As for HitTestResult.innerNode, we skip over pseudo-elements.
+  // As for HitTestResult.innerNode, we skip over pseudo elements.
   if (adjusted_node && adjusted_node->IsPseudoElement() &&
       !adjusted_node->IsScrollMarkerPseudoElement()) {
     adjusted_node = adjusted_node->ParentOrShadowHostNode();

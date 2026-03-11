@@ -13,8 +13,7 @@ namespace blink {
 
 SnappedQueryScrollSnapshot::SnappedQueryScrollSnapshot(
     PaintLayerScrollableArea& scroller)
-    : PostLayoutSnapshotClient(
-          scroller.GetLayoutBox()->GetDocument().GetFrame()),
+    : ScrollSnapshotClient(scroller.GetLayoutBox()->GetDocument().GetFrame()),
       scroller_(&scroller) {}
 
 void SnappedQueryScrollSnapshot::InvalidateSnappedTarget(Element* target) {
@@ -26,7 +25,7 @@ void SnappedQueryScrollSnapshot::InvalidateSnappedTarget(Element* target) {
   }
 }
 
-bool SnappedQueryScrollSnapshot::UpdateSnapshot() {
+bool SnappedQueryScrollSnapshot::UpdateSnappedTargets() {
   bool did_change = false;
 
   Element* snapped_target_x =
@@ -51,6 +50,17 @@ bool SnappedQueryScrollSnapshot::UpdateSnapshot() {
   return did_change;
 }
 
+void SnappedQueryScrollSnapshot::UpdateSnapshot() {
+  UpdateSnappedTargets();
+}
+
+bool SnappedQueryScrollSnapshot::ValidateSnapshot() {
+  if (UpdateSnappedTargets()) {
+    return false;
+  }
+  return true;
+}
+
 bool SnappedQueryScrollSnapshot::ShouldScheduleNextService() {
   return false;
 }
@@ -59,7 +69,7 @@ void SnappedQueryScrollSnapshot::Trace(Visitor* visitor) const {
   visitor->Trace(scroller_);
   visitor->Trace(snapped_target_x_);
   visitor->Trace(snapped_target_y_);
-  PostLayoutSnapshotClient::Trace(visitor);
+  ScrollSnapshotClient::Trace(visitor);
 }
 
 }  // namespace blink

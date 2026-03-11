@@ -6,8 +6,6 @@ package org.chromium.chrome.browser.tasks.tab_management;
 
 import androidx.annotation.IntDef;
 
-import org.chromium.build.annotations.NullMarked;
-
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -32,8 +30,7 @@ import java.lang.annotation.Target;
 })
 @Retention(RetentionPolicy.SOURCE)
 @Target({ElementType.TYPE_USE})
-@NullMarked
-public @interface GroupWindowState {
+@interface GroupWindowState {
     int IN_CURRENT = 0;
     int IN_CURRENT_CLOSING = 1;
     int IN_ANOTHER = 2;

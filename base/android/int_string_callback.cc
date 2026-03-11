@@ -28,4 +28,4 @@ void RunIntStringCallbackAndroid(const JavaRef<jobject>& callback,
 }  // namespace android
 }  // namespace base
 
-DEFINE_JNI(IntStringCallback)
+DEFINE_JNI_FOR_IntStringCallback()

@@ -12,6 +12,7 @@
 #include "base/base_export.h"
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/dcheck_is_on.h"
 #include "base/debug/stack_trace.h"
 #include "base/functional/bind.h"
@@ -22,6 +23,7 @@
 #include "base/strings/strcat.h"
 #include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -149,7 +151,7 @@ class ObserverListThreadSafe : public internal::ObserverListThreadSafeBase {
     bool was_empty = observers_.empty();
 
     // Add |observer| to the list of observers.
-    DCHECK(!observers_.contains(observer));
+    DCHECK(!Contains(observers_, observer));
     const scoped_refptr<SequencedTaskRunner> task_runner =
         SequencedTaskRunner::GetCurrentDefault();
     // Each observer gets a unique identifier. These unique identifiers are used
@@ -177,16 +179,16 @@ class ObserverListThreadSafe : public internal::ObserverListThreadSafeBase {
             static_cast<const NotificationData*>(current_notification);
         task_runner->PostTask(
             current_notification->from_here,
-            base::BindOnce(&Self::NotifyWrapper, this,
-                           // While `observer` may be dangling, we pass it and
-                           // check it wasn't deallocated in NotifyWrapper()
-                           // which can check `observers_` to verify presence
-                           // (the owner of the observer is responsible for
-                           // removing it from that list before deallocation).
-                           UnsafeDangling(observer),
-                           NotificationData(this, observer_id,
-                                            current_notification->from_here,
-                                            notification_data->method)));
+            BindOnce(&Self::NotifyWrapper, this,
+                     // While `observer` may be dangling, we pass it and
+                     // check it wasn't deallocated in NotifyWrapper() which can
+                     // check `observers_` to verify presence (the owner of the
+                     // observer is responsible for removing it from that list
+                     // before deallocation).
+                     UnsafeDangling(observer),
+                     NotificationData(this, observer_id,
+                                      current_notification->from_here,
+                                      notification_data->method)));
       }
     }
 
@@ -229,22 +231,22 @@ class ObserverListThreadSafe : public internal::ObserverListThreadSafeBase {
   template <typename Method, typename... Params>
   void Notify(const Location& from_here, Method m, Params&&... params) {
     RepeatingCallback<void(ObserverType*)> method =
-        base::BindRepeating(&Dispatcher<ObserverType, Method>::Run, m,
-                            std::forward<Params>(params)...);
+        BindRepeating(&Dispatcher<ObserverType, Method>::Run, m,
+                      std::forward<Params>(params)...);
 
     AutoLock lock(lock_);
     for (const auto& observer : observers_) {
       observer.second.task_runner->PostTask(
           from_here,
-          base::BindOnce(&Self::NotifyWrapper, this,
-                         // While `observer.first` may be dangling, we pass it
-                         // and check it wasn't deallocated in NotifyWrapper()
-                         // which can check `observers_` to verify presence (the
-                         // owner of the observer is responsible for removing it
-                         // from that list before deallocation).
-                         UnsafeDangling(observer.first),
-                         NotificationData(this, observer.second.observer_id,
-                                          from_here, method)));
+          BindOnce(&Self::NotifyWrapper, this,
+                   // While `observer.first` may be dangling, we pass it and
+                   // check it wasn't deallocated in NotifyWrapper() which can
+                   // check `observers_` to verify presence (the owner of the
+                   // observer is responsible for removing it from that list
+                   // before deallocation).
+                   UnsafeDangling(observer.first),
+                   NotificationData(this, observer.second.observer_id,
+                                    from_here, method)));
     }
   }
 

@@ -15,19 +15,19 @@ class LayoutTextFragmentTest : public RenderingTest {
  protected:
   void SetUp() override {
     RenderingTest::SetUp();
-    GetDocument().head()->SetInnerHTMLWithoutTrustedTypes(
+    GetDocument().head()->setInnerHTML(
         "<style>#target::first-letter{color:red}</style>");
   }
 
   void SetBasicBody(const char* message) {
-    SetBodyInnerHTML(UNSAFE_TODO(String::Format(
-        "<div id='target' style='font-size: 10px;'>%s</div>", message)));
+    SetBodyInnerHTML(String::Format(
+        "<div id='target' style='font-size: 10px;'>%s</div>", message));
   }
 
   void SetAhemBody(const char* message, const unsigned width) {
-    SetBodyInnerHTML(UNSAFE_TODO(String::Format(
+    SetBodyInnerHTML(String::Format(
         "<div id='target' style='font: 10px Ahem; width: %uem'>%s</div>", width,
-        message)));
+        message));
   }
 
   const LayoutTextFragment* GetRemainingText() const {

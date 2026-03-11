@@ -32,7 +32,7 @@ class ScriptResultQueue : public TestApiObserver {
   size_t next_result_index_ = 0u;
 
   // The collection of all script results this queue has seen.
-  base::ListValue results_;
+  base::Value::List results_;
 
   // Quit closure to call when waiting for a result.
   base::OnceClosure quit_closure_;

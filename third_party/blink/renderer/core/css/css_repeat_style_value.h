@@ -36,8 +36,6 @@ class CORE_EXPORT CSSRepeatStyleValue : public CSSValue {
   const CSSIdentifierValue* x() const { return x_; }
   const CSSIdentifierValue* y() const { return y_; }
 
-  bool HasRandomFunctions() const;
-
   void TraceAfterDispatch(blink::Visitor* visitor) const;
 
  private:

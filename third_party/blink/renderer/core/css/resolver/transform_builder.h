@@ -44,9 +44,7 @@ class TransformBuilder {
   STATIC_ONLY(TransformBuilder);
 
  public:
-  // Returns true if all the values are known numbers and do not rely on
-  // resolving e.g. relative lengths or sibling-index().
-  static bool IsResolvableAtParseTime(const CSSValueList&);
+  static bool HasRelativeLengths(const CSSValueList&);
   static TransformOperations CreateTransformOperations(
       const CSSValue& in_value,
       const CSSToLengthConversionData&);

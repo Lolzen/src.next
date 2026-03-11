@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_UNACCELERATED_STATIC_BITMAP_IMAGE_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_UNACCELERATED_STATIC_BITMAP_IMAGE_H_
 
+#include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
@@ -26,7 +27,7 @@ class PLATFORM_EXPORT UnacceleratedStaticBitmapImage final
       PaintImage,
       ImageOrientation orientation = ImageOrientationEnum::kDefault);
 
-  bool IsOpaque() override;
+  bool CurrentFrameKnownToBeOpaque() override;
 
   void Draw(cc::PaintCanvas*,
             const cc::PaintFlags&,
@@ -38,9 +39,8 @@ class PLATFORM_EXPORT UnacceleratedStaticBitmapImage final
 
   void Transfer() final;
 
-  bool CopyToResourceProvider(
-      CanvasNon2DResourceProviderSharedImage* resource_provider,
-      const gfx::Rect& copy_rect) override;
+  bool CopyToResourceProvider(CanvasResourceProvider* resource_provider,
+                              const gfx::Rect& copy_rect) override;
 
   SkImageInfo GetSkImageInfo() const;
   gfx::Size GetSize() const override {
@@ -49,8 +49,11 @@ class PLATFORM_EXPORT UnacceleratedStaticBitmapImage final
   SkAlphaType GetAlphaType() const override {
     return GetSkImageInfo().alphaType();
   }
+  sk_sp<SkColorSpace> GetSkColorSpace() const override {
+    return GetSkImageInfo().refColorSpace();
+  }
   gfx::ColorSpace GetColorSpace() const override {
-    return SkColorSpaceToGfxColorSpace(GetSkImageInfo().refColorSpace());
+    return SkColorSpaceToGfxColorSpace(GetSkColorSpace());
   }
   viz::SharedImageFormat GetSharedImageFormat() const override {
     return viz::SkColorTypeToSinglePlaneSharedImageFormat(

@@ -16,29 +16,27 @@
 
 namespace net {
 
-base::DictValue NetLogURLRequestConstructorParams(
+base::Value::Dict NetLogURLRequestConstructorParams(
     const GURL& url,
     RequestPriority priority,
-    NetworkTrafficAnnotationTag traffic_annotation,
-    NetLogCaptureMode capture_mode) {
-  base::DictValue dict;
-  dict.Set("url", SanitizeUrlForNetLog(url, capture_mode));
+    NetworkTrafficAnnotationTag traffic_annotation) {
+  base::Value::Dict dict;
+  dict.Set("url", url.possibly_invalid_spec());
   dict.Set("priority", RequestPriorityToString(priority));
   dict.Set("traffic_annotation", traffic_annotation.unique_id_hash_code);
   return dict;
 }
 
-base::DictValue NetLogURLRequestStartParams(
+base::Value::Dict NetLogURLRequestStartParams(
     const GURL& url,
     const std::string& method,
     int load_flags,
     const IsolationInfo& isolation_info,
     const SiteForCookies& site_for_cookies,
     const std::optional<url::Origin>& initiator,
-    int64_t upload_id,
-    NetLogCaptureMode capture_mode) {
-  base::DictValue dict;
-  dict.Set("url", SanitizeUrlForNetLog(url, capture_mode));
+    int64_t upload_id) {
+  base::Value::Dict dict;
+  dict.Set("url", url.possibly_invalid_spec());
   dict.Set("method", method);
   dict.Set("load_flags", load_flags);
   dict.Set("network_isolation_key",

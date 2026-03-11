@@ -4,18 +4,28 @@
 
 #include "chrome/browser/extensions/extension_view_host.h"
 
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/browser_extension_window_controller.h"
 #include "chrome/browser/extensions/extension_view.h"
+#include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/file_select_helper.h"
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/autofill/chrome_autofill_client.h"
+#include "components/autofill/content/browser/content_autofill_driver_factory.h"
+#include "components/autofill/core/browser/foundations/browser_autofill_manager.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
+#include "content/public/browser/color_chooser.h"
 #include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/process_util.h"
-#include "extensions/buildflags/buildflags.h"
+#include "third_party/blink/public/common/input/web_input_event.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/events/keycodes/keyboard_codes.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -24,11 +34,13 @@ ExtensionViewHost::Delegate::~Delegate() = default;
 
 ExtensionViewHost::ExtensionViewHost(
     const Extension* extension,
+    content::SiteInstance* site_instance,
     content::BrowserContext* browser_context_param,
     const GURL& url,
     mojom::ViewType host_type,
     std::unique_ptr<Delegate> delegate)
     : ExtensionHost(extension,
+                    site_instance,
                     browser_context_param,
                     url,
                     host_type),
@@ -41,11 +53,21 @@ ExtensionViewHost::ExtensionViewHost(
   // in TabHelpers::AttachTabHelpers, but popups don't.
   // TODO(kalman): How much of TabHelpers::AttachTabHelpers should be here?
   autofill::ChromeAutofillClient::CreateForWebContents(host_contents());
-
-  host_contents()->SetIgnoreZoomGestures(true);
 }
 
-ExtensionViewHost::~ExtensionViewHost() = default;
+ExtensionViewHost::~ExtensionViewHost() {
+  // The hosting WebContents will be deleted in the base class, so unregister
+  // this object before it deletes the attached WebContentsModalDialogManager.
+  auto* const manager =
+      web_modal::WebContentsModalDialogManager::FromWebContents(
+          host_contents());
+  if (manager) {
+    manager->SetDelegate(nullptr);
+  }
+  for (auto& observer : modal_dialog_host_observers_) {
+    observer.OnHostDestroying();
+  }
+}
 
 bool ExtensionViewHost::UnhandledKeyboardEvent(
     content::WebContents* source,
@@ -67,13 +89,13 @@ void ExtensionViewHost::LoadInitialURL() {
     return;
   }
 
-#if !BUILDFLAG(IS_ANDROID)
   // Popups may spawn modal dialogs, which need positioning information.
   if (extension_host_type() == mojom::ViewType::kExtensionPopup) {
-    web_modal_handler_ = std::make_unique<ExtensionViewHostWebModalHandler>(
-        host_contents(), view_->GetNativeView());
+    web_modal::WebContentsModalDialogManager::CreateForWebContents(
+        host_contents());
+    web_modal::WebContentsModalDialogManager::FromWebContents(host_contents())
+        ->SetDelegate(this);
   }
-#endif  // !BUILDFLAG(IS_ANDROID)
 
   ExtensionHost::LoadInitialURL();
 }
@@ -152,6 +174,13 @@ bool ExtensionViewHost::HandleKeyboardEvent(
   return UnhandledKeyboardEvent(source, event);
 }
 
+bool ExtensionViewHost::PreHandleGestureEvent(
+    content::WebContents* source,
+    const blink::WebGestureEvent& event) {
+  // Disable pinch zooming.
+  return blink::WebInputEvent::IsPinchGestureEventType(event.GetType());
+}
+
 void ExtensionViewHost::RunFileChooser(
     content::RenderFrameHost* render_frame_host,
     scoped_refptr<content::FileSelectListener> listener,
@@ -179,8 +208,50 @@ void ExtensionViewHost::RenderFrameCreated(
   view_->RenderFrameCreated(frame_host);
 }
 
-WindowController* ExtensionViewHost::GetExtensionWindowController() {
+web_modal::WebContentsModalDialogHost*
+ExtensionViewHost::GetWebContentsModalDialogHost() {
+  return this;
+}
+
+bool ExtensionViewHost::IsWebContentsVisible(
+    content::WebContents* web_contents) {
+  return platform_util::IsVisible(web_contents->GetNativeView());
+}
+
+gfx::NativeView ExtensionViewHost::GetHostView() const {
+  return view_->GetNativeView();
+}
+
+gfx::Point ExtensionViewHost::GetDialogPosition(const gfx::Size& size) {
+  auto* const web_contents = GetVisibleWebContents();
+  const gfx::Size view_size =
+      web_contents ? web_contents->GetViewBounds().size() : gfx::Size();
+  return gfx::Rect(view_size - size).CenterPoint();
+}
+
+gfx::Size ExtensionViewHost::GetMaximumDialogSize() {
+  auto* const web_contents = GetVisibleWebContents();
+  return web_contents ? web_contents->GetViewBounds().size() : gfx::Size();
+}
+
+void ExtensionViewHost::AddObserver(
+    web_modal::ModalDialogHostObserver* observer) {
+  modal_dialog_host_observers_.AddObserver(observer);
+}
+
+void ExtensionViewHost::RemoveObserver(
+    web_modal::ModalDialogHostObserver* observer) {
+  modal_dialog_host_observers_.RemoveObserver(observer);
+}
+
+WindowController* ExtensionViewHost::GetExtensionWindowController() const {
   return delegate_->GetExtensionWindowController();
+}
+
+content::WebContents* ExtensionViewHost::GetVisibleWebContents() const {
+  return (extension_host_type() == mojom::ViewType::kExtensionPopup)
+             ? host_contents()
+             : nullptr;
 }
 
 void ExtensionViewHost::OnExtensionHostDocumentElementAvailable(

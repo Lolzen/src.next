@@ -11,7 +11,6 @@ mthiesse@chromium.org
 nyquist@chromium.org
 peconn@chromium.org
 pnoland@chromium.org
-skavuluru@google.com
 skym@chromium.org
 tedchoc@chromium.org
 twellington@chromium.org
@@ -33,9 +32,3 @@ per-file ....xtb=file://tools/translation/TRANSLATION_OWNERS
 # Incognito
 per-file ...incognito*=file://chrome/browser/incognito/OWNERS
 per-file ...*Incognito*=file://chrome/browser/incognito/OWNERS
-
-# Recently Closed Tabs and Windows related files:
-per-file ...RecentlyClosedEntriesManager*=aishwaryarj@google.com
-per-file ...RecentlyClosedEntriesManager*=zheliooo@google.com
-per-file ...RecentlyClosedWindow*=aishwaryarj@google.com
-per-file ...RecentlyClosedWindow*=zheliooo@google.com

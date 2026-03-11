@@ -5,8 +5,6 @@
 #ifndef NET_HTTP_TEST_UPLOAD_DATA_STREAM_NOT_ALLOW_HTTP1_H_
 #define NET_HTTP_TEST_UPLOAD_DATA_STREAM_NOT_ALLOW_HTTP1_H_
 
-#include <string>
-
 #include "net/base/upload_data_stream.h"
 
 namespace net {

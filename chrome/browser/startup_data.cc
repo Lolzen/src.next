@@ -52,7 +52,7 @@
 #include "services/preferences/public/mojom/tracked_preference_validation_delegate.mojom.h"
 
 #if BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
-#include "chrome/browser/extensions/chrome_extensions_browser_client.h"
+#include "chrome/browser/extensions/desktop_android/desktop_android_extensions_browser_client.h"
 #include "extensions/browser/extensions_browser_client.h"
 #endif
 
@@ -68,15 +68,11 @@ base::FilePath GetProfilePath() {
 
 #endif
 
-StartupData::StartupData() = default;
+StartupData::StartupData()
+    : chrome_feature_list_creator_(
+          std::make_unique<ChromeFeatureListCreator>()) {}
 
 StartupData::~StartupData() = default;
-
-// TODO(martinkong): Remove this function and replace its usage with
-// ChromeFeatureListCreator::GetInstance()
-ChromeFeatureListCreator* StartupData::chrome_feature_list_creator() {
-  return ChromeFeatureListCreator::GetInstance();
-}
 
 void StartupData::RecordCoreSystemProfile() {
   metrics::SystemProfileProto system_profile;
@@ -84,7 +80,7 @@ void StartupData::RecordCoreSystemProfile() {
       metrics::GetVersionString(),
       metrics::AsProtobufChannel(chrome::GetChannel()),
       chrome::IsExtendedStableChannel(),
-      chrome_feature_list_creator()->actual_locale(),
+      chrome_feature_list_creator_->actual_locale(),
       metrics::GetAppPackageName(), &system_profile);
 
   metrics::DelegatingProvider delegating_provider;
@@ -98,7 +94,7 @@ void StartupData::RecordCoreSystemProfile() {
   // Persists low entropy source values.
   delegating_provider.RegisterMetricsProvider(
       std::make_unique<metrics::EntropyStateProvider>(
-          chrome_feature_list_creator()->local_state()));
+          chrome_feature_list_creator_->local_state()));
 
   delegating_provider.ProvideSystemProfileMetricsWithLogCreationTime(
       base::TimeTicks(), &system_profile);
@@ -172,10 +168,9 @@ void StartupData::PreProfilePrefServiceInit() {
   // must be initialized before BrowserContextKeyedServiceFactories are built.
   // Some factories use ExtensionsBrowserClient::Get() in their DependsOn().
   extensions_browser_client_ =
-      std::make_unique<extensions::ChromeExtensionsBrowserClient>();
+      std::make_unique<extensions::DesktopAndroidExtensionsBrowserClient>();
   // We don't set ExtensionsBrowserClient to nullptr in this class because
-  // ownership will be transferred later to BrowserProcessImpl. Initialization
-  // will finish in BrowserProcessImpl as well.
+  // ownership will be transferred later to BrowserProcessImpl.
   extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
 #endif
 
@@ -215,7 +210,6 @@ void StartupData::CreateServicesInternal() {
       std::make_unique<policy::SchemaRegistry>();
   schema_registry_service_ = BuildSchemaRegistryService(
       std::move(schema_registry), browser_policy_connector->GetChromeSchema(),
-      browser_policy_connector->GetExtensionInstallPolicySchema(),
       browser_policy_connector->GetSchemaRegistry());
 
   user_cloud_policy_manager_ = policy::UserCloudPolicyManager::Create(
@@ -232,7 +226,7 @@ void StartupData::CreateServicesInternal() {
       true /* force_immediate_policy_load*/, nullptr /* user */);
 
   RegisterProfilePrefs(false /* is_signin_profile */,
-                       chrome_feature_list_creator()->actual_locale(),
+                       chrome_feature_list_creator_->actual_locale(),
                        pref_registry_.get());
 
   mojo::PendingRemote<prefs::mojom::TrackedPreferenceValidationDelegate>
@@ -244,8 +238,7 @@ void StartupData::CreateServicesInternal() {
       pref_registry_, nullptr /* extension_pref_store */,
       profile_policy_connector_->policy_service(), browser_policy_connector,
       std::move(pref_validation_delegate), io_task_runner, key_.get(), path,
-      false /* async_prefs*/, g_browser_process->os_crypt_async(),
-      g_browser_process->device_parental_controls());
+      false /* async_prefs*/);
 }
 #endif
 

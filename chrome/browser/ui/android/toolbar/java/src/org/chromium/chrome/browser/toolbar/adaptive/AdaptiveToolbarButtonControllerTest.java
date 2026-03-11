@@ -40,8 +40,7 @@ import org.robolectric.Robolectric;
 import org.robolectric.annotation.Config;
 
 import org.chromium.base.Callback;
-import org.chromium.base.supplier.ObservableSuppliers;
-import org.chromium.base.supplier.SettableMonotonicObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplierImpl;
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.base.test.util.Features.EnableFeatures;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
@@ -75,7 +74,6 @@ public class AdaptiveToolbarButtonControllerTest {
     @Mock private ButtonDataProvider mVoiceToolbarButtonController;
     @Mock private ButtonDataProvider mNewTabButtonController;
     @Mock private ButtonDataProvider mPriceTrackingButtonController;
-    @Mock private ButtonDataProvider mReaderModeButtonController;
     @Mock private SettingsNavigation mSettingsNavigation;
     @Mock private ActivityLifecycleDispatcher mActivityLifecycleDispatcher;
     @Mock private Profile mProfile;
@@ -83,8 +81,7 @@ public class AdaptiveToolbarButtonControllerTest {
     @Mock private Configuration mConfiguration;
 
     private ButtonDataImpl mButtonData;
-    private SettableMonotonicObservableSupplier<Profile> mProfileSupplier;
-    private AdaptiveToolbarBehavior mToolbarBehavior;
+    private ObservableSupplierImpl<Profile> mProfileSupplier;
 
     @Before
     public void setUp() {
@@ -100,13 +97,11 @@ public class AdaptiveToolbarButtonControllerTest {
                         /* iphCommandBuilder= */ null,
                         /* isEnabled= */ true,
                         AdaptiveToolbarButtonVariant.UNKNOWN,
-                        /* tooltipTextResId= */ Resources.ID_NULL);
+                        /* tooltipTextResId= */ Resources.ID_NULL,
+                        /* showBackgroundHighlight= */ false);
         mConfiguration.screenWidthDp = 420;
         doReturn(mProfile).when(mProfile).getOriginalProfile();
-        mProfileSupplier = ObservableSuppliers.createMonotonic();
-        mToolbarBehavior =
-                AdaptiveToolbarBehavior.getDefaultBehavior(
-                        Robolectric.setupActivity(Activity.class));
+        mProfileSupplier = new ObservableSupplierImpl<>();
     }
 
     @After
@@ -133,42 +128,6 @@ public class AdaptiveToolbarButtonControllerTest {
         mProfileSupplier.set(mProfile);
 
         verify(observer).buttonDataChanged(true);
-        Assert.assertEquals(
-                mNewTabButtonController,
-                adaptiveToolbarButtonController.getSingleProviderForTesting());
-    }
-
-    @Test
-    @SmallTest
-    @EnableFeatures(ChromeFeatureList.ADAPTIVE_BUTTON_IN_TOP_TOOLBAR_CUSTOMIZATION_V2)
-    public void testDynamicAction_readerModeFallbackToNewTab() {
-        AdaptiveToolbarPrefs.saveToolbarSettingsToggleState(true);
-        AdaptiveToolbarStatePredictor.setSegmentationResultsForTesting(
-                new Pair<>(true, List.of(AdaptiveToolbarButtonVariant.NEW_TAB)));
-
-        AdaptiveToolbarButtonController adaptiveToolbarButtonController = buildController();
-
-        verify(mActivityLifecycleDispatcher).register(adaptiveToolbarButtonController);
-
-        ButtonDataObserver observer = mock(ButtonDataObserver.class);
-        adaptiveToolbarButtonController.addObserver(observer);
-        mProfileSupplier.set(mProfile);
-
-        verify(observer).buttonDataChanged(true);
-        Assert.assertEquals(
-                mNewTabButtonController,
-                adaptiveToolbarButtonController.getSingleProviderForTesting());
-
-        adaptiveToolbarButtonController.addButtonVariant(
-                AdaptiveToolbarButtonVariant.READER_MODE, mReaderModeButtonController);
-        adaptiveToolbarButtonController.showDynamicAction(AdaptiveToolbarButtonVariant.READER_MODE);
-        Assert.assertEquals(
-                mReaderModeButtonController,
-                adaptiveToolbarButtonController.getSingleProviderForTesting());
-
-        // Simulate the case the reader mode dynamic action times out. This should flip the button
-        // back to the static new tab button.
-        adaptiveToolbarButtonController.buttonDataChanged(false);
         Assert.assertEquals(
                 mNewTabButtonController,
                 adaptiveToolbarButtonController.getSingleProviderForTesting());
@@ -279,7 +238,7 @@ public class AdaptiveToolbarButtonControllerTest {
                         mActivityLifecycleDispatcher,
                         mProfileSupplier,
                         menuCoordinator,
-                        mToolbarBehavior,
+                        /* toolbarBehavior= */ null,
                         mAndroidPermissionDelegate);
         adaptiveToolbarButtonController.addButtonVariant(
                 AdaptiveToolbarButtonVariant.NEW_TAB, mNewTabButtonController);
@@ -331,7 +290,7 @@ public class AdaptiveToolbarButtonControllerTest {
                         mActivityLifecycleDispatcher,
                         mProfileSupplier,
                         menuCoordinator,
-                        mToolbarBehavior,
+                        /* toolbarBehavior= */ null,
                         mAndroidPermissionDelegate);
         adaptiveToolbarButtonController.addButtonVariant(
                 AdaptiveToolbarButtonVariant.PRICE_TRACKING, mPriceTrackingButtonController);
@@ -343,6 +302,8 @@ public class AdaptiveToolbarButtonControllerTest {
         mButtonData.setEnabled(true);
         mButtonData.setButtonSpec(makeButtonSpec(AdaptiveToolbarButtonVariant.PRICE_TRACKING));
         when(mPriceTrackingButtonController.get(any())).thenReturn(mButtonData);
+        View view = mock(View.class);
+        when(view.getContext()).thenReturn(activity);
 
         adaptiveToolbarButtonController.showDynamicAction(
                 AdaptiveToolbarButtonVariant.PRICE_TRACKING);
@@ -490,7 +451,7 @@ public class AdaptiveToolbarButtonControllerTest {
                         mActivityLifecycleDispatcher,
                         mProfileSupplier,
                         mock(AdaptiveButtonActionMenuCoordinator.class),
-                        mToolbarBehavior,
+                        /* toolbarBehavior= */ null,
                         mAndroidPermissionDelegate);
         adaptiveToolbarButtonController.addButtonVariant(
                 AdaptiveToolbarButtonVariant.NEW_TAB, mNewTabButtonController);
@@ -512,6 +473,7 @@ public class AdaptiveToolbarButtonControllerTest {
                 variant,
                 /* actionChipLabelResId= */ 0,
                 /* tooltipTextResId= */ Resources.ID_NULL,
+                /* showBackgroundHighlight= */ false,
                 /* hasErrorBadge= */ false);
     }
 }

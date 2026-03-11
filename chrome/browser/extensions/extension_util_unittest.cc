@@ -29,14 +29,11 @@
 #include "extensions/browser/extension_util.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/browser/test_extension_registry_observer.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/mojom/manifest.mojom-shared.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/test/test_extension_dir.h"
 #include "url/gurl.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -52,10 +49,7 @@ constexpr char kExtensionUpdateUrl[] =
 
 class ExtensionUtilUnittest : public ExtensionServiceTestBase {
  public:
-  void SetUp() override {
-    ExtensionServiceTestBase::SetUp();
-    InitializeEmptyExtensionService();
-  }
+  void SetUp() override { InitializeEmptyExtensionService(); }
 };
 
 TEST_F(ExtensionUtilUnittest, SetAllowFileAccess) {
@@ -63,8 +57,8 @@ TEST_F(ExtensionUtilUnittest, SetAllowFileAccess) {
       R"({
            "name": "foo",
            "version": "1.0",
-           "manifest_version": 3,
-           "host_permissions": ["<all_urls>"]
+           "manifest_version": 2,
+           "permissions": ["<all_urls>"]
          })";
 
   TestExtensionDir dir;
@@ -119,8 +113,8 @@ TEST_F(ExtensionUtilUnittest, SetAllowFileAccessWhileDisabled) {
       R"({
            "name": "foo",
            "version": "1.0",
-           "manifest_version": 3,
-           "host_permissions": ["<all_urls>"]
+           "manifest_version": 2,
+           "permissions": ["<all_urls>"]
          })";
 
   TestExtensionDir dir;
@@ -216,7 +210,7 @@ class ExtensionUtilWithSigninProfileUnittest : public ExtensionUtilUnittest {
     ExtensionUtilUnittest::SetUp();
 
     testing_profile_manager_ = std::make_unique<TestingProfileManager>(
-        TestingBrowserProcess::GetGlobal());
+        TestingBrowserProcess::GetGlobal(), &testing_local_state_);
     ASSERT_TRUE(testing_profile_manager_->SetUp());
     auto policy_service = std::make_unique<policy::PolicyServiceImpl>(
         std::vector<
@@ -245,11 +239,11 @@ class ExtensionUtilWithSigninProfileUnittest : public ExtensionUtilUnittest {
   }
 
   void SetupForceList(const ExtensionIdList& extension_ids) {
-    base::DictValue dict = base::DictValue();
+    base::Value::Dict dict = base::Value::Dict();
     for (const auto& extension_id : extension_ids) {
       dict.Set(extension_id,
-               base::DictValue().Set(ExternalProviderImpl::kExternalUpdateUrl,
-                                     kExtensionUpdateUrl));
+               base::Value::Dict().Set(ExternalProviderImpl::kExternalUpdateUrl,
+                                       kExtensionUpdateUrl));
     }
     signin_profile_prefs_->SetManagedPref(pref_names::kInstallForceList,
                                           std::move(dict));
@@ -310,7 +304,7 @@ TEST_F(ExtensionUtilWithSigninProfileUnittest,
   extension_registry->AddTerminated(policy_extension);
   EXPECT_TRUE(util::HasIsolatedStorage(policy_extension_id, signin_profile_));
 
-  // Extension blocklisted.
+  // Extension blockedlisted.
   extension_registry->RemoveTerminated(policy_extension_id);
   extension_registry->AddBlocklisted(policy_extension);
   EXPECT_TRUE(util::HasIsolatedStorage(policy_extension_id, signin_profile_));

@@ -80,5 +80,3 @@ std::optional<RadioDataActivity> RadioUtils::GetCellDataActivity() {
 
 }  // namespace android
 }  // namespace base
-
-DEFINE_JNI(RadioUtils)

@@ -107,7 +107,7 @@ public class WebContentsDarkModeMessageControllerUnitTest {
         }
 
         private void clickButton() {
-            var unused = mShownMessageModel.get(MessageBannerProperties.ON_PRIMARY_ACTION).get();
+            mShownMessageModel.get(MessageBannerProperties.ON_PRIMARY_ACTION).get();
         }
     }
 
@@ -444,6 +444,20 @@ public class WebContentsDarkModeMessageControllerUnitTest {
                 "Shown dialog model should be null after clicking the negative button.",
                 mModalDialogManager.mShownDialogModel);
         verify(mMockTracker, times(1)).dismissed(eq(OPT_OUT_FEATURE));
+    }
+
+    @Test
+    public void testShowDialog_ClickTitleIcon() {
+        // Click on title icon.
+        WebContentsDarkModeMessageController.attemptToShowDialog(
+                mMockActivity, mMockProfile, TEST_URL, mModalDialogManager);
+        mModalDialogManager.clickButton(ButtonType.TITLE_ICON);
+
+        // Verify not dismissed.
+        Assert.assertNotNull(
+                "Shown dialog model should be non-null after clicking the title icon.",
+                mModalDialogManager.mShownDialogModel);
+        verify(mMockTracker, never()).dismissed(eq(OPT_OUT_FEATURE));
     }
 
     @Test

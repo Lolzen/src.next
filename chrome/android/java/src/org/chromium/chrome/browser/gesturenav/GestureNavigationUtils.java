@@ -6,19 +6,19 @@ package org.chromium.chrome.browser.gesturenav;
 
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
-import android.view.Window;
 
-import org.jni_zero.JNINamespace;
-import org.jni_zero.NativeMethods;
+import androidx.annotation.Nullable;
 
-import org.chromium.base.ResettersForTesting;
-import org.chromium.build.annotations.NullMarked;
+import org.chromium.base.SysUtils;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.ui.native_page.NativePage;
+import org.chromium.content_public.browser.NavigationEntry;
+import org.chromium.content_public.browser.NavigationHistory;
+import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.UiUtils;
 
 /** A set of helper functions related to gesture navigation. */
-@JNINamespace("gesturenav")
-@NullMarked
 public class GestureNavigationUtils {
 
     /**
@@ -28,36 +28,78 @@ public class GestureNavigationUtils {
      * @param forward True if navigating forward; false if navigating back.
      * @return True if the transition should be enabled for this tab when navigating..
      */
-    public static boolean allowTransition(Tab tab, boolean forward) {
-        if (!shouldAnimateBackForwardTransitions()) return false;
+    public static boolean allowTransition(@Nullable Tab tab, boolean forward) {
+        if (tab == null) return false;
+        if (!areBackForwardTransitionsEnabled()) return false;
         // If in gesture mode, only U and above support transition.
-        Window window = tab.getWindowAndroidChecked().getWindow();
-        if (window == null) return false;
+        if (tab.getWindowAndroid().getWindow() == null) return false;
         if (VERSION.SDK_INT < VERSION_CODES.UPSIDE_DOWN_CAKE
-                && UiUtils.isGestureNavigationMode(window)) {
+                && UiUtils.isGestureNavigationMode(tab.getWindowAndroid().getWindow())) {
             return false;
         }
+        if (!allowTransitionFromNativePages() && tab.isNativePage()) return false;
+        if (!allowTransitionToNativePages() && navigateToNativePage(tab, forward)) return false;
         return true;
     }
 
     /**
      * @return Whether the back forward transitions are enabled.
      */
-    public static boolean shouldAnimateBackForwardTransitions() {
-        return GestureNavigationUtilsJni.get().shouldAnimateBackForwardTransitions();
+    public static boolean areBackForwardTransitionsEnabled() {
+        // Stay in sync with
+        // content::BackForwardTransitionAnimationManager::AreBackForwardTransitionsEnabled().
+        if (SysUtils.amountOfPhysicalMemoryKB() / 1024
+                < ChromeFeatureList.getFieldTrialParamByFeatureAsInt(
+                        ChromeFeatureList.BACK_FORWARD_TRANSITIONS,
+                        "min-required-physical-ram-mb",
+                        0)) {
+            return false;
+        }
+        return ChromeFeatureList.isEnabled(ChromeFeatureList.BACK_FORWARD_TRANSITIONS);
     }
 
-    public static void setMinRequiredPhysicalRamMbForTesting(int mb) {
-        Runnable resetAfterTesting =
-                GestureNavigationUtilsJni.get()
-                        .setMinRequiredPhysicalRamMbForTesting(mb); // IN-TEST
-        ResettersForTesting.register(resetAfterTesting);
+    /**
+     * Whether the tab will navigate back/forward to native pages.
+     *
+     * @param tab The current tab.
+     * @param forward True if navigating forward; false if navigating back.
+     * @return True if the tab will navigate to native pages.
+     */
+    private static boolean navigateToNativePage(@Nullable Tab tab, boolean forward) {
+        if (tab == null) return false;
+        WebContents webContents = tab.getWebContents();
+        if (webContents == null) return false;
+        NavigationHistory navigationHistory =
+                webContents.getNavigationController().getNavigationHistory();
+        NavigationEntry entry =
+                navigationHistory.getEntryAtIndex(
+                        navigationHistory.getCurrentEntryIndex() + (forward ? 1 : -1));
+        return NativePage.isNativePageUrl(entry.getUrl(), tab.isIncognitoBranded(), false);
     }
 
-    @NativeMethods
-    public interface Natives {
-        boolean shouldAnimateBackForwardTransitions();
+    /**
+     * Whether default nav transitions should be enabled when navigating from native pages.
+     *
+     * @return True if we should allow default nav transitions when navigating from native pages.
+     */
+    private static boolean allowTransitionFromNativePages() {
+        return GestureNavigationUtils.areBackForwardTransitionsEnabled()
+                && ChromeFeatureList.getFieldTrialParamByFeatureAsBoolean(
+                        ChromeFeatureList.BACK_FORWARD_TRANSITIONS,
+                        "transition_from_native_pages",
+                        true);
+    }
 
-        Runnable setMinRequiredPhysicalRamMbForTesting(int mb); // IN-TEST
+    /**
+     * Whether default nav transitions should be enabled when navigating to native pages.
+     *
+     * @return True if we should allow default nav transitions when navigating to native pages.
+     */
+    private static boolean allowTransitionToNativePages() {
+        return GestureNavigationUtils.areBackForwardTransitionsEnabled()
+                && ChromeFeatureList.getFieldTrialParamByFeatureAsBoolean(
+                        ChromeFeatureList.BACK_FORWARD_TRANSITIONS,
+                        "transition_to_native_pages",
+                        true);
     }
 }

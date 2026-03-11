@@ -4,7 +4,6 @@
 
 #include "third_party/blink/renderer/core/css/remote_font_face_source.h"
 
-#include "base/debug/crash_logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/typed_macros.h"
@@ -62,16 +61,6 @@ RemoteFontFaceSource::ComputeFontDisplayAutoPeriod() const {
   }
 
   if (is_intervention_triggered_) {
-    return kSwapPeriod;
-  }
-
-  auto* window =
-      DynamicTo<LocalDOMWindow>(font_selector_->GetExecutionContext());
-  if (window && window->document() && window->document()->Printing()) {
-    // If the page is printing, the font won't finish loading until the page is
-    // resumed. There are problems discussed in crbug.com/346799729.
-    // Currently, to avoid printing invisible text, enter the swap period
-    // immediately, and render with a fallback fontface.
     return kSwapPeriod;
   }
 
@@ -220,13 +209,13 @@ void RemoteFontFaceSource::NotifyFinished(Resource* resource) {
     execution_context->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::ConsoleMessageSource::kOther,
         mojom::ConsoleMessageLevel::kWarning,
-        StrCat({"Failed to decode downloaded font: ",
-                font->Url().ElidedString()})));
+        WTF::StrCat({"Failed to decode downloaded font: ",
+                     font->Url().ElidedString()})));
     if (!font->OtsParsingMessage().empty()) {
       execution_context->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
           mojom::ConsoleMessageSource::kOther,
           mojom::ConsoleMessageLevel::kWarning,
-          StrCat({"OTS parsing error: ", font->OtsParsingMessage()})));
+          WTF::StrCat({"OTS parsing error: ", font->OtsParsingMessage()})));
     }
   }
 
@@ -357,11 +346,11 @@ const SimpleFontData* RemoteFontFaceSource::CreateFontData(
 
 const SimpleFontData* RemoteFontFaceSource::CreateLoadingFallbackFontData(
     const FontDescription& font_description) {
+  // This temporary font is not retained and should not be returned.
+  FontCachePurgePreventer font_cache_purge_preventer;
   const SimpleFontData* temporary_font =
       FontCache::Get().GetLastResortFallbackFont(font_description);
   if (!temporary_font) {
-    SCOPED_CRASH_KEY_STRING256("FontFallback", "requested_description",
-                               font_description.ToString().Utf8());
     DUMP_WILL_BE_NOTREACHED();
     return nullptr;
   }
@@ -400,10 +389,11 @@ void RemoteFontFaceSource::BeginLoadIfNeeded() {
       execution_context->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
           mojom::blink::ConsoleMessageSource::kIntervention,
           mojom::blink::ConsoleMessageLevel::kInfo,
-          StrCat({"Slow network is detected. See "
-                  "https://www.chromestatus.com/feature/5636954674692096 for "
-                  "more details. Fallback font will be used while loading: ",
-                  font->Url().ElidedString()})));
+          WTF::StrCat(
+              {"Slow network is detected. See "
+               "https://www.chromestatus.com/feature/5636954674692096 for more "
+               "details. Fallback font will be used while loading: ",
+               font->Url().ElidedString()})));
 
       // Set the loading priority to VeryLow only when all other clients agreed
       // that this font is not required for painting the text.

@@ -75,7 +75,7 @@ public final class ViewEventSinkImpl implements ViewEventSink, ActivityStateObse
         // Stylus Writing
         if (mWebContents.getStylusWritingHandler() != null) {
             ViewAndroidDelegate viewAndroidDelegate = mWebContents.getViewAndroidDelegate();
-            if (viewAndroidDelegate != null && viewAndroidDelegate.getContainerView() != null) {
+            if (viewAndroidDelegate != null) {
                 mWebContents
                         .getStylusWritingHandler()
                         .onDetachedFromWindow(viewAndroidDelegate.getContainerView().getContext());
@@ -114,7 +114,7 @@ public final class ViewEventSinkImpl implements ViewEventSink, ActivityStateObse
             // To request layout has side effect, but it seems OK as it only happen in
             // onConfigurationChange and layout has to be changed in most case.
             ViewAndroidDelegate delegate = mWebContents.getViewAndroidDelegate();
-            if (delegate != null && delegate.getContainerView() != null) {
+            if (delegate != null) {
                 ViewUtils.requestLayout(
                         delegate.getContainerView(), "ViewEventSinkImpl.onConfigurationChanged");
             }

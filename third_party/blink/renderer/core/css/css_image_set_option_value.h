@@ -45,8 +45,6 @@ class CSSImageSetOptionValue : public CSSValue {
 
   bool Equals(const CSSImageSetOptionValue& other) const;
 
-  bool HasRandomFunctions() const;
-
   void TraceAfterDispatch(blink::Visitor* visitor) const;
 
  private:

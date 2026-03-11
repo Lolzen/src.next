@@ -4,7 +4,7 @@
 
 package org.chromium.base;
 
-import org.chromium.base.supplier.MonotonicObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 
@@ -16,12 +16,12 @@ import java.util.Objects;
  *
  * <p>This is useful where cleanup needs to be done using the old value before switching to the new
  * value. For example, unregistering observers from the old value and registering them on a new
- * value. This is particularly useful {@link MonotonicObservableSupplier}.
+ * value. This is particularly useful {@link ObservableSupplier}.
  *
  * @param <T> The type to observe.
  */
 @NullMarked
-public class ValueChangedCallback<T extends @Nullable Object> implements Callback<T> {
+public class ValueChangedCallback<T> implements Callback<T> {
     /**
      * Interface for observers that care about monitoring both the old and new values when a
      * callback is invoked.
@@ -29,7 +29,7 @@ public class ValueChangedCallback<T extends @Nullable Object> implements Callbac
      * @param <T> The type to observe.
      */
     @FunctionalInterface
-    public interface ValueChangedObserver<T extends @Nullable Object> {
+    public interface ValueChangedObserver<T> {
         /**
          * Called when the {@link Callback} is invoked with both new and old values.
          *
@@ -37,7 +37,7 @@ public class ValueChangedCallback<T extends @Nullable Object> implements Callbac
          * @param oldValue The previous value. Depending on what is being observed this might not be
          *     valid to use anymore.
          */
-        void onValueChanged(T newValue, @Nullable T oldValue);
+        public void onValueChanged(@Nullable T newValue, @Nullable T oldValue);
     }
 
     private final ValueChangedObserver<T> mValueChangedObserver;

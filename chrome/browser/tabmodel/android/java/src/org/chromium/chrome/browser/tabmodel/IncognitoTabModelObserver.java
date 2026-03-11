@@ -25,9 +25,6 @@ public interface IncognitoTabModelObserver {
         void onBeforeIncognitoTabModelSelected();
     }
 
-    /** Called when the Incognito {@link TabModel} is created. */
-    default void onIncognitoModelCreated() {}
-
     /** Called when the first tab of the {@link IncognitoTabModel} is created. */
     default void wasFirstTabCreated() {}
 

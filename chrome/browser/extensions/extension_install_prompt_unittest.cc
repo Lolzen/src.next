@@ -94,7 +94,7 @@ TEST_F(ExtensionInstallPromptUnitTest, PromptShowsPermissionWarnings) {
                         URLPatternSet(), URLPatternSet()));
   scoped_refptr<const Extension> extension =
       ExtensionBuilder()
-          .SetManifest(base::DictValue()
+          .SetManifest(base::Value::Dict()
                            .Set("name", "foo")
                            .Set("version", "1.0")
                            .Set("manifest_version", 2)

@@ -439,23 +439,8 @@ std::optional<LayoutUnit> ResolveRowGapLength(const ComputedStyle&,
 LayoutUnit ResolveRowGapForMulticol(const ComputedStyle&,
                                     LayoutUnit available_size);
 
-// Return the used value of `flow-tolerance` if it is a `<length-percentage>`.
-// Otherwise, if it's `normal`, whose resolution is algorithm-specific,
-// `std::nullopt` is returned.
-std::optional<LayoutUnit> ResolveFlowToleranceLength(const ComputedStyle&,
-                                                     LayoutUnit available_size);
-
-LayoutUnit ResolveFlowToleranceForGridLanes(const ComputedStyle&,
-                                            const LogicalSize& available_size);
-
 CORE_EXPORT LayoutUnit ColumnInlineProgression(const ComputedStyle&,
                                                LayoutUnit available_size);
-
-// Only for printing: Adjust `margins` to honor the `page-margin-safety`
-// property.
-void AdjustMarginsForPaperEdge(const ConstraintSpace&,
-                               const ComputedStyle&,
-                               BoxStrut* margins);
 
 // Compute physical margins.
 CORE_EXPORT PhysicalBoxStrut
@@ -528,13 +513,8 @@ inline BoxStrut ComputeMarginsForSelf(const ConstraintSpace& constraint_space,
     return BoxStrut();
   LogicalSize percentage_resolution_size =
       constraint_space.MarginPaddingPercentageResolutionSize();
-  BoxStrut margins = ComputePhysicalMargins(style, percentage_resolution_size)
-                         .ConvertToLogical(style.GetWritingDirection());
-
-  if (style.GetPageMarginSafety() != EPageMarginSafety::kNone) {
-    AdjustMarginsForPaperEdge(constraint_space, style, &margins);
-  }
-  return margins;
+  return ComputePhysicalMargins(style, percentage_resolution_size)
+      .ConvertToLogical(style.GetWritingDirection());
 }
 
 // Compute line logical margins for the style owner.
@@ -749,14 +729,6 @@ ComputeMinAndMaxContentContributionForTest(WritingMode writing_mode,
 std::optional<MinMaxSizesResult> CalculateMinMaxSizesIgnoringChildren(
     const BlockNode&,
     const BoxStrut& border_scrollbar_padding);
-
-// NOTE: Ideally we wouldn't have the parameter `children_have_geometry` but
-// when determining the default block-size for a "<select multiple>" we read
-// its "<option>"s size.
-LayoutUnit CalculateIntrinsicBlockSizeIgnoringChildren(
-    const BlockNode&,
-    const BoxStrut& border_scrollbar_padding,
-    bool children_have_geometry = false);
 
 // Determine which scrollbars to freeze in the next layout pass. Scrollbars that
 // appear will be frozen (while scrollbars that disappear will not). Input is

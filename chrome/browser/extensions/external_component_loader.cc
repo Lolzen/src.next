@@ -10,12 +10,11 @@
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/component_extensions_allowlist/allowlist.h"
+#include "chrome/browser/extensions/forced_extensions/install_stage_tracker.h"
 #include "chrome/common/buildflags.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/browser_context.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/browser/forced_extensions/install_stage_tracker.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/feature_switch.h"
@@ -29,8 +28,6 @@
 #include "chromeos/constants/chromeos_features.h"
 #endif
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
-
 namespace extensions {
 
 ExternalComponentLoader::ExternalComponentLoader(Profile* profile)
@@ -39,11 +36,10 @@ ExternalComponentLoader::ExternalComponentLoader(Profile* profile)
 ExternalComponentLoader::~ExternalComponentLoader() = default;
 
 void ExternalComponentLoader::StartLoading() {
-  auto prefs = base::DictValue();
-  // Skip in-app payments app on Android. crbug.com/409396604
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_ANDROID)
+  auto prefs = base::Value::Dict();
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   AddExternalExtension(extension_misc::kInAppPaymentsSupportAppId, prefs);
-#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_ANDROID)
+#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 
 #if BUILDFLAG(IS_CHROMEOS)
   {
@@ -70,7 +66,7 @@ void ExternalComponentLoader::StartLoading() {
 
 void ExternalComponentLoader::AddExternalExtension(
     const std::string& extension_id,
-    base::DictValue& prefs) {
+    base::Value::Dict& prefs) {
   if (!IsComponentExtensionAllowlisted(extension_id))
     return;
 

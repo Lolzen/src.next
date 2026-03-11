@@ -98,10 +98,7 @@ public class UrlUtilities {
      */
     public static boolean isAcceptedScheme(@Nullable GURL url) {
         if (GURL.isEmptyOrInvalid(url)) return false;
-        return SUPPORTED_SCHEMES.contains(url.getScheme())
-                || (url.getScheme().equals(UrlConstants.CHROME_SCHEME)
-                        && EmbedderSupportFeatures.ANDROID_CHROME_SCHEME_NAVIGATION_KILL_SWITCH
-                                .isEnabled());
+        return SUPPORTED_SCHEMES.contains(url.getScheme());
     }
 
     /**
@@ -229,10 +226,8 @@ public class UrlUtilities {
         return UrlUtilitiesJni.get().isUrlWithinScope(url, scopeUrl);
     }
 
-    /**
-     * @return whether two URLs match, ignoring the #fragment.
-     */
-    public static boolean urlsMatchIgnoringFragments(@Nullable String url, @Nullable String url2) {
+    /** @return whether two URLs match, ignoring the #fragment. */
+    public static boolean urlsMatchIgnoringFragments(String url, String url2) {
         if (TextUtils.equals(url, url2)) return true;
         return UrlUtilitiesJni.get().urlsMatchIgnoringFragments(url, url2);
     }
@@ -307,7 +302,7 @@ public class UrlUtilities {
      *     into a GURL at their source using {@link UrlFormatter#fixupUrl(String)}.
      */
     @Deprecated
-    public static boolean isNtpUrl(@Nullable String url) {
+    public static boolean isNtpUrl(String url) {
         // Also handle the legacy chrome://newtab and about:newtab URLs since they will redirect to
         // chrome-native://newtab natively.
         if (TextUtils.isEmpty(url)) return false;
@@ -334,7 +329,7 @@ public class UrlUtilities {
      * @param url The current URL to compare.
      * @return Whether the given URL matches the NTP urls exactly.
      */
-    public static boolean isCanonicalizedNtpUrl(@Nullable String url) {
+    public static boolean isCanonicalizedNtpUrl(String url) {
         // TODO(crbug.com/40204389): Let callers check if the library is initialized and make them
         // call this method only before native is initialized.
         // After native initialization, the homepage url could become
@@ -394,7 +389,7 @@ public class UrlUtilities {
 
         boolean isUrlWithinScope(String url, String scopeUrl);
 
-        boolean urlsMatchIgnoringFragments(@Nullable String url, @Nullable String url2);
+        boolean urlsMatchIgnoringFragments(String url, String url2);
 
         boolean urlsFragmentsDiffer(String url, String url2);
 

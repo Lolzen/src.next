@@ -35,13 +35,13 @@ class FragmentDataIteratorBase {
     }
     idx_++;
     if (idx_ >= fragment_head_.size()) {
-      idx_ = kNotFound;
+      idx_ = WTF::kNotFound;
       return false;
     }
     return true;
   }
 
-  bool IsDone() const { return idx_ == kNotFound; }
+  bool IsDone() const { return idx_ == WTF::kNotFound; }
 
   Iterator& begin() {
     DCHECK_EQ(idx_, 0u);
@@ -49,7 +49,7 @@ class FragmentDataIteratorBase {
   }
   Iterator end() {
     Iterator end_it(*static_cast<Iterator*>(this));
-    end_it.idx_ = kNotFound;
+    end_it.idx_ = WTF::kNotFound;
     return end_it;
   }
   bool operator!=(const Iterator& other) {
@@ -111,7 +111,7 @@ class AccompaniedFragmentIterator : public FragmentDataIterator {
 
  private:
   std::optional<InlineCursor> cursor_;
-  const LayoutBox* layout_box_ = nullptr;
+  const LayoutBox* ng_layout_box_ = nullptr;
 };
 
 }  // namespace blink

@@ -2,8 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "base/command_line.h"
-#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -11,7 +15,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -128,12 +132,11 @@ class UnloadTest : public InProcessBrowserTest {
   void SetUpCommandLine(base::CommandLine* command_line) override {
     const testing::TestInfo* const test_info =
         testing::UnitTest::GetInstance()->current_test_info();
-    const std::string test_name = test_info->name();
-    if (test_name.find("BrowserCloseTabWhenOtherTabHasListener") !=
-        std::string::npos) {
+    if (strstr(test_info->name(), "BrowserCloseTabWhenOtherTabHasListener") !=
+        nullptr) {
       command_line->AppendSwitch(embedder_support::kDisablePopupBlocking);
-    } else if (test_name.find("BrowserTerminateBeforeUnload") !=
-               std::string::npos) {
+    } else if (strstr(test_info->name(), "BrowserTerminateBeforeUnload") !=
+               nullptr) {
 #if BUILDFLAG(IS_POSIX)
       DisableSIGTERMHandling();
 #endif
@@ -208,14 +211,14 @@ class UnloadTest : public InProcessBrowserTest {
 
   void CloseBrowsersVerifyUnloadSuccess(bool force) {
     UnloadResults unload_results;
-    ui_test_utils::BrowserDestroyedObserver observer(browser());
-    chrome::CloseAllBrowsersWithProfile(
-        browser()->profile(), force,
+    BrowserList::CloseAllBrowsersWithProfile(
+        browser()->profile(),
         base::BindRepeating(&UnloadResults::AddSuccess,
                             base::Unretained(&unload_results)),
         base::BindRepeating(&UnloadResults::AddAbort,
-                            base::Unretained(&unload_results)));
-    observer.Wait();
+                            base::Unretained(&unload_results)),
+        force);
+    ui_test_utils::WaitForBrowserToClose();
     EXPECT_EQ(1, unload_results.get_successes());
     EXPECT_EQ(0, unload_results.get_aborts());
   }
@@ -223,10 +226,9 @@ class UnloadTest : public InProcessBrowserTest {
   // The test harness cannot close the window automatically, because it requires
   // confirmation. We close the window manually instead.
   void ManuallyCloseWindow() {
-    ui_test_utils::BrowserDestroyedObserver observer(browser());
     chrome::CloseWindow(browser());
     ClickModalDialogButton(true);
-    observer.Wait();
+    ui_test_utils::WaitForBrowserToClose();
   }
 
   const std::string GenerateDataURL(std::string listener_html,
@@ -332,10 +334,9 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserCloseBeforeUnloadOK) {
   NavigateToDataURL(BEFORE_UNLOAD_HTML, "beforeunload");
   PrepareForDialog(browser());
 
-  ui_test_utils::BrowserDestroyedObserver observer(browser());
   chrome::CloseWindow(browser());
   ClickModalDialogButton(true);
-  observer.Wait();
+  ui_test_utils::WaitForBrowserToClose();
 }
 
 // Tests closing the browser with a beforeunload handler and clicking
@@ -374,15 +375,15 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserListCloseBeforeUnloadOK) {
   PrepareForDialog(browser());
 
   UnloadResults unload_results;
-  ui_test_utils::BrowserDestroyedObserver observer(browser());
-  chrome::CloseAllBrowsersWithProfile(
-      browser()->profile(), false,
+  BrowserList::CloseAllBrowsersWithProfile(
+      browser()->profile(),
       base::BindRepeating(&UnloadResults::AddSuccess,
                           base::Unretained(&unload_results)),
       base::BindRepeating(&UnloadResults::AddAbort,
-                          base::Unretained(&unload_results)));
+                          base::Unretained(&unload_results)),
+      false);
   ClickModalDialogButton(true);
-  observer.Wait();
+  ui_test_utils::WaitForBrowserToClose();
   EXPECT_EQ(1, unload_results.get_successes());
   EXPECT_EQ(0, unload_results.get_aborts());
 }
@@ -414,12 +415,13 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, MAYBE_BrowserListCloseBeforeUnloadCancel) {
   PrepareForDialog(browser());
 
   UnloadResults unload_results;
-  chrome::CloseAllBrowsersWithProfile(
-      browser()->profile(), false,
+  BrowserList::CloseAllBrowsersWithProfile(
+      browser()->profile(),
       base::BindRepeating(&UnloadResults::AddSuccess,
                           base::Unretained(&unload_results)),
       base::BindRepeating(&UnloadResults::AddAbort,
-                          base::Unretained(&unload_results)));
+                          base::Unretained(&unload_results)),
+      false);
 
   // We wait for the title to change after cancelling the closure of browser
   // window, to ensure that in-flight IPCs from the renderer reach the browser.
@@ -444,21 +446,22 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserListDoubleCloseBeforeUnloadOK) {
   PrepareForDialog(browser());
 
   UnloadResults unload_results;
-  ui_test_utils::BrowserDestroyedObserver observer(browser());
-  chrome::CloseAllBrowsersWithProfile(
-      browser()->profile(), false,
+  BrowserList::CloseAllBrowsersWithProfile(
+      browser()->profile(),
       base::BindRepeating(&UnloadResults::AddSuccess,
                           base::Unretained(&unload_results)),
       base::BindRepeating(&UnloadResults::AddAbort,
-                          base::Unretained(&unload_results)));
-  chrome::CloseAllBrowsersWithProfile(
-      browser()->profile(), false,
+                          base::Unretained(&unload_results)),
+      false);
+  BrowserList::CloseAllBrowsersWithProfile(
+      browser()->profile(),
       base::BindRepeating(&UnloadResults::AddSuccess,
                           base::Unretained(&unload_results)),
       base::BindRepeating(&UnloadResults::AddAbort,
-                          base::Unretained(&unload_results)));
+                          base::Unretained(&unload_results)),
+      false);
   ClickModalDialogButton(true);
-  observer.Wait();
+  ui_test_utils::WaitForBrowserToClose();
   EXPECT_EQ(1, unload_results.get_successes());
   EXPECT_EQ(0, unload_results.get_aborts());
 }
@@ -470,18 +473,20 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserListDoubleCloseBeforeUnloadCancel) {
   PrepareForDialog(browser());
 
   UnloadResults unload_results;
-  chrome::CloseAllBrowsersWithProfile(
-      browser()->profile(), false,
+  BrowserList::CloseAllBrowsersWithProfile(
+      browser()->profile(),
       base::BindRepeating(&UnloadResults::AddSuccess,
                           base::Unretained(&unload_results)),
       base::BindRepeating(&UnloadResults::AddAbort,
-                          base::Unretained(&unload_results)));
-  chrome::CloseAllBrowsersWithProfile(
-      browser()->profile(), false,
+                          base::Unretained(&unload_results)),
+      false);
+  BrowserList::CloseAllBrowsersWithProfile(
+      browser()->profile(),
       base::BindRepeating(&UnloadResults::AddSuccess,
                           base::Unretained(&unload_results)),
       base::BindRepeating(&UnloadResults::AddAbort,
-                          base::Unretained(&unload_results)));
+                          base::Unretained(&unload_results)),
+      false);
 
   // We wait for the title to change after cancelling the closure of browser
   // window, to ensure that in-flight IPCs from the renderer reach the browser.
@@ -506,10 +511,12 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserListCloseBeforeUnloadNullCallbackOk) {
   NavigateToDataURL(BEFORE_UNLOAD_HTML, "beforeunload");
   PrepareForDialog(browser());
 
-  ui_test_utils::BrowserDestroyedObserver observer(browser());
-  chrome::CloseAllBrowsersWithProfile(browser()->profile(), false);
+  UnloadResults unload_results;
+  BrowserList::CloseAllBrowsersWithProfile(browser()->profile(),
+                                           BrowserList::CloseCallback(),
+                                           BrowserList::CloseCallback(), false);
   ClickModalDialogButton(true);
-  observer.Wait();
+  ui_test_utils::WaitForBrowserToClose();
 }
 
 // Tests closing the browser by BrowserList::CloseAllBrowsersWithProfile, with
@@ -520,7 +527,10 @@ IN_PROC_BROWSER_TEST_F(UnloadTest,
   NavigateToDataURL(BEFORE_UNLOAD_HTML, "beforeunload");
   PrepareForDialog(browser());
 
-  chrome::CloseAllBrowsersWithProfile(browser()->profile(), false);
+  UnloadResults unload_results;
+  BrowserList::CloseAllBrowsersWithProfile(browser()->profile(),
+                                           BrowserList::CloseCallback(),
+                                           BrowserList::CloseCallback(), false);
 
   // We wait for the title to change after cancelling the closure of browser
   // window, to ensure that in-flight IPCs from the renderer reach the browser.
@@ -695,20 +705,21 @@ IN_PROC_BROWSER_TEST_F(UnloadTest, BrowserListForceCloseAfterNormalClose) {
   NavigateToDataURL(BEFORE_UNLOAD_HTML, "beforeunload");
 
   UnloadResults unload_results;
-  ui_test_utils::BrowserDestroyedObserver observer(browser());
-  chrome::CloseAllBrowsersWithProfile(
-      browser()->profile(), false,
+  BrowserList::CloseAllBrowsersWithProfile(
+      browser()->profile(),
       base::BindRepeating(&UnloadResults::AddSuccess,
                           base::Unretained(&unload_results)),
       base::BindRepeating(&UnloadResults::AddAbort,
-                          base::Unretained(&unload_results)));
-  chrome::CloseAllBrowsersWithProfile(
-      browser()->profile(), true,
+                          base::Unretained(&unload_results)),
+      false);
+  BrowserList::CloseAllBrowsersWithProfile(
+      browser()->profile(),
       base::BindRepeating(&UnloadResults::AddSuccess,
                           base::Unretained(&unload_results)),
       base::BindRepeating(&UnloadResults::AddAbort,
-                          base::Unretained(&unload_results)));
-  observer.Wait();
+                          base::Unretained(&unload_results)),
+      true);
+  ui_test_utils::WaitForBrowserToClose();
   EXPECT_EQ(1, unload_results.get_successes());
   EXPECT_EQ(0, unload_results.get_aborts());
 }

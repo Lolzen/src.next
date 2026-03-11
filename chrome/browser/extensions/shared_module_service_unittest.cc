@@ -19,11 +19,8 @@
 #include "extensions/browser/install_flag.h"
 #include "extensions/browser/pending_extension_manager.h"
 #include "extensions/browser/uninstall_reason.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/features/feature_channel.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -35,14 +32,14 @@ scoped_refptr<const Extension> CreateExtensionImportingModules(
     const std::vector<std::string>& import_ids,
     const std::string& id,
     const std::string& version) {
-  auto builder = base::DictValue()
+  auto builder = base::Value::Dict()
                      .Set("name", "Has Dependent Modules")
                      .Set("version", version)
                      .Set("manifest_version", 2);
   if (!import_ids.empty()) {
-    base::ListValue import_list;
+    base::Value::List import_list;
     for (const std::string& import_id : import_ids)
-      import_list.Append(base::DictValue().Set("id", import_id));
+      import_list.Append(base::Value::Dict().Set("id", import_id));
     builder.Set("import", std::move(import_list));
   }
   return ExtensionBuilder()
@@ -54,13 +51,14 @@ scoped_refptr<const Extension> CreateExtensionImportingModules(
 
 scoped_refptr<const Extension> CreateSharedModule(
     const std::string& module_id) {
-  base::DictValue manifest =
-      base::DictValue()
+  base::Value::Dict manifest =
+      base::Value::Dict()
           .Set("name", "Shared Module")
           .Set("version", "1.0")
           .Set("manifest_version", 2)
-          .Set("export", base::DictValue().Set(
-                             "resources", base::ListValue().Append("foo.js")));
+          .Set("export",
+               base::Value::Dict().Set("resources",
+                                       base::Value::List().Append("foo.js")));
 
   return ExtensionBuilder()
       .SetManifest(std::move(manifest))
@@ -175,13 +173,14 @@ TEST_F(SharedModuleServiceUnitTest, PruneSharedModulesOnUpdate) {
       CreateSharedModule("shared_module_1");
   EXPECT_TRUE(InstallExtension(shared_module_1.get(), false));
 
-  base::DictValue manifest_2 =
-      base::DictValue()
+  base::Value::Dict manifest_2 =
+      base::Value::Dict()
           .Set("name", "Shared Module 2")
           .Set("version", "1.0")
           .Set("manifest_version", 2)
-          .Set("export", base::DictValue().Set(
-                             "resources", base::ListValue().Append("foo.js")));
+          .Set("export",
+               base::Value::Dict().Set("resources",
+                                       base::Value::List().Append("foo.js")));
   scoped_refptr<const Extension> shared_module_2 =
       CreateSharedModule("shared_module_2");
   EXPECT_TRUE(InstallExtension(shared_module_2.get(), false));
@@ -231,15 +230,15 @@ TEST_F(SharedModuleServiceUnitTest, AllowlistedImports) {
   std::string nonallowlisted_id =
       crx_file::id_util::GenerateId("nonallowlisted");
   // Create a module which exports to a restricted allowlist.
-  base::DictValue manifest =
-      base::DictValue()
+  base::Value::Dict manifest =
+      base::Value::Dict()
           .Set("name", "Shared Module")
           .Set("version", "1.0")
           .Set("manifest_version", 2)
           .Set("export",
-               base::DictValue()
-                   .Set("allowlist", base::ListValue().Append(allowlisted_id))
-                   .Set("resources", base::ListValue().Append("*")));
+               base::Value::Dict()
+                   .Set("allowlist", base::Value::List().Append(allowlisted_id))
+                   .Set("resources", base::Value::List().Append("*")));
   scoped_refptr<const Extension> shared_module =
       ExtensionBuilder()
           .SetManifest(std::move(manifest))

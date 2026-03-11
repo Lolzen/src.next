@@ -27,7 +27,8 @@ const LayoutResult* ReplacedLayoutAlgorithm::Layout() {
     LayoutMediaChildren();
   }
 
-  if (Node().IsCanvas() && RuntimeEnabledFeatures::CanvasDrawElementEnabled()) {
+  if (Node().IsCanvas() &&
+      RuntimeEnabledFeatures::CanvasPlaceElementEnabled()) {
     LayoutCanvasChildren();
   }
 
@@ -39,7 +40,7 @@ MinMaxSizesResult ReplacedLayoutAlgorithm::ComputeMinMaxSizes(
   NOTREACHED();
 }
 
-// This is necessary for CanvasRenderingContext2D.drawElementImage().
+// This is necessary for CanvasRenderingContext2D.placeElement().
 void ReplacedLayoutAlgorithm::LayoutCanvasChildren() {
   for (LayoutInputNode child = Node().FirstChild(); child;
        child = child.NextSibling()) {
@@ -56,9 +57,9 @@ void ReplacedLayoutAlgorithm::LayoutCanvasChildren() {
 
     const LayoutResult* result =
         To<BlockNode>(child).Layout(space_builder.ToConstraintSpace());
-    // Since this only works with drawElementImage(), we ignore relative
-    // placement and put the element at (0,0) because it will be drawn
-    // explicitly by the user.
+    // Since this only works with placeElement(), we ignore relative placement
+    // and put the element at (0,0) because it will be placed explicitly by
+    // the user.
     container_builder_.AddResult(*result,
                                  LogicalOffset(LayoutUnit(), LayoutUnit()));
   }

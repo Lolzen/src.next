@@ -10,6 +10,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/search/ntp_test_utils.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "components/crx_file/id_util.h"
 #include "content/public/test/browser_test.h"
 #include "extensions/browser/extension_registry.h"
@@ -54,12 +55,13 @@ class AllUrlsApiTest : public ExtensionApiTest {
   void NavigateAndWait(const std::string& url) {
     std::string expected_url = url;
     if (url == chrome::kChromeUINewTabURL) {
-      expected_url = ntp_test_utils::GetFinalNtpUrl(profile()).spec();
+      expected_url =
+          ntp_test_utils::GetFinalNtpUrl(browser()->profile()).spec();
     }
     ExtensionTestMessageListener listener_a("content script: " + expected_url);
     ExtensionTestMessageListener listener_b("execute: " + expected_url);
 
-    ASSERT_TRUE(NavigateToURL(GetActiveWebContents(), GURL(url)));
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL(url)));
     ASSERT_TRUE(listener_a.WaitUntilSatisfied());
     ASSERT_TRUE(listener_b.WaitUntilSatisfied());
   }
@@ -78,8 +80,6 @@ class AllUrlsApiTest : public ExtensionApiTest {
   scoped_refptr<const Extension> execute_script_;
 };
 
-// TODO(crbug.com/371432155): Port to desktop Android once chrome.tabs is more
-// fully supported.
 IN_PROC_BROWSER_TEST_F(AllUrlsApiTest, AllowlistedExtension) {
   AllowlistExtensions();
 
@@ -92,17 +92,16 @@ IN_PROC_BROWSER_TEST_F(AllUrlsApiTest, AllowlistedExtension) {
   // Now verify that we run content scripts on different URLs, including
   // data URLs, regular HTTP pages, and resource URLs from extensions.
   const std::string test_urls[] = {
-      "data:text/html;charset=utf-8,<html>asdf</html>",
-      embedded_test_server()->GetURL(kAllUrlsTarget).spec(),
-      bystander->GetResourceURL("page.html").spec()};
+    "data:text/html;charset=utf-8,<html>asdf</html>",
+    embedded_test_server()->GetURL(kAllUrlsTarget).spec(),
+    bystander->GetResourceURL("page.html").spec()
+  };
   for (const auto& test_url : test_urls)
     NavigateAndWait(test_url);
 }
 
 // Test that an extension NOT allowlisted for scripting can ask for <all_urls>
 // and run scripts on non-restricted all pages.
-// TODO(crbug.com/371432155): Port to desktop Android once chrome.tabs is more
-// fully supported.
 IN_PROC_BROWSER_TEST_F(AllUrlsApiTest, RegularExtensions) {
   // Now verify we can script a regular http page.
   ASSERT_TRUE(StartEmbeddedTestServer());

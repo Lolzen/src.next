@@ -11,7 +11,6 @@
 #include "chrome/browser/extensions/extension_util.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_util.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/rect.h"
@@ -21,8 +20,6 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/ash/extensions/gfx_utils.h"
 #endif
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -154,9 +151,10 @@ void ChromeAppIcon::UpdateIcon() {
   Badge badge_type = Badge::kNone;
   bool app_launchable = util::IsAppLaunchable(app_id_, browser_context_);
 #if BUILDFLAG(IS_CHROMEOS)
+  has_chrome_badge_ = util::ShouldApplyChromeBadge(browser_context_, app_id_);
   if (!app_launchable) {
     badge_type = Badge::kBlocked;
-  } else if (util::ShouldApplyChromeBadge(browser_context_, app_id_)) {
+  } else if (has_chrome_badge_) {
     badge_type = Badge::kChrome;
   }
 #endif

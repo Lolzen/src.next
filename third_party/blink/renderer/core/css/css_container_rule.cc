@@ -6,7 +6,6 @@
 
 #include "third_party/blink/renderer/core/css/css_markup.h"
 #include "third_party/blink/renderer/core/css/css_style_sheet.h"
-#include "third_party/blink/renderer/core/css/media_query_exp.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
@@ -38,11 +37,9 @@ const ContainerSelector& CSSContainerRule::Selector() const {
 void CSSContainerRule::SetConditionText(
     const ExecutionContext* execution_context,
     String value) {
-  StyleSheetContents* parent_contents =
-      parentStyleSheet() ? parentStyleSheet()->Contents() : nullptr;
   CSSStyleSheet::RuleMutationScope mutation_scope(this);
   To<StyleRuleContainer>(group_rule_.Get())
-      ->SetConditionText(execution_context, parent_contents, value);
+      ->SetConditionText(execution_context, value);
 }
 
 String CSSContainerRule::containerName() const {
@@ -55,10 +52,7 @@ String CSSContainerRule::containerName() const {
 }
 
 String CSSContainerRule::containerQuery() const {
-  if (const ConditionalExpNode* query = ContainerQuery().Query()) {
-    return query->Serialize();
-  }
-  return String();
+  return ContainerQuery().Query().Serialize();
 }
 
 const ContainerQuery& CSSContainerRule::ContainerQuery() const {

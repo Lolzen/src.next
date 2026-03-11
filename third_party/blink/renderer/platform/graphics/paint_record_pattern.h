@@ -13,7 +13,7 @@ namespace blink {
 // TODO(enne): rename this
 class PLATFORM_EXPORT PaintRecordPattern final : public Pattern {
  public:
-  static std::unique_ptr<PaintRecordPattern>
+  static scoped_refptr<PaintRecordPattern>
   Create(PaintRecord, const gfx::RectF& record_bounds, RepeatMode);
 
   ~PaintRecordPattern() override;

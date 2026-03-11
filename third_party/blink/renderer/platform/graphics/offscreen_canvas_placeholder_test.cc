@@ -7,7 +7,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
-#include "third_party/blink/renderer/platform/graphics/canvas_resource.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_dispatcher.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
@@ -40,12 +39,15 @@ class MockCanvasResourceDispatcher : public CanvasResourceDispatcher {
             placeholder_id,
             /*canvas_size=*/{kWidth, kHeight}) {}
 
-  void OnMainThreadReceivedImage() override {
-    MainThreadReceivedImage();
-    CanvasResourceDispatcher::OnMainThreadReceivedImage();
+  void OnPlaceholderReleasedResource(
+      viz::ResourceId resource_id,
+      scoped_refptr<CanvasResource>&& canvas_resource) override {
+    PlaceholderReleasedResource(resource_id);
+    CanvasResourceDispatcher::OnPlaceholderReleasedResource(
+        resource_id, std::move(canvas_resource));
   }
 
-  MOCK_METHOD0(MainThreadReceivedImage, void());
+  MOCK_METHOD1(PlaceholderReleasedResource, void(viz::ResourceId));
 };
 
 unsigned GenPlaceholderId() {
@@ -74,7 +76,7 @@ class OffscreenCanvasPlaceholderTest : public Test {
   test::TaskEnvironment task_environment_;
   OffscreenCanvasPlaceholder placeholder_;
   std::unique_ptr<MockCanvasResourceDispatcher> dispatcher_;
-  std::unique_ptr<CanvasNon2DResourceProviderSharedImage> resource_provider_;
+  std::unique_ptr<CanvasResourceProvider> resource_provider_;
   std::unique_ptr<WebGraphicsSharedImageInterfaceProvider>
       test_web_shared_image_interface_provider_;
   unsigned placeholder_id_ = 0;
@@ -100,7 +102,7 @@ void OffscreenCanvasPlaceholderTest::CreateDispatcher() {
   dispatcher_ = std::make_unique<MockCanvasResourceDispatcher>(placeholder_id_);
   dispatcher_->SetPlaceholderCanvasDispatcher(placeholder_id_);
   resource_provider_ =
-      CanvasNon2DResourceProviderSharedImage::CreateForSoftwareCompositor(
+      CanvasResourceProvider::CreateSharedImageProviderForSoftwareCompositor(
           gfx::Size(kWidth, kHeight), GetN32FormatForCanvas(),
           kPremul_SkAlphaType, gfx::ColorSpace::CreateSRGB(),
           CanvasResourceProvider::ShouldInitialize::kCallClear,
@@ -108,14 +110,17 @@ void OffscreenCanvasPlaceholderTest::CreateDispatcher() {
 }
 
 void OffscreenCanvasPlaceholderTest::DrawSomething() {
-  resource_provider_->Canvas().clear(SkColors::kWhite);
+  // 'needs_will_draw=true' is required to ensure the CanvasResourceProvider
+  // does not retain a reference on the previous frame.
+  resource_provider_->Canvas(/*needs_will_draw=*/true).clear(SkColors::kWhite);
 }
 
 CanvasResource* OffscreenCanvasPlaceholderTest::DispatchOneFrame() {
   scoped_refptr<CanvasResource> resource =
-      resource_provider_->ProduceCanvasResource(FlushReason::kOther);
+      resource_provider_->ProduceCanvasResource(FlushReason::kTesting);
   CanvasResource* resource_raw_ptr = resource.get();
-  dispatcher_->DispatchFrame(std::move(resource), SkIRect::MakeEmpty(),
+  dispatcher_->DispatchFrame(std::move(resource), base::TimeTicks(),
+                             SkIRect::MakeEmpty(),
                              /*is_opaque=*/false);
   // We avoid holding a ref here to avoid interfering with
   // OffscreenCanvasPlaceholder's ref count logic.  This pointer should only
@@ -125,47 +130,54 @@ CanvasResource* OffscreenCanvasPlaceholderTest::DispatchOneFrame() {
 
 namespace {
 
-TEST_F(OffscreenCanvasPlaceholderTest, OldFrameCleared) {
-  // This test verifies that OffscreenCanvasPlaceholder clears
+TEST_F(OffscreenCanvasPlaceholderTest, OldFrameSentBack) {
+  // This test verifies that OffscreenCanvasPlaceholder send back
   // the previous frame when it receives a new one.
   ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
   CreateDispatcher();
 
+  EXPECT_CALL(*(dispatcher()), PlaceholderReleasedResource(_)).Times(0);
   DrawSomething();
+  viz::ResourceId frame1_id = PeekNextResourceId();
   CanvasResource* frame1_raw_ptr = DispatchOneFrame();
+  EXPECT_TRUE(frame1_raw_ptr->HasOneRef());
+  Mock::VerifyAndClearExpectations(dispatcher());
 
-  EXPECT_CALL(*(dispatcher()), MainThreadReceivedImage()).Times(1);
+  EXPECT_CALL(*(dispatcher()), PlaceholderReleasedResource(_)).Times(0);
   // Run task that propagates the frame to the placeholder canvas.
   EXPECT_EQ(placeholder()->OffscreenCanvasFrame(), nullptr);
   platform->RunUntilIdle();
   EXPECT_EQ(placeholder()->OffscreenCanvasFrame(), frame1_raw_ptr);
   Mock::VerifyAndClearExpectations(dispatcher());
 
-  EXPECT_CALL(*(dispatcher()), MainThreadReceivedImage()).Times(0);
+  EXPECT_CALL(*(dispatcher()), PlaceholderReleasedResource(_)).Times(0);
   DrawSomething();
   CanvasResource* frame2_raw_ptr = DispatchOneFrame();
   Mock::VerifyAndClearExpectations(dispatcher());
 
-  EXPECT_CALL(*(dispatcher()), MainThreadReceivedImage()).Times(1);
+  EXPECT_CALL(*(dispatcher()), PlaceholderReleasedResource(frame1_id)).Times(1);
   // Propagate second frame to the placeholder, causing frame 1 to be
-  // cleared.
+  // reclaimed.
   EXPECT_EQ(placeholder()->OffscreenCanvasFrame(), frame1_raw_ptr);
   platform->RunUntilIdle();
   EXPECT_EQ(placeholder()->OffscreenCanvasFrame(), frame2_raw_ptr);
   Mock::VerifyAndClearExpectations(dispatcher());
 }
 
-TEST_F(OffscreenCanvasPlaceholderTest, OldFrameClearedWithExtraRef) {
-  // This test verifies that OffscreenCanvasPlaceholder clears
-  // the previous frame when it receives a new one regardless of whether there
-  // is another ref on that previous frame.
+TEST_F(OffscreenCanvasPlaceholderTest, OldFrameNotReclaimedUntilUnref) {
+  // This test verifies that OffscreenCanvasPlaceholder send back
+  // the previous frame when it receives a new one.
   ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
   CreateDispatcher();
 
+  EXPECT_CALL(*(dispatcher()), PlaceholderReleasedResource(_)).Times(0);
   DrawSomething();
+  viz::ResourceId frame1_id = PeekNextResourceId();
   CanvasResource* frame1_raw_ptr = DispatchOneFrame();
+  EXPECT_TRUE(frame1_raw_ptr->HasOneRef());
+  Mock::VerifyAndClearExpectations(dispatcher());
 
-  EXPECT_CALL(*(dispatcher()), MainThreadReceivedImage()).Times(1);
+  EXPECT_CALL(*(dispatcher()), PlaceholderReleasedResource(_)).Times(0);
   // Run task that propagates the frame to the placeholder canvas.
   EXPECT_EQ(placeholder()->OffscreenCanvasFrame(), nullptr);
   platform->RunUntilIdle();
@@ -174,23 +186,25 @@ TEST_F(OffscreenCanvasPlaceholderTest, OldFrameClearedWithExtraRef) {
       placeholder()->OffscreenCanvasFrame();
   Mock::VerifyAndClearExpectations(dispatcher());
 
-  EXPECT_CALL(*(dispatcher()), MainThreadReceivedImage()).Times(0);
+  EXPECT_CALL(*(dispatcher()), PlaceholderReleasedResource(_)).Times(0);
   DrawSomething();
   CanvasResource* frame2_raw_ptr = DispatchOneFrame();
   Mock::VerifyAndClearExpectations(dispatcher());
 
-  EXPECT_CALL(*(dispatcher()), MainThreadReceivedImage()).Times(1);
-  // Propagate second frame to the placeholder. First frame will be cleared.
+  EXPECT_CALL(*(dispatcher()), PlaceholderReleasedResource(_)).Times(0);
+  // Propagate second frame to the placeholder.  First frame will not be
+  // reclaimed due to extra_ref.
   EXPECT_EQ(placeholder()->OffscreenCanvasFrame(), frame1_raw_ptr);
   platform->RunUntilIdle();
   EXPECT_EQ(placeholder()->OffscreenCanvasFrame(), frame2_raw_ptr);
   Mock::VerifyAndClearExpectations(dispatcher());
 
-  EXPECT_CALL(*(dispatcher()), MainThreadReceivedImage()).Times(0);
-  extra_ref = nullptr;
+  EXPECT_CALL(*(dispatcher()), PlaceholderReleasedResource(_)).Times(0);
+  extra_ref = nullptr;  // Deref cause resource to be reclaimed asynchronously.
   Mock::VerifyAndClearExpectations(dispatcher());
 
-  EXPECT_CALL(*(dispatcher()), MainThreadReceivedImage()).Times(0);
+  EXPECT_CALL(*(dispatcher()), PlaceholderReleasedResource(frame1_id)).Times(1);
+  // Run pending task to complete the reclaim.
   platform->RunUntilIdle();
   Mock::VerifyAndClearExpectations(dispatcher());
 }

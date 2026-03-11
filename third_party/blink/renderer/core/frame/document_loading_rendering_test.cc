@@ -13,7 +13,6 @@
 #include "third_party/blink/renderer/core/testing/sim/sim_compositor.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 
 namespace blink {
@@ -114,18 +113,12 @@ TEST_F(DocumentLoadingRenderingTest,
 
   // Sheet loading and no documentElement, so don't resume.
   main_resource.Write("<?xml-stylesheet type='text/css' href='test.css'?>");
-  // TODO(https://crbug.com/441911594): Rust XML parser always issues a
-  // StartDocument before any elements, also before PIs.
-  EXPECT_TRUE(RuntimeEnabledFeatures::XMLParsingRustEnabled() ||
-              Compositor().DeferMainFrameUpdate());
+  EXPECT_TRUE(Compositor().DeferMainFrameUpdate());
 
   // Sheet finishes loading, but no documentElement yet so don't resume.
   css_resource.Complete("a { color: red; }");
   test::RunPendingTasks();
-  // TODO(https://crbug.com/441911594): Rust XML parser always issues a
-  // StartDocument before any elements, also before PIs.
-  EXPECT_TRUE(RuntimeEnabledFeatures::XMLParsingRustEnabled() ||
-              Compositor().DeferMainFrameUpdate());
+  EXPECT_TRUE(Compositor().DeferMainFrameUpdate());
 
   // Root inserted so resume.
   main_resource.Write("<svg xmlns='http://www.w3.org/2000/svg'></svg>");

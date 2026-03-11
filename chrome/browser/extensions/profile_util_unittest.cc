@@ -7,14 +7,11 @@
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/extensions/extension_service_user_test_base.h"
 #include "chrome/browser/profiles/profile.h"
-#include "extensions/buildflags/buildflags.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "components/account_id/account_id.h"
 #include "components/user_manager/user.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using extensions::profile_util::ProfileCanUseNonComponentExtensions;
 
@@ -59,7 +56,7 @@ TEST_F(ProfileUtilUnitTest,
 TEST_F(ProfileUtilUnitTest,
        ProfileCannotUseNonComponentExtensions_KioskAppUser) {
   ASSERT_NO_FATAL_FAILURE(LoginChromeOSUser(
-      GetFakeUserManager()->AddKioskChromeAppUser(account_id_), account_id_));
+      GetFakeUserManager()->AddKioskAppUser(account_id_), account_id_));
 
   EXPECT_FALSE(ProfileCanUseNonComponentExtensions(profile()));
 }
@@ -67,7 +64,7 @@ TEST_F(ProfileUtilUnitTest,
 TEST_F(ProfileUtilUnitTest,
        ProfileCannotUseNonComponentExtensions_WebKioskAppUser) {
   ASSERT_NO_FATAL_FAILURE(LoginChromeOSUser(
-      GetFakeUserManager()->AddKioskWebAppUser(account_id_), account_id_));
+      GetFakeUserManager()->AddWebKioskAppUser(account_id_), account_id_));
 
   EXPECT_FALSE(ProfileCanUseNonComponentExtensions(profile()));
 }

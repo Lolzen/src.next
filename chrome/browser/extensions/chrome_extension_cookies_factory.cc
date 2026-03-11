@@ -4,13 +4,8 @@
 
 #include "chrome/browser/extensions/chrome_extension_cookies_factory.h"
 
-#include "chrome/browser/content_settings/cookie_settings_factory.h"
-#include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/extensions/chrome_extension_cookies.h"
 #include "chrome/browser/profiles/profile.h"
-#include "extensions/buildflags/buildflags.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using content::BrowserContext;
 
@@ -39,10 +34,7 @@ ChromeExtensionCookiesFactory::ChromeExtensionCookiesFactory()
               // TODO(crbug.com/41488885): Check if this service is needed for
               // Ash Internals.
               .WithAshInternals(ProfileSelection::kOwnInstance)
-              .Build()) {
-  DependsOn(CookieSettingsFactory::GetInstance());
-  DependsOn(HostContentSettingsMapFactory::GetInstance());
-}
+              .Build()) {}
 
 ChromeExtensionCookiesFactory::~ChromeExtensionCookiesFactory() = default;
 

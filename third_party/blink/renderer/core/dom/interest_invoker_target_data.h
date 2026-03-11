@@ -32,7 +32,8 @@ class InterestInvokerTargetData final
 
   void setInterestInvoker(Element* invoker) {
     DCHECK(!invoker ||
-           RuntimeEnabledFeatures::HTMLInterestForAttributeEnabled());
+           RuntimeEnabledFeatures::HTMLInterestTargetAttributeEnabled(
+               invoker->GetDocument().GetExecutionContext()));
     interest_invoker_ = invoker;
   }
 

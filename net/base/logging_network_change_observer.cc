@@ -29,8 +29,8 @@ int HumanReadableNetworkHandle(handles::NetworkHandle network) {
 // Return a dictionary of values that provide information about a
 // network-specific change. This also includes relevant current state
 // like the default network, and the types of active networks.
-base::DictValue NetworkSpecificNetLogParams(handles::NetworkHandle network) {
-  base::DictValue dict;
+base::Value::Dict NetworkSpecificNetLogParams(handles::NetworkHandle network) {
+  base::Value::Dict dict;
   dict.Set("changed_network_handle", HumanReadableNetworkHandle(network));
   dict.Set("changed_network_type",
            NetworkChangeNotifier::ConnectionTypeToString(
@@ -76,10 +76,8 @@ LoggingNetworkChangeObserver::~LoggingNetworkChangeObserver() {
     NetworkChangeNotifier::RemoveNetworkObserver(this);
 }
 
-void LoggingNetworkChangeObserver::OnIPAddressChanged(
-    NetworkChangeNotifier::IPAddressChangeType change_type) {
-  VLOG(1) << "Observed a change to the network IP addresses "
-          << NetworkChangeNotifier::IPAddressChangeTypeToString(change_type);
+void LoggingNetworkChangeObserver::OnIPAddressChanged() {
+  VLOG(1) << "Observed a change to the network IP addresses";
 
   net_log_.AddEvent(NetLogEventType::NETWORK_IP_ADDRESSES_CHANGED);
 }

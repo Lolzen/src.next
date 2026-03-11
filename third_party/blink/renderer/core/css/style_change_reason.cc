@@ -43,6 +43,7 @@ const char kMediaQuery[] = "Media Query changed";
 const char kNodeInserted[] = "Node was inserted into tree";
 const char kPictureSourceChanged[] = "PictureSourceChange";
 const char kPlatformColorChange[] = "PlatformColorChange";
+const char kPlaceElement[] = "placeElement";
 const char kPluginChanged[] = "Plugin Changed";
 const char kPopoverVisibilityChange[] = "Popover Visibility Change";
 const char kPositionTryChange[] = "@position-try change";
@@ -75,35 +76,27 @@ DEFINE_GLOBAL(, AtomicString, g_focus);
 DEFINE_GLOBAL(, AtomicString, g_focus_visible);
 DEFINE_GLOBAL(, AtomicString, g_focus_within);
 DEFINE_GLOBAL(, AtomicString, g_hover);
-DEFINE_GLOBAL(, AtomicString, g_overscroll_target);
 DEFINE_GLOBAL(, AtomicString, g_past);
-DEFINE_GLOBAL(, AtomicString, g_patching);
 DEFINE_GLOBAL(, AtomicString, g_unresolved);
 
 void Init() {
   DCHECK(IsMainThread());
 
-  new (base::NotNullTag::kNotNull, (void*)&g_active) AtomicString(":active");
-  new (base::NotNullTag::kNotNull, (void*)&g_active_view_transition)
+  new (WTF::NotNullTag::kNotNull, (void*)&g_active) AtomicString(":active");
+  new (WTF::NotNullTag::kNotNull, (void*)&g_active_view_transition)
       AtomicString(":active_view_transition");
-  new (base::NotNullTag::kNotNull, (void*)&g_active_view_transition_type)
+  new (WTF::NotNullTag::kNotNull, (void*)&g_active_view_transition_type)
       AtomicString(":active_view_transition_type");
-  new (base::NotNullTag::kNotNull, (void*)&g_disabled)
-      AtomicString(":disabled");
-  new (base::NotNullTag::kNotNull, (void*)&g_drag)
-      AtomicString(":-webkit-drag");
-  new (base::NotNullTag::kNotNull, (void*)&g_focus) AtomicString(":focus");
-  new (base::NotNullTag::kNotNull, (void*)&g_focus_visible)
+  new (WTF::NotNullTag::kNotNull, (void*)&g_disabled) AtomicString(":disabled");
+  new (WTF::NotNullTag::kNotNull, (void*)&g_drag) AtomicString(":-webkit-drag");
+  new (WTF::NotNullTag::kNotNull, (void*)&g_focus) AtomicString(":focus");
+  new (WTF::NotNullTag::kNotNull, (void*)&g_focus_visible)
       AtomicString(":focus-visible");
-  new (base::NotNullTag::kNotNull, (void*)&g_focus_within)
+  new (WTF::NotNullTag::kNotNull, (void*)&g_focus_within)
       AtomicString(":focus-within");
-  new (base::NotNullTag::kNotNull, (void*)&g_hover) AtomicString(":hover");
-  new (base::NotNullTag::kNotNull, (void*)&g_overscroll_target)
-      AtomicString(":-internal-overscroll-target");
-  new (base::NotNullTag::kNotNull, (void*)&g_past) AtomicString(":past");
-  new (base::NotNullTag::kNotNull, (void*)&g_patching)
-      AtomicString(":patching");
-  new (base::NotNullTag::kNotNull, (void*)&g_unresolved)
+  new (WTF::NotNullTag::kNotNull, (void*)&g_hover) AtomicString(":hover");
+  new (WTF::NotNullTag::kNotNull, (void*)&g_past) AtomicString(":past");
+  new (WTF::NotNullTag::kNotNull, (void*)&g_unresolved)
       AtomicString(":unresolved");
 }
 

@@ -119,7 +119,7 @@ class PrerenderTest : public testing::Test {
 
     GetBrowserInterfaceBroker().SetBinderForTesting(
         mojom::blink::NoStatePrefetchProcessor::Name_,
-        BindRepeating(&PrerenderTest::Bind, Unretained(this)));
+        WTF::BindRepeating(&PrerenderTest::Bind, WTF::Unretained(this)));
 
     frame_test_helpers::LoadFrame(
         web_view_helper_.GetWebView()->MainFrameImpl(),

@@ -139,7 +139,8 @@ TEST_F(ChromeContentBrowserClientPartsTest, ExposeInterfaces) {
 
   content::BrowserChildProcessHostDelegate dummy_delegate;
   auto bcph = content::BrowserChildProcessHost::Create(
-      content::PROCESS_TYPE_UTILITY, &dummy_delegate);
+      content::PROCESS_TYPE_UTILITY, &dummy_delegate,
+      content::ChildProcessHost::IpcMode::kNormal);
 
   // Ensure the exposed interfaces are registered correctly by expecting each to
   // append a suffix to the echoed string.

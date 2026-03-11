@@ -69,7 +69,7 @@ class PLATFORM_EXPORT ScopedRasterTimer {
     void AddGpuTimer(std::unique_ptr<AsyncGpuRasterTimer>);
 
    private:
-    Vector<std::unique_ptr<AsyncGpuRasterTimer>> gpu_timers_;
+    WTF::Vector<std::unique_ptr<AsyncGpuRasterTimer>> gpu_timers_;
   };
 
  private:

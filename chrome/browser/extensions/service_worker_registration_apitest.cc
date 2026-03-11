@@ -7,7 +7,6 @@
 
 #include "base/files/file_path.h"
 #include "base/memory/raw_ptr.h"
-#include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/test_future.h"
@@ -17,7 +16,6 @@
 #include "chrome/browser/extensions/chrome_test_extension_loader.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -40,7 +38,6 @@
 #include "extensions/browser/service_worker/service_worker_task_queue.h"
 #include "extensions/browser/service_worker/service_worker_test_utils.h"
 #include "extensions/common/extension.h"
-#include "extensions/common/extension_builder.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/mojom/manifest.mojom.h"
 #include "extensions/test/extension_background_page_waiter.h"
@@ -479,10 +476,15 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerRegistrationApiTest,
 
   // Open a new tab. The extension overrides the NTP, so this is the extension's
   // page.
-  ASSERT_TRUE(NavigateToURLInNewTab(GURL("chrome://newtab/")));
+  ASSERT_TRUE(ui_test_utils::NavigateToURLWithDisposition(
+      browser(), GURL("chrome://newtab/"),
+      WindowOpenDisposition::NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP));
 
-  EXPECT_EQ("This is a page", content::EvalJs(GetActiveWebContents(),
-                                              "document.body.innerText;"));
+  EXPECT_EQ(
+      "This is a page",
+      content::EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
+                      "document.body.innerText;"));
 
   // Verify the service worker is at v1.
   EXPECT_EQ(base::Value(1), GetVersionFlagFromBackgroundContext(id));
@@ -712,7 +714,9 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerRegistrationApiTest,
   ASSERT_TRUE(browsing_data_extension);
 
   auto open_new_tab = [this](const GURL& url) {
-    ASSERT_TRUE(NavigateToURLInNewTab(url));
+    ASSERT_TRUE(ui_test_utils::NavigateToURLWithDisposition(
+        browser(), url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+        ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP));
   };
 
   // Verify the initial state. The service worker-based extension should have a
@@ -768,7 +772,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerRegistrationApiTest,
                        MAYBE_ModifyingLocalFilesForUnpackedExtensions) {
   ASSERT_TRUE(StartEmbeddedTestServer());
   const double kUpdateDelayInMilliseconds =
-      content::ServiceWorkerContext::kUpdateDelay.InMillisecondsF();
+      content::ServiceWorkerContext::GetUpdateDelay().InMillisecondsF();
   // Assert that whatever our update delay is, it's less than 5 seconds. If it
   // were more, the test would risk timing out. If we ever need to exceed this
   // in practice, we could introduce a test setter for a different amount of
@@ -830,7 +834,9 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerRegistrationApiTest,
     // an extension page will be closed later in the test when the extension
     // reloads, and we need to make sure there's at least one tab left in the
     // browser.
-    EXPECT_TRUE(NavigateToURLInNewTab(page_url));
+    EXPECT_TRUE(ui_test_utils::NavigateToURLWithDisposition(
+        browser(), page_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+        ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP));
     return result_queue.GetNextResult();
   };
 
@@ -873,67 +879,6 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerRegistrationApiTest,
   EXPECT_EQ("storage changed version 2: count 4", open_tab_and_get_result());
 }
 
-// Tests that installing an extension with a service worker immediately after
-// uninstalling it does not result in the service worker not being registered.
-// Regression test for crbug.com/463925496.
-IN_PROC_BROWSER_TEST_F(ServiceWorkerRegistrationApiTest, ExtensionReinstall) {
-  const ExtensionId test_extension_id("iegclhlplifhodhkoafiokenjoapiobj");
-  base::HistogramTester histogram_tester;
-  auto SetupExtension = [&](ExtensionBuilder& builder,
-                            TestExtensionDir& test_dir) {
-    static constexpr char kSwJs[] = "chrome.test.sendMessage('ready');";
-    test_dir.WriteFile(FILE_PATH_LITERAL("sw.js"), kSwJs);
-
-    auto manifest = base::DictValue()
-                        .Set("name", "Extension SW reinstall test")
-                        .Set("version", "0.1")
-                        .Set("manifest_version", 3)
-                        .Set("background",
-                             base::DictValue().Set("service_worker", "sw.js"));
-    builder.SetManifest(std::move(manifest));
-    builder.SetPath(test_dir.UnpackedPath());
-    builder.SetID(test_extension_id);
-  };
-
-  ExtensionBuilder builder;
-  TestExtensionDir test_dir;
-  SetupExtension(builder, test_dir);
-
-  ExtensionBuilder reinstalled_builder;
-  SetupExtension(reinstalled_builder, test_dir);
-
-  ExtensionRegistrationAndUnregistrationWaiter registration_waiter(
-      test_extension_id);
-  scoped_refptr<const Extension> extension(builder.Build());
-  extension_registrar()->AddExtension(extension.get());
-  {
-    SCOPED_TRACE("waiting for extension registration to finish");
-    registration_waiter.WaitForWorkerRegistrationAttemptCompleted();
-    EXPECT_EQ(content::ServiceWorkerCapability::SERVICE_WORKER_NO_FETCH_HANDLER,
-              GetServiceWorkerRegistrationState(*extension));
-  }
-
-  UninstallExtension(extension->id());
-
-  ExtensionRegistrationAndUnregistrationWaiter registration_waiter2(
-      test_extension_id);
-  scoped_refptr<const Extension> reinstalled_extension(
-      reinstalled_builder.Build());
-  extension_registrar()->AddExtension(reinstalled_extension.get());
-  // Expect the service worker to be registered again.
-  {
-    SCOPED_TRACE("waiting for extension re-registration to finish");
-    registration_waiter2.WaitForWorkerRegistrationAttemptCompleted();
-    EXPECT_EQ(content::ServiceWorkerCapability::SERVICE_WORKER_NO_FETCH_HANDLER,
-              GetServiceWorkerRegistrationState(*reinstalled_extension));
-  }
-
-  CheckBooleanHistogramCounts(
-      "Extensions.ServiceWorkerBackground."
-      "WorkerRegistrationRetryForUnregistrationAttemptsResult",
-      /*true_count=*/1, /*false_count=*/0, histogram_tester);
-}
-
 class ServiceWorkerExtensionUpdateOnBrowserRestartRegistrationApiTest
     : public ServiceWorkerRegistrationApiTest {
  protected:
@@ -944,6 +889,11 @@ class ServiceWorkerExtensionUpdateOnBrowserRestartRegistrationApiTest
     // confirm the update works as expected.
     set_open_about_blank_on_browser_launch(false);
 
+    // Create the observer now because the browser will be started after we call
+    // `ServiceWorkerRegistrationApiTest::SetUp()`.
+    browser_start_new_tab_observer_ =
+        std::make_unique<ui_test_utils::UrlLoadObserver>(new_tab_url());
+
     ServiceWorkerRegistrationApiTest::SetUp();
   }
 
@@ -953,7 +903,7 @@ class ServiceWorkerExtensionUpdateOnBrowserRestartRegistrationApiTest
     {
       SCOPED_TRACE(
           "waiting for the initial new tab to open after browser start");
-      EXPECT_TRUE(content::WaitForLoadStop(GetActiveWebContents()));
+      browser_start_new_tab_observer_->Wait();
     }
   }
 
@@ -967,6 +917,13 @@ class ServiceWorkerExtensionUpdateOnBrowserRestartRegistrationApiTest
     ServiceWorkerRegistrationApiTest::CreatedBrowserMainParts(main_parts);
   }
 
+  void TearDownOnMainThread() override {
+    ServiceWorkerRegistrationApiTest::TearDownOnMainThread();
+
+    // Prevent dangling pointer on test teardown.
+    browser_start_new_tab_observer_.reset();
+  }
+
   // Ensure any new tab that is opened defaults goes to chrome://newtab.
   void SetUpCommandLine(base::CommandLine* command_line) override {
     ServiceWorkerRegistrationApiTest::SetUpCommandLine(command_line);
@@ -976,15 +933,20 @@ class ServiceWorkerExtensionUpdateOnBrowserRestartRegistrationApiTest
 
   // Get the NTP javascript's version.
   content::EvalJsResult GetVersionOfNTPScript() {
-    return content::EvalJs(GetActiveWebContents(), "self.currentVersion;");
+    return content::EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
+                           "self.currentVersion;");
   }
 
   // Request the version of the background context script from the perspective
   // of the NTP js.
   content::EvalJsResult GetBackgroundContextVersionFromNTPPage() {
-    return content::EvalJs(GetActiveWebContents(),
+    return content::EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
                            "getCurrentVersionOfBackgroundContext();");
   }
+
+  // Observes that chrome://newtab loads on test start.
+  std::unique_ptr<ui_test_utils::UrlLoadObserver>
+      browser_start_new_tab_observer_;
 
   std::unique_ptr<ExtensionTestMessageListener> v2_install_listener_;
   std::unique_ptr<base::HistogramTester> v2_update_histogram_tester_;
@@ -1020,7 +982,7 @@ IN_PROC_BROWSER_TEST_F(
 
   // Navigate current tab to new tab to engage v1 of the NTP extension to stay
   // non-idle.
-  ASSERT_TRUE(NavigateToURL(GetActiveWebContents(), new_tab_url()));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), new_tab_url()));
 
   // Verify v1 of extension is responding to messages in the tab.
   std::u16string first_new_tab_title;
@@ -1073,7 +1035,7 @@ IN_PROC_BROWSER_TEST_F(
 
   // Navigate again to new tab so we can confirm v1 is still running and v2
   // hasn't taken over future new tabs.
-  ASSERT_TRUE(NavigateToURL(GetActiveWebContents(), new_tab_url()));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), new_tab_url()));
   std::u16string third_new_tab_title;
   ui_test_utils::GetCurrentTabTitle(browser(), &third_new_tab_title);
   ASSERT_EQ(u"Custom NTP test v1", third_new_tab_title);
@@ -1131,7 +1093,7 @@ IN_PROC_BROWSER_TEST_F(
 
   // Navigate to new tab page so we can confirm v2 is still running and v1
   // hasn't taken over future new tabs loads.
-  ASSERT_TRUE(NavigateToURL(GetActiveWebContents(), new_tab_url()));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), new_tab_url()));
   std::u16string new_tab_title;
   ui_test_utils::GetCurrentTabTitle(browser(), &new_tab_title);
   ASSERT_EQ(u"Custom NTP test v2", new_tab_title);

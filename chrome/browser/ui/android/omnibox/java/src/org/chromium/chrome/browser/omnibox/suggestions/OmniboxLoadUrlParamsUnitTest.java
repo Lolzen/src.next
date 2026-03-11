@@ -6,7 +6,6 @@ package org.chromium.chrome.browser.omnibox.suggestions;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -20,9 +19,6 @@ import org.chromium.chrome.browser.omnibox.suggestions.AutocompleteDelegate.Auto
 import org.chromium.chrome.browser.tab.Tab.LoadUrlResult;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.ui.base.PageTransition;
-
-import java.util.HashMap;
-import java.util.Map;
 
 /** Tests for {@link OmniboxLoadUrlParams}. */
 @RunWith(BaseRobolectricTestRunner.class)
@@ -39,7 +35,7 @@ public class OmniboxLoadUrlParamsUnitTest {
         assertEquals(PageTransition.TYPED, params.transitionType);
         assertEquals(0L, params.inputStartTimestamp);
         assertFalse(params.openInNewTab);
-        assertTrue(params.extraHeaders.isEmpty());
+        assertNull(params.postDataType);
         assertNull(params.postData);
         assertNull(params.callback);
     }
@@ -58,8 +54,7 @@ public class OmniboxLoadUrlParamsUnitTest {
                 new OmniboxLoadUrlParams.Builder(TEST_URL, PageTransition.TYPED)
                         .setInputStartTimestamp(100L)
                         .setOpenInNewTab(true)
-                        .setPostData(data)
-                        .setExtraHeaders(Map.of("Content-Type", text))
+                        .setpostDataAndType(data, text)
                         .setAutocompleteLoadCallback(callback)
                         .build();
 
@@ -67,29 +62,8 @@ public class OmniboxLoadUrlParamsUnitTest {
         assertEquals(PageTransition.TYPED, params.transitionType);
         assertEquals(100L, params.inputStartTimestamp);
         assertTrue(params.openInNewTab);
-        assertNotNull(params.extraHeaders);
-        assertEquals(text, params.extraHeaders.get("Content-Type"));
+        assertEquals(params.postDataType, text);
         assertEquals(params.postData, data);
         assertEquals(params.callback, callback);
-    }
-
-    @Test
-    @SmallTest
-    public void setExtraHeaders() {
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Authorization", "Bearer token123");
-        headers.put("Custom-Header", "custom-value");
-
-        OmniboxLoadUrlParams params =
-                new OmniboxLoadUrlParams.Builder(TEST_URL, PageTransition.TYPED)
-                        .setExtraHeaders(headers)
-                        .build();
-
-        assertEquals(TEST_URL, params.url);
-        assertEquals(PageTransition.TYPED, params.transitionType);
-        assertNotNull(params.extraHeaders);
-        assertEquals("Bearer token123", params.extraHeaders.get("Authorization"));
-        assertEquals("custom-value", params.extraHeaders.get("Custom-Header"));
-        assertEquals(2, params.extraHeaders.size());
     }
 }

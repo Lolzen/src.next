@@ -30,10 +30,10 @@
 
 #include "base/time/time.h"
 #include "third_party/blink/public/mojom/confidence_level.mojom-blink.h"
+#include "third_party/blink/public/mojom/navigation/system_entropy.mojom-blink.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
-#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value.h"
 
 namespace base {
@@ -68,6 +68,8 @@ struct DocumentLoadTimingValues final
   bool has_cross_origin_redirect = false;
   bool can_request_from_previous_document = false;
 
+  mojom::blink::SystemEntropy system_entropy_at_navigation_start =
+      mojom::blink::SystemEntropy::kNormal;
   std::optional<RandomizedConfidenceValue> randomized_confidence;
 
   void Trace(Visitor*) const {}
@@ -127,6 +129,10 @@ class CORE_EXPORT DocumentLoadTiming final {
     document_load_timing_values_->can_request_from_previous_document = value;
   }
 
+  void SetSystemEntropyAtNavigationStart(mojom::blink::SystemEntropy value) {
+    document_load_timing_values_->system_entropy_at_navigation_start = value;
+  }
+
   void SetRandomizedConfidence(
       const std::optional<RandomizedConfidenceValue>& value);
 
@@ -151,7 +157,7 @@ class CORE_EXPORT DocumentLoadTiming final {
     return custom_user_timing_mark_;
   }
   base::TimeTicks NavigationStart() const { return navigation_start_; }
-  const Vector<base::TimeTicks>& BackForwardCacheRestoreNavigationStarts()
+  const WTF::Vector<base::TimeTicks>& BackForwardCacheRestoreNavigationStarts()
       const {
     return bfcache_restore_navigation_starts_;
   }
@@ -199,6 +205,9 @@ class CORE_EXPORT DocumentLoadTiming final {
   base::TimeTicks CriticalCHRestart() const {
     return document_load_timing_values_->critical_ch_restart;
   }
+  mojom::blink::SystemEntropy SystemEntropyAtNavigationStart() const {
+    return document_load_timing_values_->system_entropy_at_navigation_start;
+  }
   std::optional<RandomizedConfidenceValue> RandomizedConfidence() const {
     return document_load_timing_values_->randomized_confidence;
   }
@@ -226,7 +235,7 @@ class CORE_EXPORT DocumentLoadTiming final {
       custom_user_timing_mark_;
   base::TimeTicks navigation_start_;
   base::TimeTicks commit_navigation_end_;
-  Vector<base::TimeTicks> bfcache_restore_navigation_starts_;
+  WTF::Vector<base::TimeTicks> bfcache_restore_navigation_starts_;
 
   const base::Clock* clock_;
   const base::TickClock* tick_clock_;

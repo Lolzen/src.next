@@ -11,7 +11,6 @@
 #include "third_party/blink/renderer/core/animation/animation_test_helpers.h"
 #include "third_party/blink/renderer/core/animation/document_timeline.h"
 #include "third_party/blink/renderer/core/animation/element_animations.h"
-#include "third_party/blink/renderer/core/css/active_style_sheets.h"
 #include "third_party/blink/renderer/core/css/cascade_layer_map.h"
 #include "third_party/blink/renderer/core/css/css_flip_revert_value.h"
 #include "third_party/blink/renderer/core/css/css_image_set_value.h"
@@ -29,7 +28,6 @@
 #include "third_party/blink/renderer/core/css/resolver/style_resolver_state.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
-#include "third_party/blink/renderer/core/css/style_scope_data.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
@@ -40,14 +38,12 @@
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
 #include "third_party/blink/renderer/core/html/html_dialog_element.h"
 #include "third_party/blink/renderer/core/html/html_style_element.h"
-#include "third_party/blink/renderer/core/layout/anchor_evaluator_impl.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/style/anchor_specifier_value.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/geometry/calculation_value.h"
-#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 
@@ -134,38 +130,19 @@ class StyleResolverTest : public PageTestBase {
     return style.MaxHeight();
   }
 
-  void UpdateStyleAndLayoutTreeForOutOfFlow(Element& element,
-                                            AtomicString try_name) {
+  void UpdateStyleForOutOfFlow(Element& element, AtomicString try_name) {
     ScopedCSSName* scoped_name =
         MakeGarbageCollected<ScopedCSSName>(try_name, &GetDocument());
-    PositionTryFallback fallback(scoped_name, kNoTryTactics);
-    GetStyleEngine().UpdateStyleAndLayoutTreeForOutOfFlow(
-        element, &fallback, /*anchor_evaluator=*/nullptr,
-        WritingDirectionMode(WritingMode::kHorizontalTb, TextDirection::kLtr));
+    StyleRulePositionTry* rule =
+        GetStyleEngine().GetPositionTryRule(*scoped_name);
+    CHECK(rule);
+    GetStyleEngine().UpdateStyleForOutOfFlow(
+        element, /* try_set */ &rule->Properties(), kNoTryTactics,
+        /* anchor_evaluator */ nullptr);
   }
 
   size_t GetCurrentOldStylesCount() {
     return PostStyleUpdateScope::CurrentAnimationData()->old_styles_.size();
-  }
-
-  // Create unconnected RuleSets for each active stylesheet to observe
-  // the side effects (which should be nothing).
-  void CreateUnconnectedRuleSets(
-      const ActiveStyleSheetVector& active_stylesheets) {
-    for (const ActiveStyleSheet& active_stylesheet : active_stylesheets) {
-      CSSStyleSheet* sheet = active_stylesheet.first.Get();
-      ASSERT_TRUE(sheet);
-      RuleSet* unconnected_ruleset =
-          GetStyleEngine().CreateUnconnectedRuleSet(*sheet, /*mixins=*/{});
-      ASSERT_TRUE(unconnected_ruleset);
-    }
-  }
-
-  void SetInnerText(const char* selector, const char* text) {
-    HTMLElement* element = DynamicTo<HTMLElement>(
-        GetDocument().QuerySelector(AtomicString(selector)));
-    DCHECK(element);
-    element->setInnerText(text);
   }
 };
 
@@ -175,7 +152,7 @@ class StyleResolverTestCQ : public StyleResolverTest {
 };
 
 TEST_F(StyleResolverTest, StyleForTextInDisplayNone) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <body style="display:none">Text</body>
   )HTML");
 
@@ -191,7 +168,7 @@ TEST_F(StyleResolverTest, StyleForTextInDisplayNone) {
 }
 
 TEST_F(StyleResolverTest, AnimationBaseComputedStyle) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       html { font-size: 10px; }
       body { font-size: 20px; }
@@ -232,20 +209,18 @@ TEST_F(StyleResolverTest, AnimationBaseComputedStyle) {
 }
 
 TEST_F(StyleResolverTest, HasEmUnits) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
-      "<div id=div>Test</div>");
+  GetDocument().documentElement()->setInnerHTML("<div id=div>Test</div>");
   UpdateAllLifecyclePhasesForTest();
   EXPECT_FALSE(StyleForId("div")->HasEmUnits());
 
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+  GetDocument().documentElement()->setInnerHTML(
       "<div id=div style='width:1em'>Test</div>");
   UpdateAllLifecyclePhasesForTest();
   EXPECT_TRUE(StyleForId("div")->HasEmUnits());
 }
 
 TEST_F(StyleResolverTest, BaseReusableIfFontRelativeUnitsAbsent) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
-      "<div id=div>Test</div>");
+  GetDocument().documentElement()->setInnerHTML("<div id=div>Test</div>");
   UpdateAllLifecyclePhasesForTest();
   Element* div = GetDocument().getElementById(AtomicString("div"));
 
@@ -265,7 +240,7 @@ TEST_F(StyleResolverTest, BaseReusableIfFontRelativeUnitsAbsent) {
 }
 
 TEST_F(StyleResolverTest, AnimationNotMaskedByImportant) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       div {
         width: 10px;
@@ -304,7 +279,7 @@ TEST_F(StyleResolverTest, AnimationNotMaskedWithoutElementAnimations) {
 }
 
 TEST_F(StyleResolverTest, AnimationNotMaskedWithoutBitset) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       div {
         width: 10px;
@@ -335,7 +310,7 @@ TEST_F(StyleResolverTest, AnimationNotMaskedWithoutBitset) {
 }
 
 TEST_F(StyleResolverTest, AnimationMaskedByImportant) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       div {
         width: 10px;
@@ -368,7 +343,7 @@ TEST_F(StyleResolverTest, AnimationMaskedByImportant) {
 
 TEST_F(StyleResolverTest,
        TransitionRetargetRelativeFontSizeOnParentlessElement) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       html {
         font-size: 20px;
@@ -421,8 +396,8 @@ class StyleResolverFontRelativeUnitTest
 
 TEST_P(StyleResolverFontRelativeUnitTest,
        BaseNotReusableIfFontRelativeUnitPresent) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(UNSAFE_TODO(
-      String::Format("<div id=div style='width:1%s'>Test</div>", GetParam())));
+  GetDocument().documentElement()->setInnerHTML(
+      String::Format("<div id=div style='width:1%s'>Test</div>", GetParam()));
   UpdateAllLifecyclePhasesForTest();
 
   Element* div = GetDocument().getElementById(AtomicString("div"));
@@ -445,8 +420,8 @@ TEST_P(StyleResolverFontRelativeUnitTest,
 
 TEST_P(StyleResolverFontRelativeUnitTest,
        BaseReusableIfNoFontAffectingAnimation) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(UNSAFE_TODO(
-      String::Format("<div id=div style='width:1%s'>Test</div>", GetParam())));
+  GetDocument().documentElement()->setInnerHTML(
+      String::Format("<div id=div style='width:1%s'>Test</div>", GetParam()));
   UpdateAllLifecyclePhasesForTest();
 
   Element* div = GetDocument().getElementById(AtomicString("div"));
@@ -504,7 +479,7 @@ const CSSImageSetValue& GetBackgroundImageSetValue(const Element* element) {
 }  // namespace
 
 TEST_F(StyleResolverTest, BackgroundImageFetch) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       #none {
         display: none;
@@ -660,7 +635,7 @@ TEST_F(StyleResolverTest, BackgroundImageFetch) {
 TEST_F(StyleResolverTest, FetchForAtPage) {
   // The background-image property applies in an @page context, according to
   // https://drafts.csswg.org/css-page-3/#page-property-list
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       @page {
         background-image: url(bg-img.png);
@@ -679,36 +654,10 @@ TEST_F(StyleResolverTest, FetchForAtPage) {
   EXPECT_FALSE(To<CSSImageValue>(bg_img_list->Item(0)).IsCachePending());
 }
 
-TEST_F(StyleResolverTest, SingleAxisAdjustOverflow) {
-  auto run_test = [&](String overflow_style, EOverflow expected_x,
-                      EOverflow expected_y) {
-    StringBuilder builder;
-    builder.Append("<div id='target' style='overflow-x: ");
-    builder.Append(overflow_style);
-    builder.Append("; overflow-y: scroll;'></div>");
-    SetBodyInnerHTML(builder.ToString());
-    const auto* style = StyleForId("target");
-    EXPECT_EQ(expected_x, style->OverflowX());
-    EXPECT_EQ(expected_y, style->OverflowY());
-  };
-
-  {
-    ScopedSingleAxisScrollContainersForTest single_axis_feature(false);
-    run_test("clip", EOverflow::kHidden, EOverflow::kScroll);
-    run_test("visible", EOverflow::kAuto, EOverflow::kScroll);
-  }
-
-  {
-    ScopedSingleAxisScrollContainersForTest single_axis_feature(true);
-    run_test("clip", EOverflow::kClip, EOverflow::kScroll);
-    run_test("visible", EOverflow::kVisible, EOverflow::kScroll);
-  }
-}
-
 TEST_F(StyleResolverTest, NoFetchForAtPage) {
   // The list-style-image property doesn't apply in an @page context, since
   // it's not in https://drafts.csswg.org/css-page-3/#page-property-list
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       @page {
         list-style-image: url(bg-img.png);
@@ -731,7 +680,7 @@ TEST_F(StyleResolverTest, NoFetchForAtPage) {
 // test for it. See https://drafts.csswg.org/css-page-3/#page-property-list for
 // applicable properties within a page context.
 TEST_F(StyleResolverTest, PageComputedStyle) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       html {
         font-size: 32px;
@@ -797,7 +746,7 @@ TEST_F(StyleResolverTest, PageComputedStyle) {
 }
 
 TEST_F(StyleResolverTest, NoFetchForHighlightPseudoElements) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       body::target-text, body::selection {
         color: green;
@@ -865,7 +814,7 @@ TEST_F(StyleResolverTest, NoFetchForHighlightPseudoElements) {
 }
 
 TEST_F(StyleResolverTest, CSSMarkerPseudoElement) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       b::before {
         content: "[before]";
@@ -908,7 +857,7 @@ TEST_F(StyleResolverTest, CSSMarkerPseudoElement) {
     EXPECT_FALSE(li_style->HasAnyPseudoElementStyles());
     // Check that UA's ::before::marker rule doesn't set HasPseudoElementStyle.
     // For performance reason we do not SetHasPseudoElementStyle() for ::marker
-    // pseudo-element selectors from UA stylesheets for now.
+    // pseudo element selectors from UA stylesheets for now.
     const ComputedStyle* before_style = before->GetComputedStyle();
     EXPECT_FALSE(before_style->HasPseudoElementStyle(kPseudoIdMarker));
     EXPECT_FALSE(before_style->HasAnyPseudoElementStyles());
@@ -963,7 +912,7 @@ TEST_F(StyleResolverTest, ApplyInheritedOnlyCustomPropertyChange) {
   // properties changed, and that we therefore need to apply the non-inherited
   // properties as well.
 
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       #parent1 { --a: 10px; }
       #parent2 { --a: 20px; }
@@ -995,18 +944,18 @@ TEST_F(StyleResolverTest, CssRulesForElementIncludedRules) {
 }
 
 TEST_F(StyleResolverTest, NestedPseudoElement) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       div::before { content: "Hello"; display: list-item; }
       div::before::marker { color: green; }
     </style>
   )HTML");
   UpdateAllLifecyclePhasesForTest();
-  // Don't crash when calculating style for nested pseudo-elements.
+  // Don't crash when calculating style for nested pseudo elements.
 }
 
 TEST_F(StyleResolverTest, CascadedValuesForElement) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       #div {
         top: 1em;
@@ -1056,7 +1005,7 @@ TEST_F(StyleResolverTest, CascadedValuesForElement) {
 }
 
 TEST_F(StyleResolverTest, CascadedValuesForPseudoElement) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       #div::before {
         top: 1em;
@@ -1081,7 +1030,7 @@ TEST_F(StyleResolverTest, CascadedValuesForPseudoElement) {
 }
 
 TEST_F(StyleResolverTestCQ, CascadedValuesForElementInContainer) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       #container { container-type: inline-size; }
       @container (min-width: 1px) {
@@ -1111,7 +1060,7 @@ TEST_F(StyleResolverTestCQ, CascadedValuesForElementInContainer) {
 }
 
 TEST_F(StyleResolverTestCQ, CascadedValuesForPseudoElementInContainer) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       #container { container-type: inline-size; }
       @container (min-width: 1px) {
@@ -1141,7 +1090,7 @@ TEST_F(StyleResolverTestCQ, CascadedValuesForPseudoElementInContainer) {
 }
 
 TEST_F(StyleResolverTest, EnsureComputedStyleSlotFallback) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <div id="host"><span></span></div>
   )HTML");
 
@@ -1149,7 +1098,7 @@ TEST_F(StyleResolverTest, EnsureComputedStyleSlotFallback) {
       GetDocument()
           .getElementById(AtomicString("host"))
           ->AttachShadowRootForTesting(ShadowRootMode::kOpen);
-  shadow_root.SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  shadow_root.setInnerHTML(R"HTML(
     <style>
       slot { color: red }
     </style>
@@ -1173,7 +1122,7 @@ TEST_F(StyleResolverTest, EnsureComputedStyleSlotFallback) {
 }
 
 TEST_F(StyleResolverTest, EnsureComputedStyleOutsideFlatTree) {
-  GetDocument().documentElement()->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setHTMLUnsafe(R"HTML(
     <div id=host>
       <template shadowrootmode=open>
       </template>
@@ -1244,37 +1193,8 @@ TEST_F(StyleResolverTest, EnsureComputedStyleOutsideFlatTree) {
   EXPECT_NE(c_style, c->GetComputedStyle());
 }
 
-TEST_F(StyleResolverTest, EnsureComputedStyleForExistingScrollMarkerGroup) {
-  SetBodyInnerHTML(R"HTML(
-      <style>
-        #scroller {
-          overflow: auto;
-          width: 100px;
-          height: 100px;
-          scroll-marker-group: before;
-        }
-        #scroller::scroll-marker-group {
-          background: green;
-        }
-      </style>
-      <div id="scroller"></div>
-    )HTML");
-  Element* scroller = GetDocument().getElementById(AtomicString("scroller"));
-  PseudoElement* smg =
-      scroller->GetPseudoElement(kPseudoIdScrollMarkerGroupBefore);
-  ASSERT_TRUE(smg);
-  const ComputedStyle* smg_style = smg->GetComputedStyle();
-  const ComputedStyle* smg_ensured_style =
-      scroller->EnsureComputedStyle(kPseudoIdScrollMarkerGroup);
-  EXPECT_TRUE(smg_style);
-  EXPECT_EQ(smg_style, smg_ensured_style)
-      << "Ensuring ComputedStyle for kPseudoIdScrollMarkerGroup should "
-         "retrieve the style directly from the generated before or after group "
-         "when present";
-}
-
 TEST_F(StyleResolverTest, ComputeValueStandardProperty) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       #target { --color: green }
     </style>
@@ -1321,8 +1241,7 @@ const CSSValue* ParseCustomProperty(Document& document,
                                     const CustomProperty& property,
                                     const String& value) {
   const auto* context = MakeGarbageCollected<CSSParserContext>(document);
-  CSSParserLocalContext local_context =
-      CSSParserLocalContext::CreateWithoutPropertyForTest();
+  CSSParserLocalContext local_context;
 
   return property.Parse(value, *context, local_context);
 }
@@ -1330,7 +1249,7 @@ const CSSValue* ParseCustomProperty(Document& document,
 }  // namespace
 
 TEST_F(StyleResolverTest, ComputeValueCustomProperty) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       #target { --color: green }
     </style>
@@ -1353,7 +1272,7 @@ TEST_F(StyleResolverTest, ComputeValueCustomProperty) {
 }
 
 TEST_F(StyleResolverTest, TreeScopedReferences) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       #host { animation-name: anim }
     </style>
@@ -1365,7 +1284,7 @@ TEST_F(StyleResolverTest, TreeScopedReferences) {
   Element* host = GetDocument().getElementById(AtomicString("host"));
   ASSERT_TRUE(host);
   ShadowRoot& root = host->AttachShadowRootForTesting(ShadowRootMode::kOpen);
-  root.SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  root.setInnerHTML(R"HTML(
     <style>
       ::slotted(span) { animation-name: anim-slotted }
       :host { font-family: myfont }
@@ -1379,7 +1298,7 @@ TEST_F(StyleResolverTest, TreeScopedReferences) {
   ASSERT_TRUE(inner_host);
   ShadowRoot& inner_root =
       inner_host->AttachShadowRootForTesting(ShadowRootMode::kOpen);
-  inner_root.SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  inner_root.setInnerHTML(R"HTML(
     <style>
       ::slotted(span) { animation-name: anim-inner-slotted }
     </style>
@@ -1443,7 +1362,7 @@ TEST_F(StyleResolverTest, TreeScopedReferences) {
 }
 
 TEST_F(StyleResolverTest, QuietlySwapActiveStyleSheets) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       div { z-index: 1; }
     </style>
@@ -1507,342 +1426,8 @@ TEST_F(StyleResolverTest, QuietlySwapActiveStyleSheets) {
   }
 }
 
-TEST_F(StyleResolverTest, QuietlySwapActiveStyleSheets_ImplicitScope) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <div id=outer>
-      Test
-      <style id=inner></style>
-    </div>
-    <div id=aside>
-      <style>
-        @scope {
-          .foo {}
-        }
-      </style>
-      <style>
-        @scope {
-          .bar {}
-        }
-      </style>
-    </div>
-  )HTML");
-  UpdateAllLifecyclePhasesForTest();
-
-  Element* outer = GetDocument().getElementById(AtomicString("outer"));
-  ASSERT_TRUE(outer);
-  Element* inner = GetDocument().getElementById(AtomicString("inner"));
-  ASSERT_TRUE(inner);
-  Element* aside = GetDocument().getElementById(AtomicString("aside"));
-  ASSERT_TRUE(aside);
-
-  // Before swap:
-  ASSERT_TRUE(aside->GetStyleScopeData());
-  EXPECT_EQ(2u, aside->GetStyleScopeData()->GetTriggeredScopes().size());
-
-  // Create a "fake" stylesheet owned by #inner, and quietly swap to that.
-  const auto* context = MakeGarbageCollected<CSSParserContext>(GetDocument());
-  auto* contents = MakeGarbageCollected<StyleSheetContents>(context);
-
-  contents->ParseString(R"CSS(
-    @scope {
-      div {}
-    }
-  )CSS",
-                        /*allow_imports=*/false);
-
-  auto* sheet =
-      MakeGarbageCollected<CSSStyleSheet>(contents, /*owner_node=*/*inner);
-
-  MediaQueryEvaluator* mq_evaluator =
-      MakeGarbageCollected<MediaQueryEvaluator>(&GetFrame());
-  RuleSet& rule_set = contents->EnsureRuleSet(*mq_evaluator, /*mixins=*/{});
-
-  ActiveStyleSheetVector active_stylesheets;
-  active_stylesheets.push_back(std::make_pair(sheet, &rule_set));
-
-  ScopedStyleResolver* scoped_resolver = GetDocument().GetScopedStyleResolver();
-  ASSERT_TRUE(scoped_resolver);
-  scoped_resolver->QuietlySwapActiveStyleSheets(active_stylesheets);
-
-  // After swap:
-  ASSERT_TRUE(aside->GetStyleScopeData());
-  EXPECT_EQ(0u, aside->GetStyleScopeData()->GetTriggeredScopes().size());
-
-  ASSERT_TRUE(outer->GetStyleScopeData());
-  EXPECT_EQ(1u, outer->GetStyleScopeData()->GetTriggeredScopes().size());
-}
-
-TEST_F(StyleResolverTest, CreateUnconnectedRuleSets_LayeredPageRule) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo, bar;
-    </style>
-    <style id=style></style>
-    <style>
-      @layer bar {
-        @page { margin-top: 100px; }
-      }
-      @layer foo {
-        @page { margin-top: 50px; }
-      }
-    </style>
-  )HTML");
-  UpdateAllLifecyclePhasesForTest();
-
-  gfx::SizeF page_size(400, 400);
-  GetDocument().GetFrame()->StartPrinting(WebPrintParams(page_size));
-  GetDocument().View()->UpdateLifecyclePhasesForPrinting();
-
-  // "bar" wins:
-  EXPECT_EQ(100, GetDocument().GetPageDescription(/*page_index=*/0).margin_top);
-  GetDocument().GetFrame()->EndPrinting();
-  UpdateAllLifecyclePhasesForTest();
-
-  ScopedStyleResolver* scoped_resolver = GetDocument().GetScopedStyleResolver();
-  ASSERT_TRUE(scoped_resolver);
-
-  // This should have no side effects.
-  CreateUnconnectedRuleSets(scoped_resolver->GetActiveStyleSheets());
-
-  // Add a layer that should not matter.
-  SetInnerText("#style", "@layer { div {} }");
-
-  // The result should be the same if we print again:
-  GetDocument().GetFrame()->StartPrinting(WebPrintParams(page_size));
-  GetDocument().View()->UpdateLifecyclePhasesForPrinting();
-  EXPECT_EQ(100, GetDocument().GetPageDescription(/*page_index=*/0).margin_top);
-}
-
-TEST_F(StyleResolverTest, CreateUnconnectedRuleSets_LayeredFontFaceRule) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo, bar;
-    </style>
-    <style id=style></style>
-    <style>
-      @layer bar {
-        @font-face { font-family: foo; src: url('a.woff'); }
-      }
-      @layer foo {
-        @font-face { font-family: foo; src: url('b.woff'); }
-      }
-    </style>
-  )HTML");
-  UpdateAllLifecyclePhasesForTest();
-  ScopedStyleResolver* scoped_resolver = GetDocument().GetScopedStyleResolver();
-  ASSERT_TRUE(scoped_resolver);
-  // This should have no side effects:
-  CreateUnconnectedRuleSets(scoped_resolver->GetActiveStyleSheets());
-  // Add a layer that causes a rebuild of the CascadeLayer map:
-  SetInnerText("#style", "@layer { div {} }");
-  // Don't crash:
-  UpdateAllLifecyclePhasesForTest();
-}
-
-TEST_F(StyleResolverTest, CreateUnconnectedRuleSets_LayeredFontFeatureValues) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo, bar;
-    </style>
-    <style id=style></style>
-    <style>
-      @layer bar {
-        @font-feature-values name { fancy: 1; }
-      }
-      @layer foo {
-        @font-feature-values name { fancy: 2; }
-      }
-    </style>
-  )HTML");
-  UpdateAllLifecyclePhasesForTest();
-  ScopedStyleResolver* scoped_resolver = GetDocument().GetScopedStyleResolver();
-  ASSERT_TRUE(scoped_resolver);
-  // This should have no side effects:
-  CreateUnconnectedRuleSets(scoped_resolver->GetActiveStyleSheets());
-  // Add a layer that causes a rebuild of the CascadeLayer map:
-  SetInnerText("#style", "@layer { div {} }");
-  // Don't crash:
-  UpdateAllLifecyclePhasesForTest();
-}
-
-TEST_F(StyleResolverTest, CreateUnconnectedRuleSets_LayeredKeyframes) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo, bar;
-    </style>
-    <style id=style></style>
-    <style>
-      @layer bar {
-        @keyframes anim {}
-      }
-      @layer foo {
-        @keyframes anim {}
-      }
-    </style>
-  )HTML");
-  UpdateAllLifecyclePhasesForTest();
-  ScopedStyleResolver* scoped_resolver = GetDocument().GetScopedStyleResolver();
-  ASSERT_TRUE(scoped_resolver);
-  // This should have no side effects:
-  CreateUnconnectedRuleSets(scoped_resolver->GetActiveStyleSheets());
-  // Add a layer that causes a rebuild of the CascadeLayer map:
-  SetInnerText("#style", "@layer { div {} }");
-  // Don't crash:
-  UpdateAllLifecyclePhasesForTest();
-}
-
-TEST_F(StyleResolverTest, CreateUnconnectedRuleSets_LayeredPropertyRules) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo, bar;
-    </style>
-    <style id=style></style>
-    <style>
-      @layer bar {
-        @property --x {
-          syntax: "<length>";
-          inherits: false;
-          initial-value: 0px;
-        }
-      }
-      @layer foo {
-        @property --x {
-          syntax: "<length>";
-          inherits: false;
-          initial-value: 1px;
-        }
-      }
-    </style>
-  )HTML");
-  UpdateAllLifecyclePhasesForTest();
-  ScopedStyleResolver* scoped_resolver = GetDocument().GetScopedStyleResolver();
-  ASSERT_TRUE(scoped_resolver);
-  // This should have no side effects:
-  CreateUnconnectedRuleSets(scoped_resolver->GetActiveStyleSheets());
-  // Add a layer that causes a rebuild of the CascadeLayer map:
-  SetInnerText("#style", "@layer { div {} }");
-  // Don't crash:
-  UpdateAllLifecyclePhasesForTest();
-}
-
-TEST_F(StyleResolverTest, CreateUnconnectedRuleSets_CounterStyleRules) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo, bar;
-    </style>
-    <style id=style></style>
-    <style>
-      @layer bar {
-        @counter-style cs {
-          system: fixed;
-          symbols: A B C;
-          suffix: " ";
-        }
-      }
-      @layer foo {
-        @counter-style cs {
-          system: fixed;
-          symbols: X Y Z;
-          suffix: " ";
-        }
-      }
-    </style>
-  )HTML");
-  UpdateAllLifecyclePhasesForTest();
-  ScopedStyleResolver* scoped_resolver = GetDocument().GetScopedStyleResolver();
-  ASSERT_TRUE(scoped_resolver);
-  // This should have no side effects:
-  CreateUnconnectedRuleSets(scoped_resolver->GetActiveStyleSheets());
-  // Add a layer that causes a rebuild of the CascadeLayer map:
-  SetInnerText("#style", "@layer { div {} }");
-  // Don't crash:
-  UpdateAllLifecyclePhasesForTest();
-}
-
-TEST_F(StyleResolverTest, CreateUnconnectedRuleSets_ViewTransitionRules) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo, bar;
-    </style>
-    <style id=style></style>
-    <style>
-      @layer bar {
-        @view-transition {
-          types: --foo;
-        }
-      }
-      @layer foo {
-        @view-transition {
-          types: --bar;
-        }
-      }
-    </style>
-  )HTML");
-  UpdateAllLifecyclePhasesForTest();
-  ScopedStyleResolver* scoped_resolver = GetDocument().GetScopedStyleResolver();
-  ASSERT_TRUE(scoped_resolver);
-  // This should have no side effects:
-  CreateUnconnectedRuleSets(scoped_resolver->GetActiveStyleSheets());
-  // Add a layer that causes a rebuild of the CascadeLayer map:
-  SetInnerText("#style", "@layer { div {} }");
-  // Don't crash:
-  UpdateAllLifecyclePhasesForTest();
-}
-
-TEST_F(StyleResolverTest, CreateUnconnectedRuleSets_PositionTryRules) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo, bar;
-    </style>
-    <style id=style></style>
-    <style>
-      @layer bar {
-        @position-try --pt { left: 1px; }
-      }
-      @layer foo {
-        @position-try --pt { left: 2px; }
-      }
-    </style>
-  )HTML");
-  UpdateAllLifecyclePhasesForTest();
-  ScopedStyleResolver* scoped_resolver = GetDocument().GetScopedStyleResolver();
-  ASSERT_TRUE(scoped_resolver);
-  // This should have no side effects:
-  CreateUnconnectedRuleSets(scoped_resolver->GetActiveStyleSheets());
-  // Add a layer that causes a rebuild of the CascadeLayer map:
-  SetInnerText("#style", "@layer { div {} }");
-  // Don't crash:
-  UpdateAllLifecyclePhasesForTest();
-}
-
-TEST_F(StyleResolverTest, CreateUnconnectedRuleSets_FunctionRules) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo, bar;
-    </style>
-    <style id=style></style>
-    <style>
-      @layer bar {
-        @function --a() { result: 1; }
-      }
-      @layer foo {
-        @function --a() { result: 2; }
-      }
-    </style>
-  )HTML");
-  UpdateAllLifecyclePhasesForTest();
-  ScopedStyleResolver* scoped_resolver = GetDocument().GetScopedStyleResolver();
-  ASSERT_TRUE(scoped_resolver);
-  // This should have no side effects:
-  CreateUnconnectedRuleSets(scoped_resolver->GetActiveStyleSheets());
-  // Add a layer that causes a rebuild of the CascadeLayer map:
-  SetInnerText("#style", "@layer { div {} }");
-  // Don't crash:
-  UpdateAllLifecyclePhasesForTest();
-}
-
 TEST_F(StyleResolverTest, InheritStyleImagesFromDisplayContents) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       #parent {
         display: contents;
@@ -1921,7 +1506,7 @@ TEST_F(StyleResolverTest, TextShadowInHighlightPseudoNotCounted1) {
   EXPECT_FALSE(GetDocument().IsUseCounted(
       WebFeature::kTextShadowNotNoneInHighlightPseudo));
 
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       * {
         text-shadow: 5px 5px green;
@@ -1958,7 +1543,7 @@ TEST_F(StyleResolverTest, TextShadowInHighlightPseudoNotCounted2) {
   EXPECT_FALSE(GetDocument().IsUseCounted(
       WebFeature::kTextShadowNotNoneInHighlightPseudo));
 
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       * {
         text-shadow: 5px 5px green;
@@ -1999,7 +1584,7 @@ TEST_F(StyleResolverTest, TextShadowInHighlightPseudotNone) {
   EXPECT_FALSE(GetDocument().IsUseCounted(
       WebFeature::kTextShadowNotNoneInHighlightPseudo));
 
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       * {
         text-shadow: 5px 5px green;
@@ -2039,7 +1624,7 @@ TEST_F(StyleResolverTest, TextShadowInHighlightPseudoNotNone1) {
   EXPECT_FALSE(GetDocument().IsUseCounted(
       WebFeature::kTextShadowNotNoneInHighlightPseudo));
 
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       ::selection {
         text-shadow: 5px 5px green;
@@ -2076,7 +1661,7 @@ TEST_F(StyleResolverTest, TextShadowInHighlightPseudoNotNone2) {
   EXPECT_FALSE(GetDocument().IsUseCounted(
       WebFeature::kTextShadowNotNoneInHighlightPseudo));
 
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       * {
         text-shadow: 5px 5px green;
@@ -2111,7 +1696,7 @@ TEST_F(StyleResolverTest, TextShadowInHighlightPseudoNotNone2) {
 }
 
 TEST_F(StyleResolverTestCQ, DependsOnSizeContainerQueries) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       #a { color: red; }
       @container (min-width: 0px) {
@@ -2155,7 +1740,7 @@ TEST_F(StyleResolverTestCQ, DependsOnSizeContainerQueries) {
 }
 
 TEST_F(StyleResolverTestCQ, DependsOnSizeContainerQueriesPseudo) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       main { container-type: size; width: 100px; }
       #a::before { content: "before"; }
@@ -2186,7 +1771,7 @@ TEST_F(StyleResolverTestCQ, DependsOnSizeContainerQueriesPseudo) {
 // Verify that the ComputedStyle::DependsOnSizeContainerQuery flag does
 // not end up in the MatchedPropertiesCache (MPC).
 TEST_F(StyleResolverTestCQ, DependsOnSizeContainerQueriesMPC) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       @container (min-width: 9999999px) {
         #a { color: green; }
@@ -2219,7 +1804,7 @@ TEST_F(StyleResolverTestCQ, DependsOnSizeContainerQueriesMPC) {
 }
 
 TEST_F(StyleResolverTestCQ, DependsOnStyleContainerQueries) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       #a { color: red; }
       @container style(--foo: bar) {
@@ -2263,7 +1848,7 @@ TEST_F(StyleResolverTestCQ, DependsOnStyleContainerQueries) {
 }
 
 TEST_F(StyleResolverTest, AffectedByFunctionalMedia) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       @function --a() {
         result: 10px;
@@ -2294,7 +1879,7 @@ TEST_F(StyleResolverTest, AffectedByFunctionalMedia) {
 }
 
 TEST_F(StyleResolverTest, AnchorQueriesMPC) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       .anchor {
         position: absolute;
@@ -2334,7 +1919,7 @@ TEST_F(StyleResolverTest, AnchorQueryNoOldStyle) {
   // StyleResolver::ResolveStyle.
   PostStyleUpdateScope post_style_update_scope(GetDocument());
 
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       #anchored {
         position: absolute;
@@ -2353,7 +1938,7 @@ TEST_F(StyleResolverTest, AnchorQueryStoreOldStyle) {
   // StyleResolver::ResolveStyle.
   PostStyleUpdateScope post_style_update_scope(GetDocument());
 
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       #anchored {
         position: absolute;
@@ -2369,7 +1954,7 @@ TEST_F(StyleResolverTest, AnchorQueryStoreOldStyle) {
 }
 
 TEST_F(StyleResolverTest, AnchorQueryBaseComputedStyle) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       #div {
         position: absolute;
@@ -2397,7 +1982,7 @@ TEST_F(StyleResolverTest, AnchorQueryBaseComputedStyle) {
 }
 
 TEST_F(StyleResolverTest, NoCascadeLayers) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       #a { color: green; }
       .b { font-size: 16px; }
@@ -2444,7 +2029,7 @@ TEST_F(StyleResolverTest, NoCascadeLayers) {
 }
 
 TEST_F(StyleResolverTest, CascadeLayersInDifferentSheets) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       @layer foo, bar;
       @layer bar {
@@ -2505,7 +2090,7 @@ TEST_F(StyleResolverTest, CascadeLayersInDifferentSheets) {
 }
 
 TEST_F(StyleResolverTest, CascadeLayersInDifferentTreeScopes) {
-  GetDocument().documentElement()->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setHTMLUnsafe(R"HTML(
     <style>
       @layer foo {
         #host { color: green; }
@@ -2566,7 +2151,7 @@ TEST_F(StyleResolverTest, CascadeLayersInDifferentTreeScopes) {
 
 // https://crbug.com/1313357
 TEST_F(StyleResolverTest, CascadeLayersAfterModifyingAnotherSheet) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       @layer {
         target { color: red; }
@@ -2614,7 +2199,7 @@ TEST_F(StyleResolverTest, CascadeLayersAfterModifyingAnotherSheet) {
 
 // https://crbug.com/1326791
 TEST_F(StyleResolverTest, CascadeLayersAddLayersWithImportantDeclarations) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style id="addrule"></style>
     <target></target>
   )HTML");
@@ -2661,79 +2246,6 @@ TEST_F(StyleResolverTest, CascadeLayersAddLayersWithImportantDeclarations) {
   EXPECT_EQ(properties[1].data_.origin, CascadeOrigin::kAuthor);
 }
 
-TEST_F(StyleResolverTest, CascadeLayeredPageRule) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo, bar;
-      @layer bar {
-        @page { margin-top: 100px; }
-      }
-      @layer foo {
-        @page { margin-top: 50px; }
-      }
-    </style>
-  )HTML");
-
-  gfx::SizeF page_size(400, 400);
-  GetDocument().GetFrame()->StartPrinting(WebPrintParams(page_size));
-  GetDocument().View()->UpdateLifecyclePhasesForPrinting();
-
-  WebPrintPageDescription description =
-      GetDocument().GetPageDescription(/*page_index=*/0);
-
-  // "bar" wins:
-  EXPECT_EQ(100, description.margin_top);
-}
-
-TEST_F(StyleResolverTest, CascadeLayeredPageRuleVsSpecificity) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo {
-        @page { margin-top: 50px; }
-      }
-      @layer foo {
-        @page :first { margin-top: 100px; }
-      }
-    </style>
-  )HTML");
-
-  gfx::SizeF page_size(400, 400);
-  GetDocument().GetFrame()->StartPrinting(WebPrintParams(page_size));
-  GetDocument().View()->UpdateLifecyclePhasesForPrinting();
-
-  WebPrintPageDescription description =
-      GetDocument().GetPageDescription(/*page_index=*/0);
-
-  // The rules are in the same layer, but the latter one has higher
-  // specificity.
-  EXPECT_EQ(100, description.margin_top);
-}
-
-// Same as previous test, but the first rule has higher specificity.
-TEST_F(StyleResolverTest, CascadeLayeredPageRuleVsSpecificity_Reverse) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      @layer foo {
-        @page :first { margin-top: 100px; }
-      }
-      @layer foo {
-        @page { margin-top: 50px; }
-      }
-    </style>
-  )HTML");
-
-  gfx::SizeF page_size(400, 400);
-  GetDocument().GetFrame()->StartPrinting(WebPrintParams(page_size));
-  GetDocument().View()->UpdateLifecyclePhasesForPrinting();
-
-  WebPrintPageDescription description =
-      GetDocument().GetPageDescription(/*page_index=*/0);
-
-  // The rules are in the same layer, but the former one has higher
-  // specificity.
-  EXPECT_EQ(100, description.margin_top);
-}
-
 TEST_F(StyleResolverTest, BodyPropagationLayoutImageContain) {
   GetDocument().documentElement()->setAttribute(
       html_names::kStyleAttr,
@@ -2753,7 +2265,7 @@ TEST_F(StyleResolverTest, IsInertWithAttributeAndDialog) {
   Document& document = GetDocument();
   NonThrowableExceptionState exception_state;
 
-  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  document.body()->setInnerHTML(R"HTML(
     <div inert>
       div_text
       <dialog>dialog_text</dialog>
@@ -2820,7 +2332,7 @@ TEST_F(StyleResolverTest, IsInertWithDialogs) {
   Document& document = GetDocument();
   NonThrowableExceptionState exception_state;
 
-  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  document.body()->setInnerHTML(R"HTML(
     <dialog>
       dialog1_text
       <dialog>dialog2_text</dialog>
@@ -2935,7 +2447,7 @@ static void ExitFullscreen(Document& document) {
 
 TEST_F(StyleResolverTest, IsInertWithFullscreen) {
   Document& document = GetDocument();
-  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  document.body()->setInnerHTML(R"HTML(
     <div>
       div_text
       <span>span_text</span>
@@ -3008,7 +2520,7 @@ TEST_F(StyleResolverTest, IsInertWithFullscreen) {
 
 TEST_F(StyleResolverTest, IsInertWithFrameAndFullscreen) {
   Document& document = GetDocument();
-  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  document.body()->setInnerHTML(R"HTML(
     <div>div_text</div>
   )HTML");
   Element* html = document.documentElement();
@@ -3052,7 +2564,7 @@ TEST_F(StyleResolverTest, IsInertWithBackdrop) {
   Document& document = GetDocument();
   NonThrowableExceptionState exception_state;
 
-  document.documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  document.documentElement()->setInnerHTML(R"HTML(
     <style>:root:fullscreen::backdrop { --enable: true }</style>
     <dialog></dialog>
   )HTML");
@@ -3108,7 +2620,7 @@ TEST_F(StyleResolverTest, IsInertWithDialogAndFullscreen) {
   Document& document = GetDocument();
   NonThrowableExceptionState exception_state;
 
-  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  document.body()->setInnerHTML(R"HTML(
     <div></div>
     <dialog></dialog>
   )HTML");
@@ -3190,7 +2702,7 @@ TEST_F(StyleResolverTest, IsInertWithDialogAndFullscreen) {
 }
 
 TEST_F(StyleResolverTestCQ, StyleRulesForElementContainerQuery) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       #container { container-type: inline-size }
       @container (min-width: 1px) {
@@ -3217,35 +2729,6 @@ TEST_F(StyleResolverTestCQ, StyleRulesForElementContainerQuery) {
       << "The empty #target rule in the container query should be collected";
   EXPECT_TRUE(rule_list->at(0)->Properties().IsEmpty())
       << "Check that it is in fact the empty rule";
-}
-
-TEST_F(StyleResolverTest, StyleRulesForSVGUseInstanceElement) {
-  ScopedSvg2CascadeForTest enabled(true);
-
-  SetBodyInnerHTML(R"HTML(
-      <style>
-        rect { fill: green; }
-      </style>
-      <svg>
-        <defs>
-          <rect id="rect" width="100" height="100"></rect>
-        </defs>
-        <use id="use" href="#rect"></use>
-      </svg>
-    )HTML");
-
-  UpdateAllLifecyclePhasesForTest();
-
-  Element* use = GetDocument().getElementById(AtomicString("use"));
-  ShadowRoot* shadow_root = use->UserAgentShadowRoot();
-  Element* rect = shadow_root->getElementById(AtomicString("rect"));
-
-  RuleIndexList* rule_list =
-      GetDocument().GetStyleResolver().PseudoCSSRulesForElement(
-          rect, kPseudoIdNone, g_null_atom, StyleResolver::kAuthorCSSRules);
-  ASSERT_TRUE(rule_list);
-  EXPECT_EQ(rule_list->size(), 1u)
-      << "The rule from the corresponding element's scope should be collected";
 }
 
 TEST_F(StyleResolverTest, LegacyOverlapPerspectiveOrigin_Single) {
@@ -3609,20 +3092,20 @@ TEST_F(StyleResolverTest, PositionTryStylesBasic_Cascade) {
   EXPECT_EQ(Length::Auto(), GetTop(*base_style));
   EXPECT_EQ(Length::Auto(), GetLeft(*base_style));
 
-  UpdateStyleAndLayoutTreeForOutOfFlow(*target, AtomicString("--f1"));
+  UpdateStyleForOutOfFlow(*target, AtomicString("--f1"));
   const ComputedStyle* try1 = target->GetComputedStyle();
   ASSERT_TRUE(try1);
   EXPECT_EQ(Length::Auto(), GetTop(*try1));
   EXPECT_EQ(Length::Fixed(100), GetLeft(*try1));
 
-  UpdateStyleAndLayoutTreeForOutOfFlow(*target, AtomicString("--f2"));
+  UpdateStyleForOutOfFlow(*target, AtomicString("--f2"));
   const ComputedStyle* try2 = target->GetComputedStyle();
   ASSERT_TRUE(try2);
   EXPECT_EQ(Length::Fixed(100), GetTop(*try2));
   EXPECT_EQ(Length::Auto(), GetLeft(*try2));
 
   // Shorthand should also work
-  UpdateStyleAndLayoutTreeForOutOfFlow(*target, AtomicString("--f3"));
+  UpdateStyleForOutOfFlow(*target, AtomicString("--f3"));
   const ComputedStyle* try3 = target->GetComputedStyle();
   ASSERT_TRUE(try3);
   EXPECT_EQ(Length::Fixed(50), GetTop(*try3));
@@ -3658,7 +3141,7 @@ TEST_F(StyleResolverTest, PositionTryStylesResolveLogicalProperties_Cascade) {
   EXPECT_EQ(Length::Fixed(50), GetRight(*base_style));
 
   // 'inset-inline-start' should resolve to 'bottom'
-  UpdateStyleAndLayoutTreeForOutOfFlow(*target, AtomicString("--f1"));
+  UpdateStyleForOutOfFlow(*target, AtomicString("--f1"));
   const ComputedStyle* try1 = target->GetComputedStyle();
   ASSERT_TRUE(try1);
   EXPECT_EQ(Length::Fixed(50), GetTop(*try1));
@@ -3667,7 +3150,7 @@ TEST_F(StyleResolverTest, PositionTryStylesResolveLogicalProperties_Cascade) {
   EXPECT_EQ(Length::Fixed(50), GetRight(*try1));
 
   // 'inset-block' with two parameters should set 'right' and then 'left'
-  UpdateStyleAndLayoutTreeForOutOfFlow(*target, AtomicString("--f2"));
+  UpdateStyleForOutOfFlow(*target, AtomicString("--f2"));
   const ComputedStyle* try2 = target->GetComputedStyle();
   ASSERT_TRUE(try2);
   EXPECT_EQ(Length::Fixed(50), GetTop(*try2));
@@ -3697,7 +3180,7 @@ TEST_F(StyleResolverTest, PositionTryStylesResolveRelativeLengthUnits_Cascade) {
   EXPECT_EQ(Length::Auto(), GetTop(*base_style));
 
   // '2em' should resolve to '40px'
-  UpdateStyleAndLayoutTreeForOutOfFlow(*target, AtomicString("--f1"));
+  UpdateStyleForOutOfFlow(*target, AtomicString("--f1"));
   const ComputedStyle* try1 = target->GetComputedStyle();
   ASSERT_TRUE(try1);
   EXPECT_EQ(Length::Fixed(40), GetTop(*try1));
@@ -3728,7 +3211,7 @@ TEST_F(StyleResolverTest, PositionTryStylesInBeforePseudoElement_Cascade) {
   EXPECT_EQ(Length::Auto(), GetTop(*base_style));
 
   // 'position-try-fallbacks' applies to ::before pseudo-element.
-  UpdateStyleAndLayoutTreeForOutOfFlow(*before, AtomicString("--f1"));
+  UpdateStyleForOutOfFlow(*before, AtomicString("--f1"));
   const ComputedStyle* try1 = before->GetComputedStyle();
   ASSERT_TRUE(try1);
   EXPECT_EQ(Length::Fixed(50), GetTop(*try1));
@@ -3766,7 +3249,7 @@ TEST_F(StyleResolverTest, PositionTryStylesCSSWideKeywords_Cascade) {
   EXPECT_EQ(Length::Fixed(50), GetBottom(*base_style));
   EXPECT_EQ(Length::Fixed(50), GetRight(*base_style));
 
-  UpdateStyleAndLayoutTreeForOutOfFlow(*target, AtomicString("--f1"));
+  UpdateStyleForOutOfFlow(*target, AtomicString("--f1"));
   const ComputedStyle* try1 = target->GetComputedStyle();
   ASSERT_TRUE(try1);
   EXPECT_EQ(Length::Auto(), GetTop(*try1));
@@ -3774,7 +3257,7 @@ TEST_F(StyleResolverTest, PositionTryStylesCSSWideKeywords_Cascade) {
   EXPECT_EQ(Length::Fixed(50), GetBottom(*try1));
   EXPECT_EQ(Length::Fixed(50), GetRight(*try1));
 
-  UpdateStyleAndLayoutTreeForOutOfFlow(*target, AtomicString("--f2"));
+  UpdateStyleForOutOfFlow(*target, AtomicString("--f2"));
   const ComputedStyle* try2 = target->GetComputedStyle();
   ASSERT_TRUE(try2);
   EXPECT_EQ(Length::Fixed(50), GetTop(*try2));
@@ -3782,7 +3265,7 @@ TEST_F(StyleResolverTest, PositionTryStylesCSSWideKeywords_Cascade) {
   EXPECT_EQ(Length::Fixed(50), GetBottom(*try2));
   EXPECT_EQ(Length::Fixed(50), GetRight(*try2));
 
-  UpdateStyleAndLayoutTreeForOutOfFlow(*target, AtomicString("--f3"));
+  UpdateStyleForOutOfFlow(*target, AtomicString("--f3"));
   const ComputedStyle* try3 = target->GetComputedStyle();
   ASSERT_TRUE(try3);
   EXPECT_EQ(Length::Fixed(50), GetTop(*try3));
@@ -3814,7 +3297,7 @@ TEST_F(StyleResolverTest, PositionTryPropertyValueChange_Cascade) {
     EXPECT_EQ(Length::Auto(), GetTop(*base_style));
     EXPECT_EQ(Length::Auto(), GetLeft(*base_style));
 
-    UpdateStyleAndLayoutTreeForOutOfFlow(*target, AtomicString("--foo"));
+    UpdateStyleForOutOfFlow(*target, AtomicString("--foo"));
     const ComputedStyle* fallback = target->GetComputedStyle();
     ASSERT_TRUE(fallback);
     EXPECT_EQ(Length::Fixed(100), GetTop(*fallback));
@@ -3830,7 +3313,7 @@ TEST_F(StyleResolverTest, PositionTryPropertyValueChange_Cascade) {
     EXPECT_EQ(Length::Auto(), GetTop(*base_style));
     EXPECT_EQ(Length::Auto(), GetLeft(*base_style));
 
-    UpdateStyleAndLayoutTreeForOutOfFlow(*target, AtomicString("--bar"));
+    UpdateStyleForOutOfFlow(*target, AtomicString("--bar"));
     const ComputedStyle* fallback = target->GetComputedStyle();
     ASSERT_TRUE(fallback);
     ASSERT_TRUE(fallback);
@@ -3899,8 +3382,9 @@ TEST_F(StyleResolverTest, TrySet_Basic) {
   )CSS");
   ASSERT_TRUE(try_set);
 
-  const ComputedStyle* try_style =
-      StyleForId("div", StyleRecalcContext{.try_set = try_set});
+  const ComputedStyle* try_style = StyleForId(
+      "div",
+      StyleRecalcContext{.try_set = try_set, .is_interleaved_oof = true});
   ASSERT_TRUE(try_style);
   EXPECT_EQ("20px", ComputedValue("left", *try_style));
   EXPECT_EQ("30px", ComputedValue("right", *try_style));
@@ -3930,8 +3414,9 @@ TEST_F(StyleResolverTest, TrySet_RevertLayer) {
   )CSS");
   ASSERT_TRUE(try_set);
 
-  const ComputedStyle* try_style =
-      StyleForId("div", StyleRecalcContext{.try_set = try_set});
+  const ComputedStyle* try_style = StyleForId(
+      "div",
+      StyleRecalcContext{.try_set = try_set, .is_interleaved_oof = true});
   ASSERT_TRUE(try_style);
   EXPECT_EQ("10px", ComputedValue("left", *try_style));
   EXPECT_EQ("30px", ComputedValue("right", *try_style));
@@ -3961,8 +3446,9 @@ TEST_F(StyleResolverTest, TrySet_Revert) {
   )CSS");
   ASSERT_TRUE(try_set);
 
-  const ComputedStyle* try_style =
-      StyleForId("div", StyleRecalcContext{.try_set = try_set});
+  const ComputedStyle* try_style = StyleForId(
+      "div",
+      StyleRecalcContext{.try_set = try_set, .is_interleaved_oof = true});
   ASSERT_TRUE(try_style);
   EXPECT_EQ("auto", ComputedValue("left", *try_style));
   EXPECT_EQ("30px", ComputedValue("right", *try_style));
@@ -3993,8 +3479,9 @@ TEST_F(StyleResolverTest, TrySet_NonAbsPos) {
   )CSS");
   ASSERT_TRUE(try_set);
 
-  const ComputedStyle* try_style =
-      StyleForId("div", StyleRecalcContext{.try_set = try_set});
+  const ComputedStyle* try_style = StyleForId(
+      "div",
+      StyleRecalcContext{.try_set = try_set, .is_interleaved_oof = true});
   ASSERT_TRUE(try_style);
   EXPECT_EQ("10px", ComputedValue("left", *try_style));
   EXPECT_EQ("auto", ComputedValue("right", *try_style));
@@ -4028,8 +3515,9 @@ TEST_F(StyleResolverTest, TrySet_NonAbsPosDynamic) {
   ASSERT_TRUE(try_set);
 
   div->SetInlineStyleProperty(CSSPropertyID::kPosition, "static");
-  const ComputedStyle* try_style =
-      StyleForId("div", StyleRecalcContext{.try_set = try_set});
+  const ComputedStyle* try_style = StyleForId(
+      "div",
+      StyleRecalcContext{.try_set = try_set, .is_interleaved_oof = true});
   ASSERT_TRUE(try_style);
   EXPECT_EQ("10px", ComputedValue("left", *try_style));
   EXPECT_EQ("auto", ComputedValue("right", *try_style));
@@ -4072,12 +3560,10 @@ TEST_F(StyleResolverTest, TryTacticsSet_Flip) {
           CSSPropertyID::kLeft, TryTacticTransform()));
   ASSERT_TRUE(try_tactics_set);
 
-  AnchorEvaluatorImpl anchor_evaluator(
-      {WritingMode::kHorizontalTb, TextDirection::kLtr});
-  const ComputedStyle* try_style = StyleForId(
-      "div", StyleRecalcContext{.anchor_evaluator = &anchor_evaluator,
-                                .try_set = try_set,
-                                .try_tactics_set = try_tactics_set});
+  const ComputedStyle* try_style =
+      StyleForId("div", StyleRecalcContext{.try_set = try_set,
+                                           .try_tactics_set = try_tactics_set,
+                                           .is_interleaved_oof = true});
   ASSERT_TRUE(try_style);
   EXPECT_EQ("200px", ComputedValue("left", *try_style));
   EXPECT_EQ("100px", ComputedValue("right", *try_style));
@@ -4130,7 +3616,7 @@ TEST_F(StyleResolverTest,
 
   // Element::RecalcOwnStyle should detect that the style change on the
   // "target" ancestor node requires re-computing the base style for the
-  // pseudo-element and skip the optimization for animation style change.
+  // pseudo element and skip the optimization for animation style change.
   UpdateAllLifecyclePhasesForTest();
 }
 
@@ -4159,14 +3645,14 @@ TEST_F(StyleResolverTestCQ, ContainerUnitContext) {
   StyleResolverState state(GetDocument(), *div);
 
   // To make UpdateLengthConversionData happen.
-  state.CreateNewClonedStyle(div->ComputedStyleRef());
+  state.SetStyle(div->ComputedStyleRef());
 
   EXPECT_DOUBLE_EQ(200.0, state.CssToLengthConversionData().ContainerWidth());
   EXPECT_DOUBLE_EQ(200.0, state.CssToLengthConversionData().ContainerHeight());
 }
 
 TEST_F(StyleResolverTest, ScopedAnchorName) {
-  GetDocument().documentElement()->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setHTMLUnsafe(R"HTML(
     <div id="outer-anchor" style="anchor-name: --outer"></div>
     <style>#host::part(anchor) { anchor-name: --part; }</style>
     <div id="host">
@@ -4201,7 +3687,7 @@ TEST_F(StyleResolverTest, ScopedAnchorName) {
 }
 
 TEST_F(StyleResolverTest, ScopedPositionAnchor) {
-  GetDocument().documentElement()->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setHTMLUnsafe(R"HTML(
     <div id="outer-anchor" style="position-anchor: --outer"></div>
     <style>#host::part(anchor) { position-anchor: --part; }</style>
     <div id="host">
@@ -4223,20 +3709,20 @@ TEST_F(StyleResolverTest, ScopedPositionAnchor) {
 
   EXPECT_EQ(*MakeGarbageCollected<ScopedCSSName>(AtomicString("--outer"),
                                                  &GetDocument()),
-            outer_anchor->ComputedStyleRef().PositionAnchor().GetName());
+            *outer_anchor->ComputedStyleRef().PositionAnchor());
   EXPECT_EQ(
       *MakeGarbageCollected<ScopedCSSName>(AtomicString("--host"), shadow),
-      host->ComputedStyleRef().PositionAnchor().GetName());
+      *host->ComputedStyleRef().PositionAnchor());
   EXPECT_EQ(*MakeGarbageCollected<ScopedCSSName>(AtomicString("--part"),
                                                  &GetDocument()),
-            part->ComputedStyleRef().PositionAnchor().GetName());
+            *part->ComputedStyleRef().PositionAnchor());
   EXPECT_EQ(
       *MakeGarbageCollected<ScopedCSSName>(AtomicString("--inner"), shadow),
-      inner_anchor->ComputedStyleRef().PositionAnchor().GetName());
+      *inner_anchor->ComputedStyleRef().PositionAnchor());
 }
 
 TEST_F(StyleResolverTest, NoAnchorFunction) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       div {
         left: 10px;
@@ -4253,7 +3739,7 @@ TEST_F(StyleResolverTest, NoAnchorFunction) {
 }
 
 TEST_F(StyleResolverTest, HasAnchorFunction) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       div {
         left: anchor(--a left);
@@ -4270,7 +3756,7 @@ TEST_F(StyleResolverTest, HasAnchorFunction) {
 }
 
 TEST_F(StyleResolverTest, HasAnchorFunctionImplicit) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       div {
         left: anchor(left);
@@ -4287,7 +3773,7 @@ TEST_F(StyleResolverTest, HasAnchorFunctionImplicit) {
 }
 
 TEST_F(StyleResolverTest, HasAnchorSizeFunction) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       div {
         width: anchor-size(--a width);
@@ -4304,7 +3790,7 @@ TEST_F(StyleResolverTest, HasAnchorSizeFunction) {
 }
 
 TEST_F(StyleResolverTest, HasAnchorSizeFunctionImplicit) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       div {
         width: anchor-size(width);
@@ -4321,7 +3807,7 @@ TEST_F(StyleResolverTest, HasAnchorSizeFunctionImplicit) {
 }
 
 TEST_F(StyleResolverTestCQ, CanAffectAnimationsMPC) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().documentElement()->setInnerHTML(R"HTML(
     <style>
       #a { transition: color 1s; }
       @container (width > 100000px) {
@@ -4413,7 +3899,7 @@ TEST_F(StyleResolverTest, PseudoCSSRulesForElementExcludeStartingStyle) {
       target, kPseudoIdBefore, g_null_atom);
   ASSERT_NE(pseudo_rules, nullptr);
   EXPECT_EQ(pseudo_rules->size(), 1u);
-  EXPECT_EQ(pseudo_rules->at(0).rule->cssText(),
+  EXPECT_EQ(pseudo_rules->at(0).first->cssText(),
             "#target::before { content: \"X\"; color: green; }");
 }
 
@@ -4542,7 +4028,7 @@ TEST_F(StyleResolverTest, TextSizeAdjustUseCounter) {
   EXPECT_FALSE(IsUseCounted(WebFeature::kTextSizeAdjustNotAuto));
   EXPECT_FALSE(IsUseCounted(WebFeature::kTextSizeAdjustPercentNot100));
 
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+  GetDocument().body()->setInnerHTML(R"HTML(
     <style>
       .text-size-adjust-100 { text-size-adjust: 100%; }
       .text-size-adjust-101 { text-size-adjust: 101%; }
@@ -4568,177 +4054,6 @@ TEST_F(StyleResolverTest, TextSizeAdjustUseCounter) {
 
   EXPECT_TRUE(IsUseCounted(WebFeature::kTextSizeAdjustNotAuto));
   EXPECT_TRUE(IsUseCounted(WebFeature::kTextSizeAdjustPercentNot100));
-}
-
-TEST_F(StyleResolverTest, UseCountPseudoElementImplicitAnchor) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style id=style></style>
-    <div id=div></div>
-  )HTML");
-
-  HTMLElement* style_element =
-      To<HTMLElement>(GetDocument().getElementById(AtomicString("style")));
-
-  auto set_sheet_text = [this, style_element](const String& sheet_text) {
-    GetDocument().ClearUseCounterForTesting(
-        WebFeature::kCSSPseudoElementUsesImplicitAnchor);
-    style_element->setInnerText(sheet_text);
-    UpdateAllLifecyclePhasesForTest();
-  };
-
-  // Static positioned element can not be anchor positioned.
-  set_sheet_text(R"HTML(
-    #div::before {
-      content: "";
-      position-anchor: auto;
-      position-area: top left;
-      left: anchor(right);
-    }
-  )HTML");
-  EXPECT_FALSE(IsUseCounted(WebFeature::kCSSPseudoElementUsesImplicitAnchor));
-
-  // Non-auto position-anchor means implicit anchor is not used.
-  set_sheet_text(R"HTML(
-    #div::before {
-      content: "";
-      position: absolute;
-      position-anchor: auto;
-      position-anchor: --a;
-      position-area: top left;
-      left: anchor(right);
-    }
-  )HTML");
-  EXPECT_FALSE(IsUseCounted(WebFeature::kCSSPseudoElementUsesImplicitAnchor));
-
-  // ::before element not generated without content property.
-  set_sheet_text(R"HTML(
-    #div::before {
-      position: absolute;
-      position-anchor: auto;
-      position-area: top left;
-      left: anchor(right);
-    }
-  )HTML");
-  EXPECT_FALSE(IsUseCounted(WebFeature::kCSSPseudoElementUsesImplicitAnchor));
-
-  // anchor-center using implicit anchor.
-  set_sheet_text(R"HTML(
-    #div::before {
-      content: "";
-      position: absolute;
-      position-anchor: auto;
-      justify-self: anchor-center;
-    }
-  )HTML");
-  EXPECT_TRUE(IsUseCounted(WebFeature::kCSSPseudoElementUsesImplicitAnchor));
-
-  // position-area using implicit anchor.
-  set_sheet_text(R"HTML(
-    #div::before {
-      content: "";
-      position: fixed;
-      position-anchor: auto;
-      position-area: inline-start;
-    }
-  )HTML");
-  EXPECT_TRUE(IsUseCounted(WebFeature::kCSSPseudoElementUsesImplicitAnchor));
-
-  // position-area using implicit anchor.
-  set_sheet_text(R"HTML(
-    #div::before {
-      content: "";
-      position: fixed;
-      position-anchor: auto;
-      top: anchor(bottom);
-    }
-  )HTML");
-  EXPECT_TRUE(IsUseCounted(WebFeature::kCSSPseudoElementUsesImplicitAnchor));
-
-  // Strictly not using implicit anchor, but too complicated to separate for use
-  // counting.
-  set_sheet_text(R"HTML(
-    #div::before {
-      content: "";
-      position: absolute;
-      position-anchor: auto;
-      top: anchor(--a bottom);
-    }
-  )HTML");
-  EXPECT_TRUE(IsUseCounted(WebFeature::kCSSPseudoElementUsesImplicitAnchor));
-
-  // If position-anchor is initial, we aren't using the implicit anchor (with
-  // the CSSPositionAnchorNone feature enabled).
-  set_sheet_text(R"HTML(
-    #div::before {
-      content: "";
-      position: absolute;
-      left: anchor(right);
-    }
-  )HTML");
-  EXPECT_FALSE(IsUseCounted(WebFeature::kCSSPseudoElementUsesImplicitAnchor));
-}
-
-TEST_F(StyleResolverTest, FindContainerForElement_LayoutSiblings) {
-  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
-    <style>
-      #outer {
-        container-type: scroll-state inline-size anchored;
-        width: 200px;
-        height: 200px;
-      }
-      #scroller {
-        container-type: scroll-state inline-size anchored;
-        width: 100px;
-        height: 100px;
-        overflow: scroll;
-        scroll-marker-group: before;
-      }
-      #scroller::scroll-marker-group { background: lime; }
-      #scroller::scroll-button(left) { content: "X"; }
-    </style>
-    <div id="outer">
-      <div id="scroller"></div>
-    </div>
-  )HTML");
-  UpdateAllLifecyclePhasesForTest();
-
-  ContainerSelector size_selector(g_null_atom, kPhysicalAxesNone,
-                                  kLogicalAxesInline,
-                                  /*scroll_state=*/false,
-                                  /*anchored_query=*/false);
-  ContainerSelector scroll_state_selector(g_null_atom, kPhysicalAxesNone,
-                                          kLogicalAxesNone,
-                                          /*scroll_state=*/true,
-                                          /*anchored_query=*/false);
-  ContainerSelector anchored_selector(g_null_atom, kPhysicalAxesNone,
-                                      kLogicalAxesNone,
-                                      /*scroll_state=*/false,
-                                      /*anchored_query=*/true);
-
-  Element* outer = GetElementById("outer");
-  Element* scroller = GetElementById("scroller");
-  Element* group = scroller->GetPseudoElement(kPseudoIdScrollMarkerGroupBefore);
-  Element* button =
-      scroller->GetPseudoElement(kPseudoIdScrollButtonInlineStart);
-
-  EXPECT_EQ(StyleResolver::FindContainerForElement(group, size_selector,
-                                                   &GetDocument()),
-            outer);
-  EXPECT_EQ(StyleResolver::FindContainerForElement(group, scroll_state_selector,
-                                                   &GetDocument()),
-            scroller);
-  EXPECT_EQ(StyleResolver::FindContainerForElement(group, anchored_selector,
-                                                   &GetDocument()),
-            scroller);
-  EXPECT_EQ(StyleResolver::FindContainerForElement(button, size_selector,
-                                                   &GetDocument()),
-            outer);
-  EXPECT_EQ(StyleResolver::FindContainerForElement(
-                button, scroll_state_selector, &GetDocument()),
-            scroller);
-  EXPECT_EQ(StyleResolver::FindContainerForElement(button, anchored_selector,
-                                                   &GetDocument()),
-            scroller);
 }
 
 }  // namespace blink

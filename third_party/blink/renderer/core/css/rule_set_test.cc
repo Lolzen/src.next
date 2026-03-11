@@ -41,6 +41,7 @@
 #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
@@ -61,7 +62,7 @@ StyleRule* CreateDummyStyleRule() {
 
 }  // namespace
 
-TEST(RuleSetTest, FindBestBucketAndAdd_CustomPseudoElements) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_CustomPseudoElements) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -73,7 +74,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_CustomPseudoElements) {
   ASSERT_EQ(str, rules.front().Selector().Value());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_Id) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_Id) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -85,7 +86,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_Id) {
   ASSERT_EQ(str, rules.front().Selector().Value());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_NthChild) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_NthChild) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -97,7 +98,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_NthChild) {
   ASSERT_EQ(str, rules.front().Selector().TagQName().LocalName());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_ClassThenId) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_ClassThenId) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -111,7 +112,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_ClassThenId) {
   ASSERT_EQ(class_str, rules.front().Selector().Value());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_IdThenClass) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_IdThenClass) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -123,7 +124,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_IdThenClass) {
   ASSERT_EQ(str, rules.front().Selector().Value());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_AttrThenId) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_AttrThenId) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -136,7 +137,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_AttrThenId) {
   ASSERT_EQ(attr_str, rules.front().Selector().Attribute().LocalName());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_TagThenAttrThenId) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_TagThenAttrThenId) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -149,7 +150,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_TagThenAttrThenId) {
   ASSERT_EQ(tag_str, rules.front().Selector().TagQName().LocalName());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_TagThenAttr) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_TagThenAttr) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -161,7 +162,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_TagThenAttr) {
 
 // It's arbitrary which of these we choose, but it needs to match
 // the behavior in IsCoveredByBucketing().
-TEST(RuleSetTest, FindBestBucketAndAdd_ThreeClasses) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_ThreeClasses) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -172,7 +173,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_ThreeClasses) {
   EXPECT_EQ(1u, rule_set.ClassRules(AtomicString("c")).size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_AttrThenClass) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_AttrThenClass) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -182,17 +183,17 @@ TEST(RuleSetTest, FindBestBucketAndAdd_AttrThenClass) {
   ASSERT_EQ(1u, rule_set.ClassRules(AtomicString("class")).size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_Host) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_Host) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
-  sheet.AddCSSRules(":host { } :not(:not(:host)):host { }");
+  sheet.AddCSSRules(":host { }");
   RuleSet& rule_set = sheet.GetRuleSet();
   const base::span<const RuleData> rules = rule_set.ShadowHostRules();
-  ASSERT_EQ(2u, rules.size());
+  ASSERT_EQ(1u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_HostWithId) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_HostWithId) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -202,7 +203,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_HostWithId) {
   ASSERT_EQ(1u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_HostContext) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_HostContext) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -212,7 +213,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_HostContext) {
   ASSERT_EQ(1u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_HostContextWithId) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_HostContextWithId) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -222,7 +223,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_HostContextWithId) {
   ASSERT_EQ(1u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_HostAndHostContextNotInRightmost) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_HostAndHostContextNotInRightmost) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -237,7 +238,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_HostAndHostContextNotInRightmost) {
   ASSERT_EQ(1u, class_rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_HostAndClass) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_HostAndClass) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -247,7 +248,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_HostAndClass) {
   ASSERT_EQ(0u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_HostContextAndClass) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_HostContextAndClass) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -257,18 +258,18 @@ TEST(RuleSetTest, FindBestBucketAndAdd_HostContextAndClass) {
   ASSERT_EQ(0u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_Focus) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_Focus) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
   sheet.AddCSSRules(":focus { }");
   sheet.AddCSSRules("[attr]:focus { }");
   RuleSet& rule_set = sheet.GetRuleSet();
-  ASSERT_EQ(2u, rule_set.FocusPseudoClassRules().size());
-  ASSERT_EQ(0u, rule_set.AttrRules(AtomicString("attr")).size());
+  ASSERT_EQ(1u, rule_set.FocusPseudoClassRules().size());
+  ASSERT_EQ(1u, rule_set.AttrRules(AtomicString("attr")).size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_LinkVisited) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_LinkVisited) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -285,7 +286,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_LinkVisited) {
   ASSERT_EQ(5u, rule_set.AttrRules(AtomicString("attr")).size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_Cue) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_Cue) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -296,7 +297,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_Cue) {
   ASSERT_EQ(2u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_PlaceholderPseudo) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_PlaceholderPseudo) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -308,17 +309,17 @@ TEST(RuleSetTest, FindBestBucketAndAdd_PlaceholderPseudo) {
   ASSERT_EQ(2u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_PartPseudoElements) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_PartPseudoElements) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
-  sheet.AddCSSRules("::part(dummy):disabled, #id::part(dummy) { }");
+  sheet.AddCSSRules("::part(dummy):focus, #id::part(dummy) { }");
   RuleSet& rule_set = sheet.GetRuleSet();
   const base::span<const RuleData> rules = rule_set.PartPseudoRules();
   ASSERT_EQ(2u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_ShadowPseudoAfterPart) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_ShadowPseudoAfterPart) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -331,57 +332,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_ShadowPseudoAfterPart) {
   ASSERT_EQ(0u, part_rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_PartBefore) {
-  test::TaskEnvironment task_environment;
-  css_test_helpers::TestStyleSheet sheet;
-
-  sheet.AddCSSRules("::part(p)::before { }");
-  RuleSet& rule_set = sheet.GetRuleSet();
-  const base::span<const RuleData> part_rules = rule_set.PartPseudoRules();
-  ASSERT_EQ(1u, part_rules.size());
-}
-
-TEST(RuleSetTest, FindBestBucketAndAdd_PartFocus) {
-  test::TaskEnvironment task_environment;
-  css_test_helpers::TestStyleSheet sheet;
-
-  sheet.AddCSSRules("::part(p):focus { }");
-  RuleSet& rule_set = sheet.GetRuleSet();
-  const base::span<const RuleData> part_rules = rule_set.PartPseudoRules();
-  ASSERT_EQ(1u, part_rules.size());
-}
-
-TEST(RuleSetTest, FindBestBucketAndAdd_Slotted) {
-  test::TaskEnvironment task_environment;
-  css_test_helpers::TestStyleSheet sheet;
-
-  sheet.AddCSSRules("::slotted(.a) { }");
-  RuleSet& rule_set = sheet.GetRuleSet();
-  const base::span<const RuleData> rules = rule_set.SlottedPseudoElementRules();
-  ASSERT_EQ(1u, rules.size());
-}
-
-TEST(RuleSetTest, FindBestBucketAndAdd_SlottedBefore) {
-  test::TaskEnvironment task_environment;
-  css_test_helpers::TestStyleSheet sheet;
-
-  sheet.AddCSSRules("::slotted(.a)::before { }");
-  RuleSet& rule_set = sheet.GetRuleSet();
-  const base::span<const RuleData> rules = rule_set.SlottedPseudoElementRules();
-  ASSERT_EQ(1u, rules.size());
-}
-
-TEST(RuleSetTest, FindBestBucketAndAdd_SlottedUAShadow) {
-  test::TaskEnvironment task_environment;
-  css_test_helpers::TestStyleSheet sheet;
-
-  sheet.AddCSSRules("::slotted(.a)::file-selector-button { }");
-  RuleSet& rule_set = sheet.GetRuleSet();
-  const base::span<const RuleData> rules = rule_set.SlottedPseudoElementRules();
-  ASSERT_EQ(1u, rules.size());
-}
-
-TEST(RuleSetTest, FindBestBucketAndAdd_IsSingleArg) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_IsSingleArg) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -392,7 +343,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_IsSingleArg) {
   ASSERT_EQ(1u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_WhereSingleArg) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_WhereSingleArg) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -403,7 +354,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_WhereSingleArg) {
   ASSERT_EQ(1u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_WhereSingleArgNested) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_WhereSingleArgNested) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -414,7 +365,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_WhereSingleArgNested) {
   ASSERT_EQ(1u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_IsMultiArg) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_IsMultiArg) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -424,7 +375,7 @@ TEST(RuleSetTest, FindBestBucketAndAdd_IsMultiArg) {
   ASSERT_EQ(1u, rules.size());
 }
 
-TEST(RuleSetTest, FindBestBucketAndAdd_WhereMultiArg) {
+TEST(RuleSetTest, findBestRuleSetAndAdd_WhereMultiArg) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
 
@@ -582,7 +533,7 @@ TEST(RuleSetTest, IsCoveredByBucketing) {
   EXPECT_THAT(
       CoveredByBucketing(".a.b.c"),
       ElementsAreArray(
-          {false, false, true}));  // See FindBestBucketAndAdd_ThreeClasses.
+          {false, false, true}));  // See findBestRuleSetAndAdd_ThreeClasses.
   EXPECT_THAT(CoveredByBucketing(".c > [attr]"),
               ElementsAreArray({false, false}));
   EXPECT_THAT(CoveredByBucketing("*"), ElementsAreArray({true}));
@@ -623,8 +574,6 @@ TEST(RuleSetTest, IsCoveredByBucketing) {
   EXPECT_THAT(CoveredByBucketing(":focus"), ElementsAreArray({true}));
   EXPECT_THAT(CoveredByBucketing(":focus-visible"), ElementsAreArray({true}));
   EXPECT_THAT(CoveredByBucketing(":host"), ElementsAreArray({false}));
-  EXPECT_THAT(CoveredByBucketing(":active-view-transition"),
-              ElementsAreArray({true}));
 }
 
 TEST(RuleSetTest, VisitedDependentRuleCount) {
@@ -957,24 +906,6 @@ TEST(RuleSetTest, ScopePseudoBucketing_Implicit) {
   EXPECT_EQ(1u, rule_set.UniversalRules().size());
 }
 
-// https://issues.chromium.org/issues/454830626
-TEST(RuleSetTest, ScopePseudoBucketing_NestedScopePseudo) {
-  test::TaskEnvironment task_environment;
-  css_test_helpers::TestStyleSheet sheet;
-  sheet.AddCSSRules(R"CSS(
-    @scope (.a) {
-      @scope(:scope) {
-        :scope {
-          color: green;
-        }
-      }
-    }
-  )CSS");
-  RuleSet& rule_set = sheet.GetRuleSet();
-  EXPECT_EQ(0u, rule_set.UniversalRules().size());
-  EXPECT_EQ(1u, rule_set.ClassRules(AtomicString("a")).size());
-}
-
 TEST(RuleSetTest, ScopePseudoBucketing_NestedDeclarations) {
   test::TaskEnvironment task_environment;
   css_test_helpers::TestStyleSheet sheet;
@@ -1000,8 +931,7 @@ class RuleSetCascadeLayerTest : public SimTest {
         To<HTMLStyleElement>(GetDocument().QuerySelector(AtomicString("style")))
             ->sheet()
             ->Contents()
-            ->EnsureRuleSet(MediaQueryEvaluator(GetDocument().GetFrame()),
-                            /*mixins=*/{});
+            ->EnsureRuleSet(MediaQueryEvaluator(GetDocument().GetFrame()));
     rule_set.CompactRulesIfNeeded();
     return rule_set;
   }

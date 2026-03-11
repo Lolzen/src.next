@@ -11,11 +11,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.chromium.chrome.browser.flags.ChromeFeatureList.DARKEN_WEBSITES_CHECKBOX_IN_THEMES_SETTING;
 import static org.chromium.chrome.browser.preferences.ChromePreferenceKeys.UI_THEME_SETTING;
 
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.LinearLayout;
 
-import androidx.test.InstrumentationRegistry;
 import androidx.test.filters.SmallTest;
 
 import org.junit.Assert;
@@ -100,7 +100,13 @@ public class ThemeSettingsFragmentTest {
         launchThemeSettings(ThemeSettingsEntry.SETTINGS);
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
-                    int expectedDefaultTheme = ThemeType.SYSTEM_DEFAULT;
+                    int expectedDefaultTheme = ThemeType.LIGHT;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        Assert.assertFalse(
+                                "Q should not default to light.",
+                                NightModeUtils.isNightModeDefaultToLight());
+                        expectedDefaultTheme = ThemeType.SYSTEM_DEFAULT;
+                    }
 
                     Assert.assertEquals(
                             "Incorrect default theme setting.",
@@ -135,7 +141,6 @@ public class ThemeSettingsFragmentTest {
                             mPreference.getSetting(),
                             ChromeSharedPreferences.getInstance().readInt(UI_THEME_SETTING));
                 });
-        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
     }
 
     @Test
@@ -146,7 +151,13 @@ public class ThemeSettingsFragmentTest {
         launchThemeSettings(ThemeSettingsEntry.SETTINGS);
         ThreadUtils.runOnUiThreadBlocking(
                 () -> {
-                    int expectedDefaultTheme = ThemeType.SYSTEM_DEFAULT;
+                    int expectedDefaultTheme = ThemeType.LIGHT;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        Assert.assertFalse(
+                                "Q should not default to light.",
+                                NightModeUtils.isNightModeDefaultToLight());
+                        expectedDefaultTheme = ThemeType.SYSTEM_DEFAULT;
+                    }
 
                     LinearLayout checkboxContainer = mPreference.getCheckboxContainerForTesting();
                     RadioButtonWithDescriptionLayout group = mPreference.getGroupForTesting();
@@ -220,7 +231,6 @@ public class ThemeSettingsFragmentTest {
                             .setContentSettingEnabled(
                                     any(), eq(ContentSettingsType.AUTO_DARK_WEB_CONTENT), eq(true));
                 });
-        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
     }
 
     @Test
@@ -242,7 +252,6 @@ public class ThemeSettingsFragmentTest {
                 (RadioButtonGroupThemePreference)
                         mFragment.findPreference(ThemeSettingsFragment.PREF_UI_THEME_PREF);
         assertThemeSettingsEntryRecorded(settingsEntry);
-        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
     }
 
     private RadioButtonWithDescription getButton(int index) {

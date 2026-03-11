@@ -4,39 +4,33 @@
 
 package org.chromium.chrome.browser.gesturenav;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
+import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.Callback;
-import org.chromium.build.annotations.EnsuresNonNull;
-import org.chromium.build.annotations.MonotonicNonNull;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.gesturenav.NavigationBubble.CloseTarget;
 import org.chromium.ui.base.BackGestureEventSwipeEdge;
 
 /** FrameLayout that supports side-wise slide gesture for history navigation. */
-@NullMarked
 class HistoryNavigationLayout extends FrameLayout implements ViewGroup.OnHierarchyChangeListener {
     // Callback that performs navigation action in response to UI.,
     private final Callback<Boolean> mNavigateCallback;
 
     // Frame layout hosting the arrow puck UI.
-    private @MonotonicNonNull SideSlideLayout mSideSlideLayout;
+    @Nullable private SideSlideLayout mSideSlideLayout;
 
     // Async runnable for ending the refresh animation after the page first
     // loads a frame. This is used to provide a reasonable minimum animation time.
-    private @Nullable Runnable mStopNavigatingRunnable;
+    private Runnable mStopNavigatingRunnable;
 
     // Handles removing the layout from the view hierarchy.  This is posted to ensure
     // it does not conflict with pending Android draws.
-    private @Nullable Runnable mDetachLayoutRunnable;
+    private Runnable mDetachLayoutRunnable;
 
     public HistoryNavigationLayout(Context context, Callback<Boolean> navigateCallback) {
         super(context);
@@ -60,7 +54,6 @@ class HistoryNavigationLayout extends FrameLayout implements ViewGroup.OnHierarc
      * Creates a view hosting the gesture navigation UI.
      * @return The created view.
      */
-    @EnsuresNonNull("mSideSlideLayout")
     private SideSlideLayout createLayout() {
         mSideSlideLayout = new SideSlideLayout(getContext());
         mSideSlideLayout.setLayoutParams(
@@ -140,13 +133,12 @@ class HistoryNavigationLayout extends FrameLayout implements ViewGroup.OnHierarc
     /** Cancel navigation operation by removing the runnable in the queue. */
     void cancelStopNavigatingRunnable() {
         if (mStopNavigatingRunnable != null) {
-            assumeNonNull(mSideSlideLayout);
             mSideSlideLayout.removeCallbacks(mStopNavigatingRunnable);
             mStopNavigatingRunnable = null;
         }
     }
 
-    @Nullable Runnable getDetachLayoutRunnable() {
+    Runnable getDetachLayoutRunnable() {
         return mDetachLayoutRunnable;
     }
 
@@ -162,7 +154,6 @@ class HistoryNavigationLayout extends FrameLayout implements ViewGroup.OnHierarc
     /** Cancel the operation detaching the layout from view hierarchy. */
     void cancelDetachLayoutRunnable() {
         if (mDetachLayoutRunnable != null) {
-            assumeNonNull(mSideSlideLayout);
             mSideSlideLayout.removeCallbacks(mDetachLayoutRunnable);
             mDetachLayoutRunnable = null;
         }
@@ -170,7 +161,6 @@ class HistoryNavigationLayout extends FrameLayout implements ViewGroup.OnHierarc
 
     Runnable getStopNavigatingRunnable() {
         if (mStopNavigatingRunnable == null) {
-            assumeNonNull(mSideSlideLayout);
             mStopNavigatingRunnable = () -> mSideSlideLayout.stopNavigating();
         }
         return mStopNavigatingRunnable;
@@ -190,7 +180,7 @@ class HistoryNavigationLayout extends FrameLayout implements ViewGroup.OnHierarc
         removeView(mSideSlideLayout);
     }
 
-    @VisibleForTesting
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     boolean isLayoutDetached() {
         return mSideSlideLayout == null || mSideSlideLayout.getParent() == null;
     }

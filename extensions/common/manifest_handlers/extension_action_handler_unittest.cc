@@ -49,15 +49,15 @@ TEST(ExtensionActionHandlerTest, LoadInvisibleBrowserActionIconUnpacked) {
       GetTestDataDir().AppendASCII("browser_action_invisible_icon");
   // Set the flag that enables the error.
   file_util::SetReportErrorForInvisibleIconForTesting(true);
-  std::u16string error;
+  std::string error;
   scoped_refptr<Extension> extension(file_util::LoadExtension(
       extension_dir, mojom::ManifestLocation::kUnpacked, Extension::NO_FLAGS,
       &error));
   file_util::SetReportErrorForInvisibleIconForTesting(false);
   EXPECT_FALSE(extension);
   EXPECT_EQ(
-      u"Icon 'invisible_icon.png' specified in 'browser_action' is not "
-      u"sufficiently visible.",
+      "Icon 'invisible_icon.png' specified in 'browser_action' is not "
+      "sufficiently visible.",
       error);
 }
 
@@ -68,15 +68,15 @@ TEST(ExtensionActionHandlerTest, LoadInvisiblePageActionIconUnpacked) {
       GetTestDataDir().AppendASCII("page_action_invisible_icon");
   // Set the flag that enables the error.
   file_util::SetReportErrorForInvisibleIconForTesting(true);
-  std::u16string error;
+  std::string error;
   scoped_refptr<Extension> extension(file_util::LoadExtension(
       extension_dir, mojom::ManifestLocation::kUnpacked, Extension::NO_FLAGS,
       &error));
   file_util::SetReportErrorForInvisibleIconForTesting(false);
   EXPECT_FALSE(extension);
   EXPECT_EQ(
-      u"Icon 'invisible_icon.png' specified in 'page_action' is not "
-      u"sufficiently visible.",
+      "Icon 'invisible_icon.png' specified in 'page_action' is not "
+      "sufficiently visible.",
       error);
 }
 
@@ -84,14 +84,13 @@ TEST(ExtensionActionHandlerTest, LoadInvisiblePageActionIconUnpacked) {
 TEST(ExtensionActionHandlerTest, InvalidActionIcon_ManifestV3) {
   base::FilePath extension_dir =
       GetTestDataDir().AppendASCII("action_invalid_icon");
-  std::u16string error;
+  std::string error;
   scoped_refptr<Extension> extension(file_util::LoadExtension(
       extension_dir, mojom::ManifestLocation::kUnpacked, Extension::NO_FLAGS,
       &error));
   EXPECT_FALSE(extension);
-  EXPECT_EQ(
-      u"Could not load icon 'nonexistent_icon.png' specified in 'action'.",
-      error);
+  EXPECT_EQ("Could not load icon 'nonexistent_icon.png' specified in 'action'.",
+            error);
 }
 
 using ExtensionActionHandlerManifestTest = ManifestTest;
@@ -198,8 +197,7 @@ class ExtensionActionManifestTest
   scoped_refptr<Extension> LoadExtensionWithDefaultPopup(
       const char* popup_file_name,
       int manifest_version,
-      TestExtensionDir* test_extension_dir,
-      std::u16string* error) {
+      TestExtensionDir* test_extension_dir) {
     const char* action_key =
         ActionInfo::GetManifestKeyForActionType(GetParam());
 
@@ -213,9 +211,11 @@ class ExtensionActionManifestTest
         manifest_version, action_key, popup_file_name));
     test_extension_dir->WriteFile(FILE_PATH_LITERAL("popup.html"), "");
 
+    std::string error;
     scoped_refptr<Extension> extension(file_util::LoadExtension(
         test_extension_dir->UnpackedPath(), mojom::ManifestLocation::kUnpacked,
-        Extension::NO_FLAGS, error));
+        Extension::NO_FLAGS, &error));
+    EXPECT_EQ(error, "");
     return extension;
   }
 };
@@ -334,25 +334,11 @@ TEST_P(ExtensionActionManifestTest, ValidDefaultPopup) {
   constexpr char valid_popup_file_name[] = "popup.html";
   TestExtensionDir test_extension_dir = TestExtensionDir();
   int manifest_version = GetManifestVersionForActionType(GetParam());
-  std::u16string error;
   scoped_refptr<Extension> test_extension = LoadExtensionWithDefaultPopup(
-      valid_popup_file_name, manifest_version, &test_extension_dir, &error);
-  ASSERT_TRUE(test_extension) << error;
-
-  std::vector<InstallWarning> warnings;
-  if (GetParam() == ActionInfo::Type::kBrowser) {
-    warnings.emplace_back("Unrecognized manifest key 'browser_action'.");
-  }
-  if (manifest_version == 2) {
-    warnings.emplace_back(manifest_errors::kManifestV2IsDeprecatedWarning);
-  }
-  EXPECT_EQ(warnings, test_extension->install_warnings());
-
-  const ActionInfo* action_info =
-      GetActionInfoOfType(*test_extension, GetParam());
-  ASSERT_TRUE(action_info);
-  EXPECT_EQ(test_extension->GetResourceURL("popup.html"),
-            action_info->default_popup_url);
+      valid_popup_file_name, manifest_version, &test_extension_dir);
+  ASSERT_TRUE(test_extension);
+  EXPECT_FALSE(warnings_test_util::HasInstallWarning(
+      test_extension, manifest_errors::kInvalidExtensionOriginPopup));
 }
 
 // Tests success when default_popup is empty.
@@ -360,24 +346,11 @@ TEST_P(ExtensionActionManifestTest, EmptyDefaultPopup) {
   constexpr char empty_popup_file_name[] = "";
   TestExtensionDir test_extension_dir = TestExtensionDir();
   int manifest_version = GetManifestVersionForActionType(GetParam());
-  std::u16string error;
   scoped_refptr<Extension> test_extension = LoadExtensionWithDefaultPopup(
-      empty_popup_file_name, manifest_version, &test_extension_dir, &error);
-  ASSERT_TRUE(test_extension) << error;
-
-  std::vector<InstallWarning> warnings;
-  if (GetParam() == ActionInfo::Type::kBrowser) {
-    warnings.emplace_back("Unrecognized manifest key 'browser_action'.");
-  }
-  if (manifest_version == 2) {
-    warnings.emplace_back(manifest_errors::kManifestV2IsDeprecatedWarning);
-  }
-  EXPECT_EQ(warnings, test_extension->install_warnings());
-
-  const ActionInfo* action_info =
-      GetActionInfoOfType(*test_extension, GetParam());
-  ASSERT_TRUE(action_info);
-  EXPECT_TRUE(action_info->default_popup_url.is_empty());
+      empty_popup_file_name, manifest_version, &test_extension_dir);
+  ASSERT_TRUE(test_extension);
+  EXPECT_FALSE(warnings_test_util::HasInstallWarning(
+      test_extension, manifest_errors::kInvalidExtensionOriginPopup));
 }
 
 // Tests warning when the default_popup seems to be for another extension.
@@ -386,12 +359,12 @@ TEST_P(ExtensionActionManifestTest, OtherExtensionSpecifiedDefaultPopup) {
       "chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef/popup.html";
   TestExtensionDir test_extension_dir = TestExtensionDir();
   int manifest_version = GetManifestVersionForActionType(GetParam());
-  std::u16string error;
-  scoped_refptr<Extension> test_extension = LoadExtensionWithDefaultPopup(
-      other_extension_specified_popup_file_name, manifest_version,
-      &test_extension_dir, &error);
-  ASSERT_FALSE(test_extension);
-  ASSERT_EQ(manifest_errors::kInvalidActionDefaultPopup, error);
+  scoped_refptr<Extension> test_extension =
+      LoadExtensionWithDefaultPopup(other_extension_specified_popup_file_name,
+                                    manifest_version, &test_extension_dir);
+  ASSERT_TRUE(test_extension);
+  EXPECT_TRUE(warnings_test_util::HasInstallWarning(
+      test_extension, manifest_errors::kInvalidExtensionOriginPopup));
 }
 
 // Tests warning when the default_popup doesn't exist on file system.
@@ -399,27 +372,11 @@ TEST_P(ExtensionActionManifestTest, NonexistentDefaultPopup) {
   constexpr char nonexistent_popup_file_name[] = "nonexistent_popup.html";
   TestExtensionDir test_extension_dir = TestExtensionDir();
   int manifest_version = GetManifestVersionForActionType(GetParam());
-  std::u16string error;
   scoped_refptr<Extension> test_extension = LoadExtensionWithDefaultPopup(
-      nonexistent_popup_file_name, manifest_version, &test_extension_dir,
-      &error);
-  ASSERT_TRUE(test_extension) << error;
-
-  std::vector<InstallWarning> warnings;
-  if (GetParam() == ActionInfo::Type::kBrowser) {
-    warnings.emplace_back("Unrecognized manifest key 'browser_action'.");
-  }
-  if (manifest_version == 2) {
-    warnings.emplace_back(manifest_errors::kManifestV2IsDeprecatedWarning);
-  }
-  warnings.emplace_back(manifest_errors::kNonexistentDefaultPopup);
-  EXPECT_EQ(warnings, test_extension->install_warnings());
-
-  const ActionInfo* action_info =
-      GetActionInfoOfType(*test_extension, GetParam());
-  ASSERT_TRUE(action_info);
-  EXPECT_EQ(test_extension->GetResourceURL("nonexistent_popup.html"),
-            action_info->default_popup_url);
+      nonexistent_popup_file_name, manifest_version, &test_extension_dir);
+  ASSERT_TRUE(test_extension);
+  EXPECT_TRUE(warnings_test_util::HasInstallWarning(
+      test_extension, manifest_errors::kNonexistentDefaultPopup));
 }
 
 // Test the handling of the default_state key.
@@ -540,31 +497,6 @@ TEST_F(ExtensionActionIconVariantsTest, All) {
     EXPECT_TRUE(icon_variants.empty());
   }
 
-  // Warn, don't error, if manifest.json has an icon with an invalid path.
-  {
-    ManifestData manifest_data = ManifestData::FromJSON(
-        R"({
-          "name": "Test",
-          "version": "1",
-          "manifest_version": 3,
-          "action": {"icon_variants": [{
-            "16": "C:\\icon_variants.16.png"
-          }]}
-        })");
-    scoped_refptr<extensions::Extension> extension(
-        LoadAndExpectSuccess(manifest_data));
-    warnings_test_util::HasInstallWarning(extension,
-                                          "'icon_variants' invalid file path.");
-
-    const ActionInfo* action_info =
-        GetActionInfoOfType(*extension, ActionInfo::Type::kAction);
-    ASSERT_TRUE(action_info);
-    // TODO(crbug.com/344639840): Get() using filters to avoid manual retrieval.
-    const std::vector<ExtensionIconVariant>& icon_variants =
-        action_info->icon_variants->GetList();
-    EXPECT_TRUE(icon_variants.empty());
-  }
-
   // Valid "action.icon_variants" value.
   {
     ManifestData manifest_data = ManifestData::FromJSON(
@@ -586,11 +518,8 @@ TEST_F(ExtensionActionIconVariantsTest, All) {
     const std::vector<ExtensionIconVariant>& icon_variants =
         action_info->icon_variants->GetList();
     EXPECT_EQ(1u, icon_variants.size());
-    EXPECT_EQ("icon_variants.16.png", icon_variants[0]
-                                          .GetSizes()
-                                          .find(16)
-                                          ->second.relative_path()
-                                          .AsUTF8Unsafe());
+    EXPECT_EQ("icon_variants.16.png",
+              icon_variants[0].GetSizes().find(16)->second);
   }
 }
 

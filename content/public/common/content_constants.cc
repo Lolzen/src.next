@@ -66,7 +66,4 @@ static_assert(kPluginOomScore > 0, "kPluginOomScore should be greater than 0");
 const int kAndroidMinimumTabletWidthDp = 600;
 #endif
 
-const base::FilePath::CharType kDevToolsActivePortFileName[] =
-    FILE_PATH_LITERAL("DevToolsActivePort");
-
 }  // namespace content

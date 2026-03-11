@@ -29,8 +29,6 @@ class IntentPickerTabHelper
       public content::WebContentsUserData<IntentPickerTabHelper>,
       public web_app::WebAppInstallManagerObserver {
  public:
-  using ShowIntentPickerBubbleCallback = base::OnceCallback<void(bool)>;
-
   IntentPickerTabHelper(const IntentPickerTabHelper&) = delete;
   IntentPickerTabHelper& operator=(const IntentPickerTabHelper&) = delete;
 
@@ -47,13 +45,8 @@ class IntentPickerTabHelper
 
   // Shows the intent picker bubble to present a choice between apps to handle
   // |url|. May launch directly into an app based on user preferences and
-  // installed apps. The callback will always be called asynchronously, and is
-  // called with true if the user chooses to launch the app, otherwise, false
-  // is called.
-  void ShowIntentPickerBubbleOrLaunchApp(
-      const GURL& url,
-      bool always_show = false,
-      ShowIntentPickerBubbleCallback callback = base::DoNothing());
+  // installed apps.
+  void ShowIntentPickerBubbleOrLaunchApp(const GURL& url);
 
   // Shows or hides the intent picker icon for |web_contents|. Always shows a
   // generic picker icon, even if MaybeShowIconForApps() had previously applied
@@ -116,13 +109,10 @@ class IntentPickerTabHelper
 
   void ShowIntentPickerOrLaunchAppImpl(
       const GURL& url,
-      bool always_show,
-      ShowIntentPickerBubbleCallback callback,
       std::vector<apps::IntentPickerAppInfo> apps);
 
   void OnIntentPickerClosedMaybeLaunch(
       const GURL& url,
-      ShowIntentPickerBubbleCallback callback,
       const std::string& launch_name,
       apps::PickerEntryType entry_type,
       apps::IntentPickerCloseReason close_reason,

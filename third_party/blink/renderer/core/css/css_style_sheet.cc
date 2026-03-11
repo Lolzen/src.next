@@ -30,7 +30,6 @@
 #include "third_party/blink/renderer/core/css/css_import_rule.h"
 #include "third_party/blink/renderer/core/css/css_rule_list.h"
 #include "third_party/blink/renderer/core/css/media_list.h"
-#include "third_party/blink/renderer/core/css/media_query_exp.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_context.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_impl.h"
@@ -132,7 +131,7 @@ CSSStyleSheet* CSSStyleSheet::CreateInline(StyleSheetContents* sheet,
 CSSStyleSheet* CSSStyleSheet::CreateInline(Node& owner_node,
                                            const KURL& base_url,
                                            const TextPosition& start_position,
-                                           const TextEncoding& encoding) {
+                                           const WTF::TextEncoding& encoding) {
   Document& owner_node_document = owner_node.GetDocument();
   auto* parser_context = MakeGarbageCollected<CSSParserContext>(
       owner_node_document, owner_node_document.BaseURL(),
@@ -244,7 +243,7 @@ void CSSStyleSheet::DidMutate(Mutation mutation) {
         ownerNode()->GetTreeScope());
     invalidate_matched_properties_cache = true;
   } else if (!adopted_tree_scopes_.empty()) {
-    for (const auto& tree_scope : adopted_tree_scopes_.Keys()) {
+    for (auto tree_scope : adopted_tree_scopes_.Keys()) {
       // It is currently required that adopted sheets can not be moved between
       // documents.
       DCHECK(tree_scope->GetDocument() == document);
@@ -293,7 +292,6 @@ CSSStyleSheet::InspectorMutationScope::~InspectorMutationScope() {
 
 bool CSSStyleSheet::IsContentsShared() const {
   return contents_->IsUsedFromTextCache() ||
-         contents_->IsUsedFromResourceCache() ||
          contents_->IsReferencedFromResource();
 }
 
@@ -415,9 +413,9 @@ unsigned CSSStyleSheet::insertRule(const String& rule_string,
   if (index > length()) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kIndexSizeError,
-        StrCat({"The index provided (", String::Number(index),
-                ") is larger than the maximum index (",
-                String::Number(length()), ")."}));
+        WTF::StrCat({"The index provided (", String::Number(index),
+                     ") is larger than the maximum index (",
+                     String::Number(length()), ")."}));
     return 0;
   }
 
@@ -431,7 +429,7 @@ unsigned CSSStyleSheet::insertRule(const String& rule_string,
   if (!rule) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
-        StrCat({"Failed to parse the rule '", rule_string, "'."}));
+        WTF::StrCat({"Failed to parse the rule '", rule_string, "'."}));
     return 0;
   }
   RuleMutationScope mutation_scope(this);
@@ -475,9 +473,9 @@ void CSSStyleSheet::deleteRule(unsigned index,
     if (length()) {
       exception_state.ThrowDOMException(
           DOMExceptionCode::kIndexSizeError,
-          StrCat({"The index provided (", String::Number(index),
-                  ") is larger than the maximum index (",
-                  String::Number(length() - 1), ")."}));
+          WTF::StrCat({"The index provided (", String::Number(index),
+                       ") is larger than the maximum index (",
+                       String::Number(length() - 1), ")."}));
     } else {
       exception_state.ThrowDOMException(DOMExceptionCode::kIndexSizeError,
                                         "Style sheet is empty (length 0).");

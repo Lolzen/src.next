@@ -572,7 +572,7 @@ DocumentFragment* Range::ProcessContents(ActionType action,
   // These are deleted, cloned, or extracted (i.e. both) depending on action.
 
   // Note that we are verifying that our common root hierarchy is still intact
-  // after any synchronous DOM event, at various stages below. See webkit bug
+  // after any DOM mutation event, at various stages below. See webkit bug
   // 60350.
 
   Node* left_contents = nullptr;
@@ -768,7 +768,7 @@ Node* Range::ProcessAncestorsAndTheirSiblings(
   for (wtf_size_t i = 0; i < ancestors.size(); ++i) {
     const auto& ancestor = ancestors[i];
     if (action == kExtractContents || action == kCloneContents) {
-      // Might have been removed already during synchronous event.
+      // Might have been removed already during mutation event.
       if (auto cloned_ancestor = cloned_ancestors[i]) {
         cloned_ancestor->appendChild(cloned_container, exception_state);
         cloned_container = cloned_ancestor;
@@ -776,8 +776,7 @@ Node* Range::ProcessAncestorsAndTheirSiblings(
     }
 
     // Copy siblings of an ancestor of start/end containers
-    // FIXME: This assertion may fail if DOM is modified during a synchronous
-    //        event handler.
+    // FIXME: This assertion may fail if DOM is modified during mutation event
     // FIXME: Share code with Range::processNodes
     DCHECK(!first_child_in_ancestor_to_process ||
            first_child_in_ancestor_to_process->parentNode() == ancestor);
@@ -864,9 +863,9 @@ void Range::insertNode(Node* new_node, ExceptionState& exception_state) {
       start_node.getNodeType() == Node::kCommentNode) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kHierarchyRequestError,
-        StrCat({"Nodes of type '", new_node->nodeName(),
-                "' may not be inserted inside nodes of type '",
-                start_node.nodeName(), "'."}));
+        WTF::StrCat({"Nodes of type '", new_node->nodeName(),
+                     "' may not be inserted inside nodes of type '",
+                     start_node.nodeName(), "'."}));
     return;
   }
   const bool start_is_text = start_node.IsTextNode();
@@ -890,8 +889,8 @@ void Range::insertNode(Node* new_node, ExceptionState& exception_state) {
   if (start_node.IsAttributeNode()) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kHierarchyRequestError,
-        StrCat({"Nodes of type '", new_node->nodeName(),
-                "' may not be inserted inside nodes of type 'Attr'."}));
+        WTF::StrCat({"Nodes of type '", new_node->nodeName(),
+                     "' may not be inserted inside nodes of type 'Attr'."}));
     return;
   }
 
@@ -992,26 +991,16 @@ String Range::GetText() const {
 }
 
 DocumentFragment* Range::createContextualFragment(
-    const V8UnionStringOrTrustedHTML* markup,
+    const String& markup,
     ExceptionState& exception_state) {
   // Algorithm:
-  // https://html.spec.whatwg.org/#the-createcontextualfragment()-method
+  // http://domparsing.spec.whatwg.org/#extensions-to-the-range-interface
 
-  // Step 1: Invoke Get Trusted Type compliant string.
-  String compliant_markup = TrustedTypesCheckForHTML(
-      markup, OwnerDocument().GetExecutionContext(),
-      trusted_types_names::kRange,
-      trusted_types_names::kCreateContextualFragment, exception_state);
-  if (exception_state.HadException()) {
-    return nullptr;
-  }
+  DCHECK(!markup.IsNull());
 
-  DCHECK(!compliant_markup.IsNull());
-
-  // Step 2: This' start node.
   Node* node = &start_.Container();
 
-  // Step 3, 4, 5: Determine element.
+  // Step 1.
   Element* element;
   if (!start_.Offset() &&
       (node->IsDocumentNode() || node->IsDocumentFragment()))
@@ -1021,7 +1010,7 @@ DocumentFragment* Range::createContextualFragment(
   else
     element = node->parentElement();
 
-  // Step 6: Handle null and <html> element.
+  // Step 2.
   if (!element || IsA<HTMLHtmlElement>(element)) {
     Document& document = node->GetDocument();
 
@@ -1038,10 +1027,10 @@ DocumentFragment* Range::createContextualFragment(
     }
   }
 
-  // Steps 7, 8, 9: Invoke fragment parsing, etc.
+  // Steps 3, 4, 5.
   return blink::CreateContextualFragment(
-      compliant_markup, element,
-      kAllowScriptingContentAndDoNotMarkAlreadyStarted, exception_state);
+      markup, element, kAllowScriptingContentAndDoNotMarkAlreadyStarted,
+      exception_state);
 }
 
 void Range::detach() {
@@ -1055,7 +1044,7 @@ Node* Range::CheckNodeWOffset(Node* n,
     case Node::kDocumentTypeNode:
       exception_state.ThrowDOMException(
           DOMExceptionCode::kInvalidNodeTypeError,
-          StrCat({"The node provided is of type '", n->nodeName(), "'."}));
+          WTF::StrCat({"The node provided is of type '", n->nodeName(), "'."}));
       return nullptr;
     case Node::kCdataSectionNode:
     case Node::kCommentNode:
@@ -1063,21 +1052,23 @@ Node* Range::CheckNodeWOffset(Node* n,
       if (offset > To<CharacterData>(n)->length()) {
         exception_state.ThrowDOMException(
             DOMExceptionCode::kIndexSizeError,
-            StrCat({"The offset ", String::Number(offset),
-                    " is larger than the node's length (",
-                    String::Number(To<CharacterData>(n)->length()), ")."}));
+            WTF::StrCat({"The offset ", String::Number(offset),
+                         " is larger than the node's length (",
+                         String::Number(To<CharacterData>(n)->length()),
+                         ")."}));
       } else if (offset >
                  static_cast<unsigned>(std::numeric_limits<int>::max())) {
         exception_state.ThrowDOMException(
             DOMExceptionCode::kIndexSizeError,
-            StrCat({"The offset ", String::Number(offset), " is invalid."}));
+            WTF::StrCat(
+                {"The offset ", String::Number(offset), " is invalid."}));
       }
       return nullptr;
     case Node::kProcessingInstructionNode:
       if (offset > To<ProcessingInstruction>(n)->data().length()) {
         exception_state.ThrowDOMException(
             DOMExceptionCode::kIndexSizeError,
-            StrCat(
+            WTF::StrCat(
                 {"The offset ", String::Number(offset),
                  " is larger than the node's length (",
                  String::Number(To<ProcessingInstruction>(n)->data().length()),
@@ -1086,7 +1077,8 @@ Node* Range::CheckNodeWOffset(Node* n,
                  static_cast<unsigned>(std::numeric_limits<int>::max())) {
         exception_state.ThrowDOMException(
             DOMExceptionCode::kIndexSizeError,
-            StrCat({"The offset ", String::Number(offset), " is invalid."}));
+            WTF::StrCat(
+                {"The offset ", String::Number(offset), " is invalid."}));
       }
       return nullptr;
     case Node::kAttributeNode:
@@ -1098,14 +1090,15 @@ Node* Range::CheckNodeWOffset(Node* n,
       if (offset > static_cast<unsigned>(std::numeric_limits<int>::max())) {
         exception_state.ThrowDOMException(
             DOMExceptionCode::kIndexSizeError,
-            StrCat({"The offset ", String::Number(offset), " is invalid."}));
+            WTF::StrCat(
+                {"The offset ", String::Number(offset), " is invalid."}));
         return nullptr;
       }
       Node* child_before = NodeTraversal::ChildAt(*n, offset - 1);
       if (!child_before) {
         exception_state.ThrowDOMException(
             DOMExceptionCode::kIndexSizeError,
-            StrCat(
+            WTF::StrCat(
                 {"There is no child at offset ", String::Number(offset), "."}));
       }
       return child_before;
@@ -1139,7 +1132,7 @@ void Range::CheckNodeBA(Node* n, ExceptionState& exception_state) const {
     case Node::kDocumentNode:
       exception_state.ThrowDOMException(
           DOMExceptionCode::kInvalidNodeTypeError,
-          StrCat({"The node provided is of type '", n->nodeName(), "'."}));
+          WTF::StrCat({"The node provided is of type '", n->nodeName(), "'."}));
       return;
     case Node::kCdataSectionNode:
     case Node::kCommentNode:
@@ -1167,7 +1160,7 @@ void Range::CheckNodeBA(Node* n, ExceptionState& exception_state) const {
     case Node::kTextNode:
       exception_state.ThrowDOMException(
           DOMExceptionCode::kInvalidNodeTypeError,
-          StrCat({"The node provided is of type '", n->nodeName(), "'."}));
+          WTF::StrCat({"The node provided is of type '", n->nodeName(), "'."}));
       return;
   }
 }
@@ -1229,7 +1222,7 @@ void Range::selectNode(Node* ref_node, ExceptionState& exception_state) {
     case Node::kDocumentNode:
       exception_state.ThrowDOMException(
           DOMExceptionCode::kInvalidNodeTypeError,
-          StrCat(
+          WTF::StrCat(
               {"The node provided is of type '", ref_node->nodeName(), "'."}));
       return;
   }
@@ -1265,8 +1258,8 @@ void Range::selectNodeContents(Node* ref_node,
       case Node::kDocumentTypeNode:
         exception_state.ThrowDOMException(
             DOMExceptionCode::kInvalidNodeTypeError,
-            StrCat({"The node provided is of type '", ref_node->nodeName(),
-                    "'."}));
+            WTF::StrCat({"The node provided is of type '", ref_node->nodeName(),
+                         "'."}));
         return;
     }
   }
@@ -1345,8 +1338,8 @@ void Range::surroundContents(Node* new_parent,
     case Node::kDocumentTypeNode:
       exception_state.ThrowDOMException(
           DOMExceptionCode::kInvalidNodeTypeError,
-          StrCat({"The node provided is of type '", new_parent->nodeName(),
-                  "'."}));
+          WTF::StrCat({"The node provided is of type '", new_parent->nodeName(),
+                       "'."}));
       return;
     case Node::kCdataSectionNode:
     case Node::kCommentNode:
@@ -1492,11 +1485,10 @@ void Range::NodeWillBeRemoved(Node& node) {
   DCHECK_EQ(node.GetDocument(), owner_document_);
   DCHECK_NE(node, owner_document_.Get());
 
-  // Synchronous event handlers (e.g. `blur`) can change the DOM
-  // tree. Make sure we're still within the same parent.
-  if (!node.parentNode()) {
+  // FIXME: Once DOMNodeRemovedFromDocument mutation event removed, we
+  // should change following if-statement to DCHECK(!node->parentNode).
+  if (!node.parentNode())
     return;
-  }
   const bool is_collapsed = collapsed();
   const bool start_updated = BoundaryNodeWillBeRemoved(start_, node);
   if (is_collapsed) {
@@ -1813,15 +1805,18 @@ void Range::UpdateSelectionIfAddedToSelection() {
 
   Position start_position = StartPosition();
   Position end_position = EndPosition();
-  switch (update_selection_behavior_) {
-    case UpdateSelectionBehavior::kEndOnly:
-      start_position = selection.GetSelectionInDOMTree().ComputeStartPosition();
-      break;
-    case UpdateSelectionBehavior::kStartOnly:
-      end_position = selection.GetSelectionInDOMTree().ComputeEndPosition();
-      break;
-    case UpdateSelectionBehavior::kAll:
-      break;
+  if (RuntimeEnabledFeatures::SelectionAcrossShadowDOMEnabled()) {
+    switch (update_selection_behavior_) {
+      case UpdateSelectionBehavior::kEndOnly:
+        start_position =
+            selection.GetSelectionInDOMTree().ComputeStartPosition();
+        break;
+      case UpdateSelectionBehavior::kStartOnly:
+        end_position = selection.GetSelectionInDOMTree().ComputeEndPosition();
+        break;
+      case UpdateSelectionBehavior::kAll:
+        break;
+    }
   }
 
   selection.SetSelection(SelectionInDOMTree::Builder()

@@ -78,11 +78,10 @@ public interface DownloadMessageUiController extends OfflineContentProvider.Obse
 
     /**
      * Returns true if the given download information matches an interstitial download.
-     *
      * @param originalUrl The URL of the download.
      * @param guid Unique GUID of the download.
      */
-    boolean isDownloadInterstitialItem(GURL originalUrl, @Nullable String guid);
+    boolean isDownloadInterstitialItem(GURL originalUrl, String guid);
 
     /** Shows a message that asks for the user confirmation before the actual download starts. */
     void showIncognitoDownloadMessage(Callback<Boolean> callback);
@@ -95,10 +94,8 @@ public interface DownloadMessageUiController extends OfflineContentProvider.Obse
     void onItemRemoved(ContentId id);
 
     @Override
-    void onItemUpdated(OfflineItem item, @Nullable UpdateDelta updateDelta);
+    void onItemUpdated(OfflineItem item, UpdateDelta updateDelta);
 
-    /**
-     * @return Whether the UI is currently showing.
-     */
+    /** @return Whether the UI is currently showing. */
     boolean isShowing();
 }

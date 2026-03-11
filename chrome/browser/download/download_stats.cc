@@ -110,58 +110,60 @@ void RecordDownloadPromptStatus(DownloadPromptStatus status) {
 }
 #endif  // BUILDFLAG(IS_ANDROID)
 
-DownloadUiContextMenuAction DownloadCommandToContextMenuAction(
+DownloadShelfContextMenuAction DownloadCommandToShelfAction(
     DownloadCommands::Command download_command,
     bool clicked) {
   switch (download_command) {
     case DownloadCommands::Command::SHOW_IN_FOLDER:
-      return clicked ? DownloadUiContextMenuAction::kShowInFolderClicked
-                     : DownloadUiContextMenuAction::kShowInFolderEnabled;
+      return clicked ? DownloadShelfContextMenuAction::kShowInFolderClicked
+                     : DownloadShelfContextMenuAction::kShowInFolderEnabled;
     case DownloadCommands::Command::OPEN_WHEN_COMPLETE:
-      return clicked ? DownloadUiContextMenuAction::kOpenWhenCompleteClicked
-                     : DownloadUiContextMenuAction::kOpenWhenCompleteEnabled;
+      return clicked ? DownloadShelfContextMenuAction::kOpenWhenCompleteClicked
+                     : DownloadShelfContextMenuAction::kOpenWhenCompleteEnabled;
     case DownloadCommands::Command::ALWAYS_OPEN_TYPE:
-      return clicked ? DownloadUiContextMenuAction::kAlwaysOpenTypeClicked
-                     : DownloadUiContextMenuAction::kAlwaysOpenTypeEnabled;
+      return clicked ? DownloadShelfContextMenuAction::kAlwaysOpenTypeClicked
+                     : DownloadShelfContextMenuAction::kAlwaysOpenTypeEnabled;
     case DownloadCommands::Command::PLATFORM_OPEN:
-      return clicked ? DownloadUiContextMenuAction::kPlatformOpenClicked
-                     : DownloadUiContextMenuAction::kPlatformOpenEnabled;
+      return clicked ? DownloadShelfContextMenuAction::kPlatformOpenClicked
+                     : DownloadShelfContextMenuAction::kPlatformOpenEnabled;
     case DownloadCommands::Command::CANCEL:
-      return clicked ? DownloadUiContextMenuAction::kCancelClicked
-                     : DownloadUiContextMenuAction::kCancelEnabled;
+      return clicked ? DownloadShelfContextMenuAction::kCancelClicked
+                     : DownloadShelfContextMenuAction::kCancelEnabled;
     case DownloadCommands::Command::PAUSE:
-      return clicked ? DownloadUiContextMenuAction::kPauseClicked
-                     : DownloadUiContextMenuAction::kPauseEnabled;
+      return clicked ? DownloadShelfContextMenuAction::kPauseClicked
+                     : DownloadShelfContextMenuAction::kPauseEnabled;
     case DownloadCommands::Command::RESUME:
-      return clicked ? DownloadUiContextMenuAction::kResumeClicked
-                     : DownloadUiContextMenuAction::kResumeEnabled;
+      return clicked ? DownloadShelfContextMenuAction::kResumeClicked
+                     : DownloadShelfContextMenuAction::kResumeEnabled;
     case DownloadCommands::Command::DISCARD:
-      return clicked ? DownloadUiContextMenuAction::kDiscardClicked
-                     : DownloadUiContextMenuAction::kDiscardEnabled;
+      return clicked ? DownloadShelfContextMenuAction::kDiscardClicked
+                     : DownloadShelfContextMenuAction::kDiscardEnabled;
     case DownloadCommands::Command::KEEP:
-      return clicked ? DownloadUiContextMenuAction::kKeepClicked
-                     : DownloadUiContextMenuAction::kKeepEnabled;
+      return clicked ? DownloadShelfContextMenuAction::kKeepClicked
+                     : DownloadShelfContextMenuAction::kKeepEnabled;
     case DownloadCommands::Command::LEARN_MORE_SCANNING:
-      return clicked ? DownloadUiContextMenuAction::kLearnMoreScanningClicked
-                     : DownloadUiContextMenuAction::kLearnMoreScanningEnabled;
+      return clicked
+                 ? DownloadShelfContextMenuAction::kLearnMoreScanningClicked
+                 : DownloadShelfContextMenuAction::kLearnMoreScanningEnabled;
     case DownloadCommands::Command::LEARN_MORE_INTERRUPTED:
       return clicked
-                 ? DownloadUiContextMenuAction::kLearnMoreInterruptedClicked
-                 : DownloadUiContextMenuAction::kLearnMoreInterruptedEnabled;
+                 ? DownloadShelfContextMenuAction::kLearnMoreInterruptedClicked
+                 : DownloadShelfContextMenuAction::kLearnMoreInterruptedEnabled;
     case DownloadCommands::Command::LEARN_MORE_INSECURE_DOWNLOAD:
-      return clicked ? DownloadUiContextMenuAction::
+      return clicked ? DownloadShelfContextMenuAction::
                            kLearnMoreInsecureDownloadClicked
-                     : DownloadUiContextMenuAction::
+                     : DownloadShelfContextMenuAction::
                            kLearnMoreInsecureDownloadEnabled;
     case DownloadCommands::Command::COPY_TO_CLIPBOARD:
-      return clicked ? DownloadUiContextMenuAction::kCopyToClipboardClicked
-                     : DownloadUiContextMenuAction::kCopyToClipboardEnabled;
+      return clicked ? DownloadShelfContextMenuAction::kCopyToClipboardClicked
+                     : DownloadShelfContextMenuAction::kCopyToClipboardEnabled;
     case DownloadCommands::Command::DEEP_SCAN:
-      return clicked ? DownloadUiContextMenuAction::kDeepScanClicked
-                     : DownloadUiContextMenuAction::kDeepScanEnabled;
+      return clicked ? DownloadShelfContextMenuAction::kDeepScanClicked
+                     : DownloadShelfContextMenuAction::kDeepScanEnabled;
     case DownloadCommands::BYPASS_DEEP_SCANNING_AND_OPEN:
-      return clicked ? DownloadUiContextMenuAction::kBypassDeepScanningClicked
-                     : DownloadUiContextMenuAction::kBypassDeepScanningEnabled;
+      return clicked
+                 ? DownloadShelfContextMenuAction::kBypassDeepScanningClicked
+                 : DownloadShelfContextMenuAction::kBypassDeepScanningEnabled;
 
     // The following are not actually visible in the context menu so should
     // never be logged.

@@ -4,24 +4,23 @@
 
 package org.chromium.chrome.browser.tab;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.ObserverList.RewindableIterator;
 import org.chromium.base.UserData;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.ui.base.WindowAndroid;
 
 /**
  * Helper that coordinates the browser controls offsets from the perspective of a particular Tab.
  */
-@NullMarked
 public class TabBrowserControlsOffsetHelper extends EmptyTabObserver implements UserData {
     @VisibleForTesting
     public static final Class<TabBrowserControlsOffsetHelper> USER_DATA_KEY =
             TabBrowserControlsOffsetHelper.class;
 
-    private final TabImpl mTab;
+    private TabImpl mTab;
 
     private int mTopControlsOffset;
     private int mBottomControlsOffset;
@@ -34,11 +33,10 @@ public class TabBrowserControlsOffsetHelper extends EmptyTabObserver implements 
 
     /**
      * Get (or lazily create) the offset helper for a particular Tab.
-     *
      * @param tab The tab whose helper is being retrieved.
      * @return The offset helper for a given tab.
      */
-    public static TabBrowserControlsOffsetHelper get(Tab tab) {
+    public static @NonNull TabBrowserControlsOffsetHelper get(Tab tab) {
         TabBrowserControlsOffsetHelper helper = tab.getUserDataHost().getUserData(USER_DATA_KEY);
         if (helper == null) {
             helper = new TabBrowserControlsOffsetHelper(tab);
@@ -55,6 +53,7 @@ public class TabBrowserControlsOffsetHelper extends EmptyTabObserver implements 
     @Override
     public void destroy() {
         mTab.removeObserver(this);
+        mTab = null;
     }
 
     /**

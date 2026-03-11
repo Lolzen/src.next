@@ -16,17 +16,13 @@
 
 namespace fullscreen_utils {
 
-bool IsInContentFullscreen(
-    const BrowserWindowInterface* browser_window_interface) {
-  // Const cast because ExclusiveAccessManager and its accessors are not
-  // const-correct.
-  auto* const manager =
-      const_cast<BrowserWindowInterface*>(browser_window_interface)
-          ->GetExclusiveAccessManager();
-  if (!manager) {
+bool IsInContentFullscreen(BrowserWindowInterface* browser_window_interface) {
+  if (!browser_window_interface->GetExclusiveAccessManager()) {
     return false;
   }
-  FullscreenController* const controller = manager->fullscreen_controller();
+  FullscreenController* const controller =
+      browser_window_interface->GetExclusiveAccessManager()
+          ->fullscreen_controller();
   return controller && (controller->IsWindowFullscreenForTabOrPending() ||
                         controller->IsExtensionFullscreenOrPending());
 }

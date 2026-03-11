@@ -192,14 +192,14 @@ static String FormatNumber(double number, const char* suffix) {
 #if BUILDFLAG(IS_WIN) && _MSC_VER < 1900
   unsigned oldFormat = _set_output_format(_TWO_DIGIT_EXPONENT);
 #endif
-  String result = UNSAFE_TODO(String::Format("%.6g%s", number, suffix));
+  String result = String::Format("%.6g%s", number, suffix);
 #if BUILDFLAG(IS_WIN) && _MSC_VER < 1900
   _set_output_format(oldFormat);
 #endif
   return result;
 }
 
-static String FormatInfinityOrNaN(double number, StringView suffix) {
+static String FormatInfinityOrNaN(double number, const char* suffix) {
   String result;
   if (std::isinf(number)) {
     if (number > 0) {
@@ -213,8 +213,8 @@ static String FormatInfinityOrNaN(double number, StringView suffix) {
     result = "NaN";
   }
 
-  if (suffix.length() > 0) {
-    result = StrCat({result, " * 1", suffix});
+  if (strlen(suffix) > 0) {
+    result = result + String::Format(" * 1%s", suffix);
   }
   return result;
 }
@@ -305,15 +305,14 @@ String CSSNumericLiteralValue::CustomCSSText() const {
         if (!std::isfinite(value)) {
           text = FormatInfinityOrNaN(value, UnitTypeToString(GetType()));
         } else {
-          text =
-              FormatNumber(value, UnitTypeToString(GetType()).Utf8().c_str());
+          text = FormatNumber(value, UnitTypeToString(GetType()));
         }
       } else {
         StringBuilder builder;
         int int_value = value;
-        StringView unit_type = UnitTypeToString(GetType());
+        const char* unit_type = UnitTypeToString(GetType());
         builder.AppendNumber(int_value);
-        builder.Append(unit_type);
+        builder.Append(StringView(unit_type));
         text = builder.ReleaseString();
       }
     } break;
@@ -375,7 +374,8 @@ bool CSSNumericLiteralValue::Equals(const CSSNumericLiteralValue& other) const {
 
 unsigned CSSNumericLiteralValue::CustomHash() const {
   uint64_t val = base::bit_cast<uint64_t>(num_);
-  return HashInts(static_cast<unsigned>(GetType()), HashInts(val >> 32, val));
+  return WTF::HashInts(static_cast<unsigned>(GetType()),
+                       WTF::HashInts(val >> 32, val));
 }
 
 CSSPrimitiveValue::UnitType CSSNumericLiteralValue::CanonicalUnit() const {

@@ -4,14 +4,11 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.util.AttributeSet;
 import android.view.Gravity;
-import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 
@@ -19,30 +16,32 @@ import androidx.annotation.ColorInt;
 import androidx.annotation.StringRes;
 import androidx.core.widget.ImageViewCompat;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
-import org.chromium.chrome.browser.tasks.tab_management.TabListEditorCoordinator.CreationMode;
 import org.chromium.chrome.tab_ui.R;
 import org.chromium.components.browser_ui.styles.SemanticColorUtils;
 import org.chromium.components.browser_ui.widget.NumberRollView;
 import org.chromium.components.browser_ui.widget.TintedDrawable;
 import org.chromium.components.browser_ui.widget.selectable_list.SelectableListToolbar;
-import org.chromium.ui.util.KeyboardNavigationListener;
 import org.chromium.ui.widget.ChromeImageButton;
 
 import java.util.Collections;
 import java.util.List;
 
 /** Handles toolbar functionality for TabListEditor. */
-@NullMarked
-class TabListEditorToolbar extends SelectableListToolbar<TabListEditorItemSelectionId> {
-    private static final List<TabListEditorItemSelectionId> sEmptyIntegerList =
-            Collections.emptyList();
+class TabListEditorToolbar extends SelectableListToolbar<Integer> {
+    private static final List<Integer> sEmptyIntegerList = Collections.emptyList();
     private ChromeImageButton mMenuButton;
     private TabListEditorActionViewLayout mActionViewLayout;
-    private @Nullable View mNextFocusableView;
     @ColorInt private int mBackgroundColor;
     @StringRes private int mBackButtonAccessibilityString;
+    private RelatedTabCountProvider mRelatedTabCountProvider;
+
+    public interface RelatedTabCountProvider {
+        /**
+         * @param tabIds the selected items.
+         * @return the count of tabs including related tabs.
+         */
+        int getRelatedTabCount(List<Integer> tabIds);
+    }
 
     public TabListEditorToolbar(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -58,8 +57,8 @@ class TabListEditorToolbar extends SelectableListToolbar<TabListEditorItemSelect
         mMenuButton = findViewById(R.id.list_menu_button);
 
         // Can be overridden by #setToolbarTitle.
-        mNumberRollView.setStringForZero(R.string.tab_selection_editor_toolbar_select_items);
-        mNumberRollView.setString(R.plurals.tab_selection_editor_item_count);
+        mNumberRollView.setStringForZero(R.string.tab_selection_editor_toolbar_select_tabs);
+        mNumberRollView.setString(R.plurals.tab_selection_editor_tabs_count);
 
         // Move the number roll view into a LinearLayout to manage spacing.
         LinearLayout.LayoutParams params =
@@ -70,17 +69,6 @@ class TabListEditorToolbar extends SelectableListToolbar<TabListEditorItemSelect
         params.gravity = Gravity.CENTER_VERTICAL;
         ((ViewGroup) mNumberRollView.getParent()).removeView(mNumberRollView);
         mActionViewLayout.addView(mNumberRollView, 0, params);
-
-        int finalChildIdx = mActionViewLayout.getChildCount() - 1;
-        mActionViewLayout
-                .getChildAt(finalChildIdx)
-                .setOnKeyListener(
-                        new KeyboardNavigationListener() {
-                            @Override
-                            public @Nullable View getNextFocusForward() {
-                                return mNextFocusableView;
-                            }
-                        });
     }
 
     private void showNavigationButton() {
@@ -90,18 +78,19 @@ class TabListEditorToolbar extends SelectableListToolbar<TabListEditorItemSelect
         final @ColorInt int lightIconColor =
                 SemanticColorUtils.getDefaultIconColorInverse(getContext());
         navigationIconDrawable.setTint(lightIconColor);
-        navigationIconDrawable.setAutoMirrored(true);
 
         setNavigationIcon(navigationIconDrawable);
         setNavigationContentDescription(mBackButtonAccessibilityString);
     }
 
     @Override
-    public void onSelectionStateChange(List<TabListEditorItemSelectionId> selectedItems) {
+    public void onSelectionStateChange(List<Integer> selectedItems) {
         super.onSelectionStateChange(selectedItems);
 
-        // All entities (tabs and tab groups) are treated as singular items on selection.
-        mNumberRollView.setNumber(selectedItems.size(), /* animate= */ true);
+        if (mRelatedTabCountProvider == null) return;
+
+        int selectedCount = mRelatedTabCountProvider.getRelatedTabCount(selectedItems);
+        mNumberRollView.setNumber(selectedCount, /* animate= */ true);
     }
 
     @Override
@@ -116,8 +105,7 @@ class TabListEditorToolbar extends SelectableListToolbar<TabListEditorItemSelect
     }
 
     @Override
-    protected void showSelectionView(
-            List<TabListEditorItemSelectionId> selectedItems, boolean wasSelectionEnabled) {
+    protected void showSelectionView(List<Integer> selectedItems, boolean wasSelectionEnabled) {
         super.showSelectionView(selectedItems, wasSelectionEnabled);
         if (mBackgroundColor != Color.TRANSPARENT) {
             setBackgroundColor(mBackgroundColor);
@@ -143,7 +131,7 @@ class TabListEditorToolbar extends SelectableListToolbar<TabListEditorItemSelect
      * @param tint New {@link ColorStateList} to use.
      */
     public void setButtonTint(ColorStateList tint) {
-        TintedDrawable navigation = (TintedDrawable) assumeNonNull(getNavigationIcon());
+        TintedDrawable navigation = (TintedDrawable) getNavigationIcon();
         navigation.setTint(tint);
         ImageViewCompat.setImageTintList(mMenuButton, tint);
     }
@@ -166,24 +154,16 @@ class TabListEditorToolbar extends SelectableListToolbar<TabListEditorItemSelect
         mNumberRollView.setTextColorStateList(colorStateList);
     }
 
+    /**
+     * Set provider for related tab count.
+     * @param relatedTabCountProvider The provider to call to get the related tab count.
+     */
+    public void setRelatedTabCountProvider(RelatedTabCountProvider relatedTabCountProvider) {
+        mRelatedTabCountProvider = relatedTabCountProvider;
+    }
+
     /** Set the title of the toolbar when no tabs are selected. */
     public void setTitle(String title) {
         mNumberRollView.setStringForZero(title);
-    }
-
-    /** Set the view to focus to next after the toolbar. */
-    public void setNextFocusableView(View nextFocusableView) {
-        mNextFocusableView = nextFocusableView;
-    }
-
-    /** Set the editor toolbar to use creation mode text. */
-    public void setCreationModeText(@CreationMode int creationMode) {
-        if (creationMode == CreationMode.ITEM_PICKER) {
-            mNumberRollView.setStringForZero(R.string.tab_selection_editor_toolbar_add_recent_tabs);
-            mNumberRollView.setString(R.plurals.collaboration_preview_dialog_tabs);
-        } else {
-            mNumberRollView.setStringForZero(R.string.tab_selection_editor_toolbar_select_items);
-            mNumberRollView.setString(R.plurals.tab_selection_editor_item_count);
-        }
     }
 }

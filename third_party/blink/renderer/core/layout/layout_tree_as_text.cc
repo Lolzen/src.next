@@ -110,7 +110,7 @@ static String GetTagName(Node* n) {
   if (const auto* element = DynamicTo<Element>(n)) {
     const AtomicString& pseudo = element->ShadowPseudoId();
     if (!pseudo.empty())
-      return StrCat({"::", pseudo});
+      return "::" + pseudo;
   }
   return n->nodeName();
 }
@@ -126,7 +126,7 @@ String QuoteAndEscapeNonPrintables(const String& s) {
     } else if (c == '"') {
       result.Append('\\');
       result.Append('"');
-    } else if (c == '\n' || c == uchar::kNoBreakSpace) {
+    } else if (c == '\n' || c == kNoBreakSpaceCharacter) {
       result.Append(' ');
     } else {
       if (c >= 0x20 && c < 0x7F) {
@@ -766,10 +766,6 @@ String CounterValueForElement(Element* element) {
   if (LayoutObject* picker_icon =
           element->PseudoElementLayoutObject(kPseudoIdPickerIcon)) {
     WriteCounterValuesFromChildren(stream, picker_icon, is_first_counter);
-  }
-  if (LayoutObject* interest_hint =
-          element->PseudoElementLayoutObject(kPseudoIdInterestHint)) {
-    WriteCounterValuesFromChildren(stream, interest_hint, is_first_counter);
   }
   return stream.ReleaseString();
 }

@@ -17,6 +17,7 @@
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "net/base/net_export.h"
 #include "net/http/http_byte_range.h"
@@ -69,7 +70,7 @@ class NET_EXPORT HttpUtil {
   // Parses the value of a "Range" header as defined in RFC 7233 Section 2.1.
   // https://tools.ietf.org/html/rfc7233#section-2.1
   // Returns false on failure.
-  static bool ParseRangeHeader(std::string_view range_specifier,
+  static bool ParseRangeHeader(const std::string& range_specifier,
                                std::vector<HttpByteRange>* ranges);
 
   // Extracts the values in a Content-Range header and returns true if all three
@@ -226,7 +227,7 @@ class NET_EXPORT HttpUtil {
   // cases as explained at this w3c doc:
   // https://www.w3.org/International/questions/qa-lang-priorities#langtagdetail
   // Note that we do not support Q values (e.g. ;q=0.9) in |language_prefs|.
-  static std::string ExpandLanguageList(std::string_view language_prefs);
+  static std::string ExpandLanguageList(const std::string& language_prefs);
 
   // Given a comma separated ordered list of language codes, return
   // the list with a qvalue appended to each language.

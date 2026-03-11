@@ -2,19 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "net/base/network_interfaces_win.h"
 
 #include <objbase.h>
 
 #include <iphlpapi.h>
 
-#include <array>
 #include <ostream>
 #include <string>
 #include <unordered_set>
 
-#include "base/compiler_specific.h"
-#include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -46,7 +48,7 @@ bool FillAdapterAddress(IP_ADAPTER_ADDRESSES* adapter_address,
                         const char* ifname,
                         const IPAddress& ip_address,
                         const IPAddress& ip_netmask,
-                        std::array<sockaddr_storage, 2>& sock_addrs) {
+                        sockaddr_storage sock_addrs[2]) {
   adapter_address->AdapterName = const_cast<char*>(ifname);
   adapter_address->FriendlyName = const_cast<PWCHAR>(L"interface");
   adapter_address->IfType = IF_TYPE_ETHERNET_CSMACD;
@@ -60,9 +62,9 @@ bool FillAdapterAddress(IP_ADAPTER_ADDRESSES* adapter_address,
   DCHECK(sizeof(adapter_address->PhysicalAddress) > 5);
   // Generate 06:05:04:03:02:01
   adapter_address->PhysicalAddressLength = 6;
-  auto physical_address = base::span(adapter_address->PhysicalAddress);
-  for (size_t i = 0; i < adapter_address->PhysicalAddressLength; i++) {
-    physical_address[i] = adapter_address->PhysicalAddressLength - i;
+  for (unsigned long i = 0; i < adapter_address->PhysicalAddressLength; i++) {
+    adapter_address->PhysicalAddress[i] =
+        adapter_address->PhysicalAddressLength - i;
   }
 
   socklen_t sock_len = sizeof(sockaddr_storage);
@@ -106,7 +108,7 @@ TEST(NetworkInterfacesTest, NetworkListTrimmingWindows) {
   IPAddress ipv6_prefix(kIPv6AddrPrefix);
 
   NetworkInterfaceList results;
-  std::array<sockaddr_storage, 2> addresses;
+  sockaddr_storage addresses[2];
   IP_ADAPTER_ADDRESSES adapter_address = {};
   IP_ADAPTER_UNICAST_ADDRESS address = {};
   IP_ADAPTER_PREFIX adapter_prefix = {};
@@ -206,7 +208,7 @@ TEST(NetworkInterfacesTest, NetworkListExtractMacAddress) {
   IPAddress ipv6_prefix(kIPv6AddrPrefix);
 
   NetworkInterfaceList results;
-  std::array<sockaddr_storage, 2> addresses;
+  sockaddr_storage addresses[2];
   IP_ADAPTER_ADDRESSES adapter_address = {};
   IP_ADAPTER_UNICAST_ADDRESS address = {};
   IP_ADAPTER_PREFIX adapter_prefix = {};
@@ -230,7 +232,7 @@ TEST(NetworkInterfacesTest, NetworkListExtractMacAddressInvalidLength) {
   IPAddress ipv6_prefix(kIPv6AddrPrefix);
 
   NetworkInterfaceList results;
-  std::array<sockaddr_storage, 2> addresses;
+  sockaddr_storage addresses[2];
   IP_ADAPTER_ADDRESSES adapter_address = {};
   IP_ADAPTER_UNICAST_ADDRESS address = {};
   IP_ADAPTER_PREFIX adapter_prefix = {};
@@ -279,14 +281,13 @@ int GetWifiOptions() {
   std::unique_ptr<WLAN_INTERFACE_INFO_LIST, internal::WlanApiDeleter>
       interface_list(interface_list_ptr);
 
-  base::span<WLAN_INTERFACE_INFO> interfaces =
-      internal::WlanInterfaceInfoListToSpan(interface_list.get());
-  for (auto& info : interfaces) {
+  for (unsigned i = 0; i < interface_list->dwNumberOfItems; ++i) {
+    WLAN_INTERFACE_INFO* info = &interface_list->InterfaceInfo[i];
     DWORD data_size;
     PVOID data;
     int options = 0;
     result =
-        wlanapi.query_interface_func(client.Get(), &info.InterfaceGuid,
+        wlanapi.query_interface_func(client.Get(), &info->InterfaceGuid,
                                      wlan_intf_opcode_background_scan_enabled,
                                      nullptr, &data_size, &data, nullptr);
     if (result != ERROR_SUCCESS)
@@ -296,7 +297,7 @@ int GetWifiOptions() {
     }
     internal::WlanApi::GetInstance().free_memory_func(data);
 
-    result = wlanapi.query_interface_func(client.Get(), &info.InterfaceGuid,
+    result = wlanapi.query_interface_func(client.Get(), &info->InterfaceGuid,
                                           wlan_intf_opcode_media_streaming_mode,
                                           nullptr, &data_size, &data, nullptr);
     if (result != ERROR_SUCCESS)

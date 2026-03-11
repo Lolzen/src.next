@@ -4,17 +4,8 @@
 
 #include "chrome/browser/ui/browser_otr_state.h"
 
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+#include "chrome/browser/ui/browser_list.h"
 
 bool IsOffTheRecordSessionActive() {
-  bool has_active_off_the_record_browser = false;
-  ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
-      [&](BrowserWindowInterface* browser) {
-        has_active_off_the_record_browser =
-            browser->GetProfile()->IsOffTheRecord();
-        return !has_active_off_the_record_browser;
-      });
-  return has_active_off_the_record_browser;
+  return BrowserList::IsOffTheRecordBrowserActive();
 }

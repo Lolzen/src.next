@@ -27,6 +27,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_DOM_EVENTS_NODE_EVENT_CONTEXT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_EVENTS_NODE_EVENT_CONTEXT_H_
 
+#include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/events/tree_scope_event_context.h"
 
@@ -72,15 +73,18 @@ class CORE_EXPORT NodeEventContext {
   Member<Node> node_;
   Member<EventTarget> current_target_;
   Member<TreeScopeEventContext> tree_scope_event_context_;
-  bool invocation_target_in_shadow_tree_{false};
-};
-
-template <>
-struct VectorTraits<NodeEventContext>
-    : SimpleClassVectorTraits<NodeEventContext> {
-  static constexpr bool kCanTraceConcurrently = true;
 };
 
 }  // namespace blink
+
+namespace WTF {
+
+template <>
+struct VectorTraits<blink::NodeEventContext>
+    : SimpleClassVectorTraits<blink::NodeEventContext> {
+  static constexpr bool kCanTraceConcurrently = true;
+};
+
+}  // namespace WTF
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_CORE_DOM_EVENTS_NODE_EVENT_CONTEXT_H_

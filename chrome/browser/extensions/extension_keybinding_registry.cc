@@ -10,14 +10,13 @@
 #include "base/values.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/extensions/permissions/active_tab_permission_granter.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/media_keys_listener_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/permissions/active_tab_permission_granter.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/command.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/common/extension_set.h"
@@ -27,8 +26,6 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/ui/ash/media_client/media_client_impl.h"
 #endif
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace {
 
@@ -60,39 +57,6 @@ void ExtensionKeybindingRegistry::SetShortcutHandlingSuspended(bool suspended) {
   OnShortcutHandlingSuspended(suspended);
 }
 
-void ExtensionKeybindingRegistry::AddExtensionKeybindings(
-    const Extension* extension,
-    const std::string& command_name) {
-  // This object only handles named commands, not toolbar action execution.
-  if (ShouldIgnoreCommand(command_name)) {
-    return;
-  }
-
-  // Add all the active keybindings (except toolbar action executions,
-  // which are handled elsewhere).
-  ui::CommandMap commands;
-  if (!PopulateCommands(extension, &commands)) {
-    return;
-  }
-
-  for (auto& command : commands) {
-    if (!command_name.empty() &&
-        (command.second.command_name() != command_name)) {
-      continue;
-    }
-    const ui::Accelerator& accelerator = command.second.accelerator();
-
-    if (!IsAcceleratorRegistered(accelerator)) {
-      if (!RegisterAccelerator(accelerator, extension->id(),
-                               command.second.command_name())) {
-        continue;
-      }
-    }
-
-    AddEventTarget(accelerator, extension->id(), command.second.command_name());
-  }
-}
-
 void ExtensionKeybindingRegistry::RemoveExtensionKeybinding(
     const Extension* extension,
     const std::string& command_name) {
@@ -112,7 +76,7 @@ void ExtensionKeybindingRegistry::RemoveExtensionKeybinding(
     auto old = it++;
     if (target_list.empty()) {
       // Let each platform-specific implementation get a chance to clean up.
-      UnregisterAccelerator(old->first);
+      RemoveExtensionKeybindingImpl(old->first, command_name);
 
       if (old->first.IsMediaKey()) {
         any_media_keys_removed = true;
@@ -148,11 +112,6 @@ void ExtensionKeybindingRegistry::RemoveExtensionKeybinding(
   }
 }
 
-bool ExtensionKeybindingRegistry::ShouldIgnoreCommand(
-    const std::string& command) const {
-  return Command::IsActionRelatedCommand(command);
-}
-
 void ExtensionKeybindingRegistry::Init() {
   ExtensionRegistry* registry = ExtensionRegistry::Get(browser_context_);
   if (!registry)
@@ -165,6 +124,10 @@ void ExtensionKeybindingRegistry::Init() {
   }
 }
 
+bool ExtensionKeybindingRegistry::ShouldIgnoreCommand(
+    const std::string& command) const {
+  return Command::IsActionRelatedCommand(command);
+}
 
 bool ExtensionKeybindingRegistry::NotifyEventTargets(
     const ui::Accelerator& accelerator) {
@@ -180,11 +143,10 @@ void ExtensionKeybindingRegistry::CommandExecuted(
   if (!extension)
     return;
 
-  base::ListValue args;
+  base::Value::List args;
   args.Append(command);
 
-// TODO(crbug.com/406136564): Support tab parameter for commands.onCommand
-// on desktop Android.
+// TODO(crbug.com/406136564): Support tab parameter for commands.onCommand.
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   base::Value tab_value;
   if (delegate_) {
@@ -195,7 +157,8 @@ void ExtensionKeybindingRegistry::CommandExecuted(
     // not set the delegate as it deals only with named commands (not
     // page/browser actions that are associated with the current page directly).
     ActiveTabPermissionGranter* granter =
-        web_contents ? ActiveTabPermissionGranter::FromWebContents(web_contents)
+        web_contents ? TabHelper::FromWebContents(web_contents)
+                           ->active_tab_permission_granter()
                      : nullptr;
     if (granter) {
       granter->GrantIfRequested(extension);
@@ -300,7 +263,7 @@ void ExtensionKeybindingRegistry::OnExtensionUnloaded(
 
 void ExtensionKeybindingRegistry::OnExtensionCommandAdded(
     const ExtensionId& extension_id,
-    const std::string& command_name) {
+    const Command& command) {
   const Extension* extension = ExtensionRegistry::Get(browser_context_)
                                    ->enabled_extensions()
                                    .GetByID(extension_id);
@@ -316,12 +279,12 @@ void ExtensionKeybindingRegistry::OnExtensionCommandAdded(
   if (extension->location() == mojom::ManifestLocation::kComponent)
     return;
 
-  AddExtensionKeybindings(extension, command_name);
+  AddExtensionKeybindings(extension, command.command_name());
 }
 
 void ExtensionKeybindingRegistry::OnExtensionCommandRemoved(
     const ExtensionId& extension_id,
-    const std::string& command_name) {
+    const Command& command) {
   const Extension* extension = ExtensionRegistry::Get(browser_context_)
                                    ->enabled_extensions()
                                    .GetByID(extension_id);
@@ -331,7 +294,7 @@ void ExtensionKeybindingRegistry::OnExtensionCommandRemoved(
   if (!extension || !ExtensionMatchesFilter(extension))
     return;
 
-  RemoveExtensionKeybinding(extension, command_name);
+  RemoveExtensionKeybinding(extension, command.command_name());
 }
 
 void ExtensionKeybindingRegistry::OnCommandServiceDestroying() {

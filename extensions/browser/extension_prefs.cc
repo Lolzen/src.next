@@ -15,6 +15,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/json/values_util.h"
 #include "base/observer_list.h"
@@ -34,7 +35,6 @@
 #include "components/supervised_user/core/common/buildflags.h"
 #include "components/supervised_user/core/common/pref_names.h"
 #include "extensions/browser/api/declarative_net_request/utils.h"
-#include "extensions/browser/api/web_request/extension_web_request_event_router.h"
 #include "extensions/browser/app_sorting.h"
 #include "extensions/browser/blocklist_extension_prefs.h"
 #include "extensions/browser/blocklist_state.h"
@@ -103,7 +103,9 @@ constexpr const char kPrefExternalAcknowledged[] = "ack_external";
 // run of this profile.
 constexpr const char kPrefExternalInstallFirstRun[] = "external_first_run";
 
-// A list of all the reasons an extension is disabled.
+// A list of all the reasons an extension is disabled. This used to be a
+// bitflag, but `MaybeMigrateDisableReasonsBitflagToList()` will convert it to a
+// list if it's still a bitflag.
 constexpr const char kPrefDisableReasons[] = "disable_reasons";
 
 // The key for a serialized Time value indicating the start of the day (from the
@@ -246,6 +248,17 @@ bool CheckPrefType(PrefType pref_type, const base::Value* value) {
   }
 }
 
+base::Value::List BitflagToList(int bit_flag) {
+  base::Value::List list;
+  for (int i = 0; i < 32; ++i) {
+    int val = (1 << i);
+    if (bit_flag & val) {
+      list.Append(val);
+    }
+  }
+  return list;
+}
+
 // Converts a set of integers to a set of disable reasons. Unknown reasons are
 // collapsed to DISABLE_UNKNOWN.
 DisableReasonSet CollapseUnknownDisableReasons(const base::flat_set<int>& set) {
@@ -275,7 +288,7 @@ void SaveTime(prefs::DictionaryValueUpdate* dictionary,
 
 // The opposite of SaveTime. If |key| is not found, this returns an empty Time
 // (is_null() will return true).
-base::Time ReadTime(const base::DictValue* dictionary, const char* key) {
+base::Time ReadTime(const base::Value::Dict* dictionary, const char* key) {
   if (!dictionary) {
     return base::Time();
   }
@@ -287,8 +300,8 @@ base::Time ReadTime(const base::DictValue* dictionary, const char* key) {
   return base::Time();
 }
 
-base::ListValue IntegerSetToList(const base::flat_set<int>& set) {
-  base::ListValue list;
+base::Value::List IntegerSetToList(const base::flat_set<int>& set) {
+  base::Value::List list;
   for (int i : set) {
     list.Append(i);
   }
@@ -318,7 +331,7 @@ class ScopedExtensionPrefUpdate : public prefs::ScopedDictionaryPrefUpdate {
     std::unique_ptr<prefs::DictionaryValueUpdate> extension;
     if (!dict->GetDictionary(extension_id_, &extension)) {
       // Extension pref does not exist, create it.
-      extension = dict->SetDictionary(extension_id_, base::DictValue());
+      extension = dict->SetDictionary(extension_id_, base::Value::Dict());
     }
     return extension;
   }
@@ -362,7 +375,7 @@ ExtensionPrefs::ScopedDictionaryUpdate::Create() {
     return key_value;
   }
 
-  return dict->SetDictionary(key_, base::DictValue());
+  return dict->SetDictionary(key_, base::Value::Dict());
 }
 
 ExtensionPrefs::ScopedListUpdate::ScopedListUpdate(
@@ -375,17 +388,17 @@ ExtensionPrefs::ScopedListUpdate::ScopedListUpdate(
 
 ExtensionPrefs::ScopedListUpdate::~ScopedListUpdate() = default;
 
-base::ListValue* ExtensionPrefs::ScopedListUpdate::Get() {
-  base::ListValue* key_value = nullptr;
+base::Value::List* ExtensionPrefs::ScopedListUpdate::Get() {
+  base::Value::List* key_value = nullptr;
   (*update_)->GetListWithoutPathExpansion(key_, &key_value);
   return key_value;
 }
 
-base::ListValue* ExtensionPrefs::ScopedListUpdate::Ensure() {
-  if (base::ListValue* existing = Get()) {
+base::Value::List* ExtensionPrefs::ScopedListUpdate::Ensure() {
+  if (base::Value::List* existing = Get()) {
     return existing;
   }
-  return &(*update_)->SetKey(key_, base::Value(base::ListValue()))->GetList();
+  return &(*update_)->SetKey(key_, base::Value(base::Value::List()))->GetList();
 }
 
 //
@@ -430,12 +443,6 @@ ExtensionPrefs* ExtensionPrefs::Get(content::BrowserContext* context) {
   return ExtensionPrefsFactory::GetInstance()->GetForBrowserContext(context);
 }
 
-void ExtensionPrefs::Shutdown() {
-  browser_context_ = nullptr;
-  prefs_ = nullptr;
-  clock_ = nullptr;
-}
-
 static std::string MakePathRelative(const base::FilePath& parent,
                                     const base::FilePath& child) {
   if (!parent.IsParent(child)) {
@@ -455,7 +462,7 @@ static std::string MakePathRelative(const base::FilePath& parent,
 }
 
 void ExtensionPrefs::MakePathsRelative() {
-  const base::DictValue& dict = prefs_->GetDict(pref_names::kExtensions);
+  const base::Value::Dict& dict = prefs_->GetDict(pref_names::kExtensions);
   if (dict.empty()) {
     return;
   }
@@ -466,7 +473,7 @@ void ExtensionPrefs::MakePathsRelative() {
     if (!extension_item.is_dict()) {
       continue;
     }
-    const base::DictValue& extension_dict = extension_item.GetDict();
+    const base::Value::Dict& extension_dict = extension_item.GetDict();
     std::optional<int> location_value = extension_dict.FindInt(kPrefLocation);
     if (location_value && Manifest::IsUnpackedLocation(
                               static_cast<ManifestLocation>(*location_value))) {
@@ -502,7 +509,7 @@ void ExtensionPrefs::MakePathsRelative() {
   }
 }
 
-const base::DictValue* ExtensionPrefs::GetExtensionPref(
+const base::Value::Dict* ExtensionPrefs::GetExtensionPref(
     const ExtensionId& extension_id) const {
   // TODO(https://1297144): Should callers of this method proactively filter out
   // extension IDs? Previously, this function would (potentially surprisingly)
@@ -539,14 +546,14 @@ void ExtensionPrefs::SetStringPref(const ExtensionId& id,
 
 void ExtensionPrefs::SetListPref(const ExtensionId& id,
                                  const PrefMap& pref,
-                                 base::ListValue value) {
+                                 base::Value::List value) {
   DCHECK_EQ(pref.type, PrefType::kList);
   UpdateExtensionPrefInternal(id, pref, base::Value(std::move(value)));
 }
 
 void ExtensionPrefs::SetDictionaryPref(const ExtensionId& id,
                                        const PrefMap& pref,
-                                       base::DictValue value) {
+                                       base::Value::Dict value) {
   DCHECK_EQ(pref.type, PrefType::kDictionary);
   UpdateExtensionPrefInternal(id, pref, base::Value(std::move(value)));
 }
@@ -600,7 +607,7 @@ void ExtensionPrefs::DeleteExtensionPrefs(const ExtensionId& extension_id) {
 
 void ExtensionPrefs::DeleteExtensionPrefsIfPrefEmpty(
     const ExtensionId& extension_id) {
-  const base::DictValue* dict = GetExtensionPref(extension_id);
+  const base::Value::Dict* dict = GetExtensionPref(extension_id);
   if (dict && dict->empty()) {
     DeleteExtensionPrefs(extension_id);
   }
@@ -613,7 +620,7 @@ bool ExtensionPrefs::ReadPrefAsBoolean(const ExtensionId& extension_id,
   DCHECK_EQ(PrefType::kBool, pref.type);
   DCHECK(out_value);
 
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   if (!ext) {
     return false;
   }
@@ -633,7 +640,7 @@ bool ExtensionPrefs::ReadPrefAsInteger(const ExtensionId& extension_id,
   DCHECK_EQ(PrefScope::kExtensionSpecific, pref.scope);
   DCHECK_EQ(PrefType::kInteger, pref.type);
   DCHECK(out_value);
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   if (!ext) {
     return false;
   }
@@ -651,7 +658,7 @@ bool ExtensionPrefs::ReadPrefAsString(const ExtensionId& extension_id,
   DCHECK_EQ(PrefScope::kExtensionSpecific, pref.scope);
   DCHECK_EQ(PrefType::kString, pref.type);
   DCHECK(out_value);
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   if (!ext) {
     return false;
   }
@@ -665,24 +672,24 @@ bool ExtensionPrefs::ReadPrefAsString(const ExtensionId& extension_id,
   return true;
 }
 
-const base::ListValue* ExtensionPrefs::ReadPrefAsList(
+const base::Value::List* ExtensionPrefs::ReadPrefAsList(
     const ExtensionId& extension_id,
     const PrefMap& pref) const {
   DCHECK_EQ(PrefScope::kExtensionSpecific, pref.scope);
   DCHECK_EQ(PrefType::kList, pref.type);
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   if (!ext) {
     return nullptr;
   }
   return ext->FindListByDottedPath(pref.name);
 }
 
-const base::DictValue* ExtensionPrefs::ReadPrefAsDictionary(
+const base::Value::Dict* ExtensionPrefs::ReadPrefAsDictionary(
     const ExtensionId& extension_id,
     const PrefMap& pref) const {
   DCHECK_EQ(PrefScope::kExtensionSpecific, pref.scope);
   DCHECK_EQ(PrefType::kDictionary, pref.type);
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   if (!ext) {
     return nullptr;
   }
@@ -699,7 +706,7 @@ base::Time ExtensionPrefs::ReadPrefAsTime(const ExtensionId& extension_id,
 bool ExtensionPrefs::ReadPrefAsBoolean(const ExtensionId& extension_id,
                                        std::string_view pref_key,
                                        bool* out_value) const {
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   if (!ext) {
     return false;
   }
@@ -716,7 +723,7 @@ bool ExtensionPrefs::ReadPrefAsBoolean(const ExtensionId& extension_id,
 bool ExtensionPrefs::ReadPrefAsInteger(const ExtensionId& extension_id,
                                        std::string_view pref_key,
                                        int* out_value) const {
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   if (!ext) {
     return false;
   }
@@ -734,7 +741,7 @@ bool ExtensionPrefs::ReadPrefAsString(const ExtensionId& extension_id,
                                       std::string_view pref_key,
                                       std::string* out_value) const {
   DCHECK(out_value);
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   if (!ext) {
     return false;
   }
@@ -748,10 +755,10 @@ bool ExtensionPrefs::ReadPrefAsString(const ExtensionId& extension_id,
   return true;
 }
 
-const base::ListValue* ExtensionPrefs::ReadPrefAsList(
+const base::Value::List* ExtensionPrefs::ReadPrefAsList(
     const ExtensionId& extension_id,
     std::string_view pref_key) const {
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   if (!ext) {
     return nullptr;
   }
@@ -761,7 +768,7 @@ const base::ListValue* ExtensionPrefs::ReadPrefAsList(
 const base::Value* ExtensionPrefs::GetPrefAsValue(
     const ExtensionId& extension_id,
     std::string_view pref_key) const {
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   if (!ext) {
     return nullptr;
   }
@@ -769,7 +776,7 @@ const base::Value* ExtensionPrefs::GetPrefAsValue(
   return value && value->is_dict() ? value : nullptr;
 }
 
-const base::DictValue* ExtensionPrefs::ReadPrefAsDict(
+const base::Value::Dict* ExtensionPrefs::ReadPrefAsDict(
     const ExtensionId& extension_id,
     std::string_view pref_key) const {
   const base::Value* out = GetPrefAsValue(extension_id, pref_key);
@@ -785,11 +792,11 @@ bool ExtensionPrefs::ReadPrefAsURLPatternSet(const ExtensionId& extension_id,
                                              std::string_view pref_key,
                                              URLPatternSet* result,
                                              int valid_schemes) const {
-  const base::ListValue* value = ReadPrefAsList(extension_id, pref_key);
+  const base::Value::List* value = ReadPrefAsList(extension_id, pref_key);
   if (!value) {
     return false;
   }
-  const base::DictValue* extension = GetExtensionPref(extension_id);
+  const base::Value::Dict* extension = GetExtensionPref(extension_id);
   if (!extension) {
     return false;
   }
@@ -828,7 +835,7 @@ std::unique_ptr<PermissionSet> ExtensionPrefs::ReadPrefAsPermissionSet(
   // for api_values format.
   APIPermissionSet apis;
   std::string api_pref = JoinPrefs({pref_key, kPrefAPIs});
-  const base::ListValue* api_values = ReadPrefAsList(extension_id, api_pref);
+  const base::Value::List* api_values = ReadPrefAsList(extension_id, api_pref);
   if (api_values) {
     APIPermissionSet::ParseFromJSON(*api_values,
                                     APIPermissionSet::kAllowInternalPermissions,
@@ -840,7 +847,7 @@ std::unique_ptr<PermissionSet> ExtensionPrefs::ReadPrefAsPermissionSet(
   ManifestPermissionSet manifest_permissions;
   std::string manifest_permission_pref =
       JoinPrefs({pref_key, kPrefManifestPermissions});
-  const base::ListValue* manifest_permissions_values =
+  const base::Value::List* manifest_permissions_values =
       ReadPrefAsList(extension_id, manifest_permission_pref);
   if (manifest_permissions_values) {
     ManifestPermissionSet::ParseFromJSON(
@@ -876,11 +883,11 @@ namespace {
 // ]
 template <typename T>
 base::Value CreatePermissionList(const T& permissions) {
-  base::ListValue values;
+  base::Value::List values;
   for (const auto* permission : permissions) {
     std::unique_ptr<base::Value> detail(permission->ToValue());
     if (detail) {
-      base::DictValue tmp;
+      base::Value::Dict tmp;
       tmp.Set(permission->name(),
               base::Value::FromUniquePtrValue(std::move(detail)));
       values.Append(std::move(tmp));
@@ -1228,7 +1235,7 @@ void ExtensionPrefs::SetLastActivePingDay(const ExtensionId& extension_id,
 }
 
 bool ExtensionPrefs::GetActiveBit(const ExtensionId& extension_id) const {
-  const base::DictValue* dictionary = GetExtensionPref(extension_id);
+  const base::Value::Dict* dictionary = GetExtensionPref(extension_id);
   if (dictionary) {
     return dictionary->FindBool(kActiveBit).value_or(false);
   }
@@ -1305,7 +1312,7 @@ bool ExtensionPrefs::GetWithholdingPermissions(
 
 bool ExtensionPrefs::HasWithholdingPermissionsSetting(
     const ExtensionId& extension_id) const {
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   return ext && ext->Find(kPrefWithholdingPermissions);
 }
 
@@ -1339,7 +1346,7 @@ void ExtensionPrefs::SetExtensionRunning(const ExtensionId& extension_id,
 }
 
 bool ExtensionPrefs::IsExtensionRunning(const ExtensionId& extension_id) const {
-  const base::DictValue* extension = GetExtensionPref(extension_id);
+  const base::Value::Dict* extension = GetExtensionPref(extension_id);
   if (extension) {
     return extension->FindBool(kPrefRunning).value_or(false);
   }
@@ -1352,7 +1359,7 @@ void ExtensionPrefs::SetIsActive(const ExtensionId& extension_id,
 }
 
 bool ExtensionPrefs::IsActive(const ExtensionId& extension_id) const {
-  const base::DictValue* extension = GetExtensionPref(extension_id);
+  const base::Value::Dict* extension = GetExtensionPref(extension_id);
   if (extension) {
     return extension->FindBool(kIsActive).value_or(false);
   }
@@ -1380,7 +1387,7 @@ void ExtensionPrefs::SetIsIncognitoEnabledDelayed(
 
 bool ExtensionPrefs::HasIncognitoEnabledPendingUpdate(
     const ExtensionId& extension_id) const {
-  const base::DictValue* extension = GetExtensionPref(extension_id);
+  const base::Value::Dict* extension = GetExtensionPref(extension_id);
   return extension && extension->Find(kPrefIncognitoEnabledPending);
 }
 #endif
@@ -1417,14 +1424,14 @@ void ExtensionPrefs::SetAllowFileAccessDelayed(const ExtensionId& extension_id,
 
 bool ExtensionPrefs::HasAllowFileAccessPendingUpdate(
     const ExtensionId& extension_id) const {
-  const base::DictValue* extension = GetExtensionPref(extension_id);
+  const base::Value::Dict* extension = GetExtensionPref(extension_id);
   return extension && extension->Find(kPrefAllowFileAccessPending);
 }
 #endif
 
 bool ExtensionPrefs::HasAllowFileAccessSetting(
     const ExtensionId& extension_id) const {
-  const base::DictValue* ext = GetExtensionPref(extension_id);
+  const base::Value::Dict* ext = GetExtensionPref(extension_id);
   return ext && ext->Find(kPrefAllowFileAccess);
 }
 
@@ -1432,7 +1439,7 @@ bool ExtensionPrefs::IsExternalExtensionUninstalled(
     const ExtensionId& id) const {
   ExtensionIdList uninstalled_ids;
   GetUserExtensionPrefIntoContainer(kExternalUninstalls, &uninstalled_ids);
-  return std::ranges::contains(uninstalled_ids, id);
+  return base::Contains(uninstalled_ids, id);
 }
 
 bool ExtensionPrefs::ClearExternalExtensionUninstalled(const ExtensionId& id) {
@@ -1464,7 +1471,7 @@ void ExtensionPrefs::OnExtensionInstalled(
     const syncer::StringOrdinal& page_ordinal,
     int install_flags,
     const std::string& install_parameter,
-    base::DictValue ruleset_install_prefs) {
+    base::Value::Dict ruleset_install_prefs) {
   // If the extension was previously an external extension that was uninstalled,
   // clear the external uninstall bit.
   // TODO(devlin): We previously did this because we indicated external
@@ -1483,7 +1490,7 @@ void ExtensionPrefs::OnExtensionInstalled(
   auto extension_dict = update.Get();
   const base::Time install_time = clock_->Now();
 
-  base::ListValue prefs_to_remove;
+  base::Value::List prefs_to_remove;
   PopulateExtensionInfoPrefs(extension, install_time, disable_reasons,
                              install_flags, install_parameter,
                              std::move(ruleset_install_prefs),
@@ -1517,7 +1524,7 @@ void ExtensionPrefs::OnExtensionUninstalled(const ExtensionId& extension_id,
 
 std::string ExtensionPrefs::GetVersionString(
     const ExtensionId& extension_id) const {
-  const base::DictValue* extension = GetExtensionPref(extension_id);
+  const base::Value::Dict* extension = GetExtensionPref(extension_id);
   if (!extension) {
     return std::string();
   }
@@ -1529,11 +1536,11 @@ std::string ExtensionPrefs::GetVersionString(
 
 void ExtensionPrefs::UpdateManifest(const Extension* extension) {
   if (!Manifest::IsUnpackedLocation(extension->location())) {
-    const base::DictValue* extension_dict = GetExtensionPref(extension->id());
+    const base::Value::Dict* extension_dict = GetExtensionPref(extension->id());
     if (!extension_dict) {
       return;
     }
-    const base::DictValue* old_manifest =
+    const base::Value::Dict* old_manifest =
         extension_dict->FindDict(kPrefManifest);
     bool update_required =
         !old_manifest || *extension->manifest()->value() != *old_manifest;
@@ -1552,7 +1559,7 @@ void ExtensionPrefs::SetInstallLocation(const ExtensionId& extension_id,
 
 std::optional<ExtensionInfo> ExtensionPrefs::GetInstalledInfoHelper(
     const ExtensionId& extension_id,
-    const base::DictValue& extension,
+    const base::Value::Dict& extension,
     bool include_component_extensions) const {
   std::optional<int> location_value = extension.FindInt(kPrefLocation);
   if (!location_value) {
@@ -1615,7 +1622,7 @@ std::optional<ExtensionInfo> ExtensionPrefs::GetInstalledInfoHelper(
   if (!file_path.IsAbsolute()) {
     file_path = install_directory_.Append(file_path);
   }
-  const base::DictValue* manifest_dict =
+  const base::Value::Dict* manifest_dict =
       manifest && manifest->is_dict() ? &manifest->GetDict() : nullptr;
   return ExtensionInfo(manifest_dict, extension_id, file_path, location);
 }
@@ -1623,8 +1630,9 @@ std::optional<ExtensionInfo> ExtensionPrefs::GetInstalledInfoHelper(
 std::optional<ExtensionInfo> ExtensionPrefs::GetInstalledExtensionInfo(
     const ExtensionId& extension_id,
     bool include_component_extensions) const {
-  const base::DictValue& extensions = prefs_->GetDict(pref_names::kExtensions);
-  const base::DictValue* ext = extensions.FindDict(extension_id);
+  const base::Value::Dict& extensions =
+      prefs_->GetDict(pref_names::kExtensions);
+  const base::Value::Dict* ext = extensions.FindDict(extension_id);
   if (!ext) {
     return std::nullopt;
   }
@@ -1637,7 +1645,8 @@ ExtensionPrefs::ExtensionsInfo ExtensionPrefs::GetInstalledExtensionsInfo(
     bool include_component_extensions) const {
   ExtensionsInfo extensions_info;
 
-  const base::DictValue& extensions = prefs_->GetDict(pref_names::kExtensions);
+  const base::Value::Dict& extensions =
+      prefs_->GetDict(pref_names::kExtensions);
   for (const auto [extension_id, _] : extensions) {
     if (!crx_file::id_util::IdIsValid(extension_id)) {
       continue;
@@ -1660,10 +1669,10 @@ void ExtensionPrefs::SetDelayedInstallInfo(
     DelayReason delay_reason,
     const syncer::StringOrdinal& page_ordinal,
     const std::string& install_parameter,
-    base::DictValue ruleset_install_prefs) {
+    base::Value::Dict ruleset_install_prefs) {
   ScopedDictionaryUpdate update(this, extension->id(), kDelayedInstallInfo);
   auto extension_dict = update.Create();
-  base::ListValue prefs_to_remove;
+  base::Value::List prefs_to_remove;
   PopulateExtensionInfoPrefs(extension, clock_->Now(), disable_reasons,
                              install_flags, install_parameter,
                              std::move(ruleset_install_prefs),
@@ -1730,7 +1739,7 @@ bool ExtensionPrefs::FinishDelayedInstallInfo(const ExtensionId& extension_id) {
     pending_install_dict->Remove(kPrefFirstInstallTime);
   }
 
-  base::ListValue* prefs_to_remove = nullptr;
+  base::Value::List* prefs_to_remove = nullptr;
   if (pending_install_dict->GetListWithoutPathExpansion(
           kDelayedInstallInfoDeletedPrefKeys, &prefs_to_remove)) {
     for (const auto& pref_to_remove : *prefs_to_remove) {
@@ -1751,12 +1760,12 @@ bool ExtensionPrefs::FinishDelayedInstallInfo(const ExtensionId& extension_id) {
 
 std::optional<ExtensionInfo> ExtensionPrefs::GetDelayedInstallInfo(
     const ExtensionId& extension_id) const {
-  const base::DictValue* extension_prefs = GetExtensionPref(extension_id);
+  const base::Value::Dict* extension_prefs = GetExtensionPref(extension_id);
   if (!extension_prefs) {
     return std::nullopt;
   }
 
-  const base::DictValue* ext = extension_prefs->FindDict(kDelayedInstallInfo);
+  const base::Value::Dict* ext = extension_prefs->FindDict(kDelayedInstallInfo);
   if (!ext) {
     return std::nullopt;
   }
@@ -1767,12 +1776,12 @@ std::optional<ExtensionInfo> ExtensionPrefs::GetDelayedInstallInfo(
 
 ExtensionPrefs::DelayReason ExtensionPrefs::GetDelayedInstallReason(
     const ExtensionId& extension_id) const {
-  const base::DictValue* extension_prefs = GetExtensionPref(extension_id);
+  const base::Value::Dict* extension_prefs = GetExtensionPref(extension_id);
   if (!extension_prefs) {
     return DelayReason::kNone;
   }
 
-  const base::DictValue* ext = extension_prefs->FindDict(kDelayedInstallInfo);
+  const base::Value::Dict* ext = extension_prefs->FindDict(kDelayedInstallInfo);
   if (!ext) {
     return DelayReason::kNone;
   }
@@ -1789,7 +1798,8 @@ ExtensionPrefs::ExtensionsInfo ExtensionPrefs::GetAllDelayedInstallInfo()
     const {
   ExtensionsInfo extensions_info;
 
-  const base::DictValue& extensions = prefs_->GetDict(pref_names::kExtensions);
+  const base::Value::Dict& extensions =
+      prefs_->GetDict(pref_names::kExtensions);
   for (const auto [extension_id, _] : extensions) {
     if (!crx_file::id_util::IdIsValid(extension_id)) {
       continue;
@@ -1825,7 +1835,7 @@ int ExtensionPrefs::GetCreationFlags(const ExtensionId& extension_id) const {
 int ExtensionPrefs::GetDelayedInstallCreationFlags(
     const ExtensionId& extension_id) const {
   int creation_flags = Extension::NO_FLAGS;
-  const base::DictValue* delayed_info =
+  const base::Value::Dict* delayed_info =
       ReadPrefAsDict(extension_id, kDelayedInstallInfo);
   if (delayed_info) {
     if (std::optional<int> flags = delayed_info->FindInt(kPrefCreationFlags)) {
@@ -1864,7 +1874,7 @@ void ExtensionPrefs::SetLastLaunchTime(const ExtensionId& extension_id,
 }
 
 void ExtensionPrefs::ClearLastLaunchTimes() {
-  const base::DictValue& dict = prefs_->GetDict(pref_names::kExtensions);
+  const base::Value::Dict& dict = prefs_->GetDict(pref_names::kExtensions);
   if (dict.empty()) {
     return;
   }
@@ -1918,7 +1928,7 @@ void ExtensionPrefs::SetGURLPref(const PrefMap& pref, const GURL& value) {
 }
 
 void ExtensionPrefs::SetDictionaryPref(const PrefMap& pref,
-                                       base::DictValue value) {
+                                       base::Value::Dict value) {
   DCHECK_EQ(PrefScope::kProfile, pref.scope);
   DCHECK_EQ(PrefType::kDictionary, pref.type);
   prefs_->SetDict(pref.name, std::move(value));
@@ -1954,7 +1964,7 @@ GURL ExtensionPrefs::GetPrefAsGURL(const PrefMap& pref) const {
   return GURL(prefs_->GetString(pref.name));
 }
 
-const base::DictValue& ExtensionPrefs::GetPrefAsDictionary(
+const base::Value::Dict& ExtensionPrefs::GetPrefAsDictionary(
     const PrefMap& pref) const {
   DCHECK_EQ(PrefScope::kProfile, pref.scope);
   DCHECK_EQ(PrefType::kDictionary, pref.type);
@@ -2026,7 +2036,7 @@ void ExtensionPrefs::OnDisableReasonsChanged(
 
 base::flat_set<int> ExtensionPrefs::ReadDisableReasonsFromPrefs(
     const ExtensionId& extension_id) const {
-  const base::ListValue* disable_reasons_list =
+  const base::Value::List* disable_reasons_list =
       ReadPrefAsList(extension_id, kPrefDisableReasons);
   base::flat_set<int> result;
 
@@ -2052,7 +2062,7 @@ void ExtensionPrefs::WriteDisableReasonsToPrefs(
   CHECK(!disable_reasons.contains(disable_reason::DISABLE_UNKNOWN))
       << "Can not add DISABLE_UNKNOWN to the disable reasons list.";
 
-  base::ListValue to_write;
+  base::Value::List to_write;
 
   for (int value : disable_reasons) {
     to_write.Append(value);
@@ -2097,8 +2107,8 @@ void ExtensionPrefs::InitPrefStore() {
       Manifest::Type type =
           info.extension_manifest
               ? Manifest::GetTypeFromManifestValue(*info.extension_manifest)
-              : Manifest::Type::kUnknown;
-      bool is_theme = type == Manifest::Type::kTheme;
+              : Manifest::TYPE_UNKNOWN;
+      bool is_theme = type == Manifest::TYPE_THEME;
       // Erase the entry if the extension won't be loaded.
       return !Manifest::ShouldAlwaysLoadExtension(info.extension_location,
                                                   is_theme);
@@ -2118,9 +2128,9 @@ bool ExtensionPrefs::HasIncognitoPrefValue(const std::string& pref_key) const {
   return has_incognito_pref_value;
 }
 
-const base::DictValue* ExtensionPrefs::GetGeometryCache(
+const base::Value::Dict* ExtensionPrefs::GetGeometryCache(
     const ExtensionId& extension_id) const {
-  const base::DictValue* extension_prefs = GetExtensionPref(extension_id);
+  const base::Value::Dict* extension_prefs = GetExtensionPref(extension_id);
   if (!extension_prefs) {
     return nullptr;
   }
@@ -2129,16 +2139,16 @@ const base::DictValue* ExtensionPrefs::GetGeometryCache(
 }
 
 void ExtensionPrefs::SetGeometryCache(const ExtensionId& extension_id,
-                                      base::DictValue cache) {
+                                      base::Value::Dict cache) {
   UpdateExtensionPref(extension_id, kPrefGeometryCache,
                       base::Value(std::move(cache)));
 }
 
-const base::DictValue& ExtensionPrefs::GetInstallSignature() const {
+const base::Value::Dict& ExtensionPrefs::GetInstallSignature() const {
   return prefs_->GetDict(kInstallSignature);
 }
 
-void ExtensionPrefs::SetInstallSignature(base::DictValue* signature) {
+void ExtensionPrefs::SetInstallSignature(base::Value::Dict* signature) {
   if (signature) {
     prefs_->Set(kInstallSignature, base::Value(std::move(*signature)));
     DVLOG(1) << "SetInstallSignature - saving";
@@ -2208,6 +2218,10 @@ ExtensionPrefs::ExtensionPrefs(
 
   MigrateDeprecatedDisableReasons();
 
+  MaybeMigrateDisableReasonsBitflagToList();
+
+  MaybeClearExtensionStatePref();
+
 #if BUILDFLAG(IS_CHROMEOS)
   ApplyPendingUpdates();
 #endif
@@ -2217,10 +2231,8 @@ AppSorting* ExtensionPrefs::app_sorting() const {
   return ExtensionSystem::Get(browser_context_)->app_sorting();
 }
 
-void ExtensionPrefs::RegisterBrowserPrefs(PrefRegistrySimple* registry) {
-  registry->RegisterBooleanPref(
-      pref_names::kExtensionInstallCloudPolicyChecksEnabled,
-      /*default_value=*/false);
+bool ExtensionPrefs::NeedsStorageGarbageCollection() const {
+  return prefs_->GetBoolean(pref_names::kStorageGarbageCollect);
 }
 
 // static
@@ -2238,6 +2250,7 @@ void ExtensionPrefs::RegisterProfilePrefs(
   registry->RegisterDictionaryPref(pref_names::kOAuthRedirectUrls);
   registry->RegisterListPref(pref_names::kAllowedTypes);
   registry->RegisterIntegerPref(pref_names::kManifestV2Availability, 0);
+  registry->RegisterBooleanPref(pref_names::kStorageGarbageCollect, false);
   registry->RegisterListPref(pref_names::kAllowedInstallSites);
   registry->RegisterStringPref(pref_names::kLastChromeVersion, std::string());
   registry->RegisterDictionaryPref(kInstallSignature);
@@ -2253,7 +2266,7 @@ void ExtensionPrefs::RegisterProfilePrefs(
   // defined.
   registry->RegisterIntegerPref(kCorruptedDisableCount.name, 0);
 
-#if BUILDFLAG(ENABLE_SUPERVISED_USERS)
+#if BUILDFLAG(ENABLE_SUPERVISED_USERS) && BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   registry->RegisterBooleanPref(
       prefs::kSupervisedUserExtensionsMayRequestPermissions, false);
   registry->RegisterBooleanPref(prefs::kSkipParentApprovalToInstallExtensions,
@@ -2263,7 +2276,8 @@ void ExtensionPrefs::RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterDictionaryPref(
       prefs::kSupervisedUserLocallyParentApprovedExtensions);
-#endif
+#endif  // #if BUILDFLAG(ENABLE_SUPERVISED_USERS) &&
+        // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 
 #if !BUILDFLAG(IS_MAC)
   registry->RegisterBooleanPref(pref_names::kAppFullscreenAllowed, true);
@@ -2284,18 +2298,6 @@ void ExtensionPrefs::RegisterProfilePrefs(
   registry->RegisterBooleanPref(
       UserScriptManager::kUserScriptsToggleMigratedPref.name,
       /*default_value=*/false);
-
-  registry->RegisterBooleanPref(
-      pref_names::kExtensionInstallCloudPolicyChecksEnabled,
-      /*default_value=*/false);
-
-  registry->RegisterTimePref(pref_names::kEnterprisePromotionExpirationTime,
-                             base::Time());
-  registry->RegisterBooleanPref(pref_names::kHasDismissedEnterprisePromotion,
-                                false);
-  registry->RegisterListPref(pref_names::kInitialInstallList);
-  registry->RegisterStringPref(pref_names::kInitialInstallProviderName,
-                               /*default_value=*/std::string());
 }
 
 template <class ExtensionIdContainer>
@@ -2325,7 +2327,7 @@ void ExtensionPrefs::SetExtensionPrefFromContainer(
     const char* pref,
     const ExtensionIdContainer& strings) {
   ScopedListPrefUpdate update(prefs_, pref);
-  base::ListValue& list_of_values = update.Get();
+  base::Value::List& list_of_values = update.Get();
   list_of_values.clear();
   for (auto iter = strings.cbegin(); iter != strings.cend(); ++iter) {
     list_of_values.Append(*iter);
@@ -2338,9 +2340,9 @@ void ExtensionPrefs::PopulateExtensionInfoPrefs(
     const base::flat_set<int>& disable_reasons,
     int install_flags,
     const std::string& install_parameter,
-    base::DictValue ruleset_install_prefs,
+    base::Value::Dict ruleset_install_prefs,
     prefs::DictionaryValueUpdate* extension_dict,
-    base::ListValue& removed_prefs) {
+    base::Value::List& removed_prefs) {
   extension_dict->Set(kPrefDisableReasons,
                       base::Value(IntegerSetToList(disable_reasons)));
   extension_dict->SetInteger(kPrefLocation,
@@ -2456,10 +2458,10 @@ void ExtensionPrefs::LoadExtensionControlledPrefs(
   }
   std::string key = extension_id + "." + scope_string;
 
-  const base::DictValue& source_dict =
+  const base::Value::Dict& source_dict =
       pref_service()->GetDict(pref_names::kExtensions);
 
-  const base::DictValue* preferences = source_dict.FindDictByDottedPath(key);
+  const base::Value::Dict* preferences = source_dict.FindDictByDottedPath(key);
   if (!preferences) {
     return;
   }
@@ -2510,9 +2512,6 @@ void ExtensionPrefs::FinishExtensionInfoPrefs(
   // Clear state that may be registered from a previous install.
   extension_dict->Remove(EventRouter::kRegisteredLazyEvents);
   extension_dict->Remove(EventRouter::kRegisteredServiceWorkerEvents);
-  extension_dict->Remove(EventRouter::kFilteredEvents);
-  extension_dict->Remove(EventRouter::kFilteredServiceWorkerEvents);
-  extension_dict->Remove(WebRequestEventRouter::kFilteredLazyListeners);
 
   // FYI, all code below here races on sudden shutdown because |extension_dict|,
   // |app_sorting|, |extension_pref_value_map_|, and (potentially) observers
@@ -2524,7 +2523,7 @@ void ExtensionPrefs::FinishExtensionInfoPrefs(
   }
 
   bool is_enabled = true;
-  base::ListValue* disable_reasons = nullptr;
+  base::Value::List* disable_reasons = nullptr;
   extension_dict->GetListWithoutPathExpansion(kPrefDisableReasons,
                                               &disable_reasons);
   if (disable_reasons) {
@@ -2631,8 +2630,72 @@ void ExtensionPrefs::MigrateDeprecatedDisableReasons() {
   }
 }
 
+void ExtensionPrefs::MaybeMigrateDisableReasonsBitflagToList() {
+  const ExtensionsInfo extensions_info = GetInstalledExtensionsInfo();
+
+  for (const ExtensionInfo& info : extensions_info) {
+    const ExtensionId& extension_id = info.extension_id;
+
+    // We try to get the disable reasons as an integer. If it succeeds, it means
+    // that the bitflag to list migration has not been done yet.
+    int disable_reasons = -1;
+    if (!ReadPrefAsInteger(extension_id, kPrefDisableReasons,
+                           &disable_reasons)) {
+      // Either the migration is complete, or there are no disable reasons.
+      // Nothing to migrate in both the cases.
+      continue;
+    }
+
+    ScopedExtensionPrefUpdate update(prefs_, extension_id);
+
+    if (disable_reasons == disable_reason::DISABLE_NONE) {
+      // Ideally, this shouldn't happen as we always clear the preference when
+      // all disable reasons are removed. If we still reach here, we should
+      // clear the preference.
+      update->Remove(kPrefDisableReasons);
+      continue;
+    }
+
+    base::Value::List disable_reasons_list = BitflagToList(disable_reasons);
+    update->Set(kPrefDisableReasons,
+                base::Value(std::move(disable_reasons_list)));
+  }
+}
+
+void ExtensionPrefs::MaybeClearExtensionStatePref() {
+  constexpr const char kDeprecatedPrefState[] = "state";
+  const ExtensionsInfo extensions_info = GetInstalledExtensionsInfo();
+
+  for (const ExtensionInfo& info : extensions_info) {
+    const ExtensionId& extension_id = info.extension_id;
+    ScopedExtensionPrefUpdate update(prefs_, extension_id);
+    int state = -1;
+
+    if (!ReadPrefAsInteger(extension_id, kDeprecatedPrefState, &state)) {
+      // We have already cleaned up. Nothing to do.
+      continue;
+    }
+
+    update->Remove(kDeprecatedPrefState);
+
+    // If the state said that the extension was disabled but the disable reasons
+    // are empty, add DISABLE_USER_ACTION to the disable reasons. This will
+    // prevent any surprise re-enabling of the extension.
+    base::flat_set<int> disable_reasons =
+        ReadDisableReasonsFromPrefs(extension_id);
+
+    // state = 0 corresponded to State::DISABLED.
+    if (disable_reasons.empty() && state == 0) {
+      base::Value::List disable_reasons_list;
+      disable_reasons_list.Append(disable_reason::DISABLE_USER_ACTION);
+      update->Set(kPrefDisableReasons,
+                  base::Value(std::move(disable_reasons_list)));
+    }
+  }
+}
+
 void ExtensionPrefs::MigrateObsoleteExtensionPrefs() {
-  const base::DictValue& extensions_dictionary =
+  const base::Value::Dict& extensions_dictionary =
       prefs_->GetDict(pref_names::kExtensions);
 
   // Please clean this list up periodically, removing any entries added more
@@ -2641,8 +2704,9 @@ void ExtensionPrefs::MigrateObsoleteExtensionPrefs() {
       // Permanent testing-only key.
       kFakeObsoletePrefForTesting,
 
-      // Added 2025-08.
-      "state",
+      // Added 2023-11.
+      "ack_proxy_bubble",
+      "ack_wiped",
   };
 
   for (auto key_value : extensions_dictionary) {
@@ -2660,7 +2724,7 @@ void ExtensionPrefs::MigrateObsoleteExtensionPrefs() {
 bool ExtensionPrefs::ShouldInstallObsoleteComponentExtension(
     const ExtensionId& extension_id) {
   ScopedListPrefUpdate update(prefs_, pref_names::kDeletedComponentExtensions);
-  base::ListValue& current_ids = update.Get();
+  base::Value::List& current_ids = update.Get();
   auto existing_entry = std::ranges::find_if(
       current_ids, [&extension_id](const base::Value& value) {
         return value.is_string() && value.GetString() == extension_id;
@@ -2672,7 +2736,7 @@ void ExtensionPrefs::MarkObsoleteComponentExtensionAsRemoved(
     const ExtensionId& extension_id,
     const ManifestLocation location) {
   ScopedListPrefUpdate update(prefs_, pref_names::kDeletedComponentExtensions);
-  base::ListValue& current_ids = update.Get();
+  base::Value::List& current_ids = update.Get();
   auto existing_entry = std::ranges::find_if(
       current_ids, [&extension_id](const base::Value& value) {
         return value.is_string() && value.GetString() == extension_id;

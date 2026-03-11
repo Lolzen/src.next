@@ -8,28 +8,12 @@ include_rules = [
   "+components/keyed_service",
   "+components/url_formatter/android/java",
   "+components/input",
-  "+components/viz/common",
   "+content/public/browser",
   "+content/public/common",
-  "+gpu/command_buffer",
   "+net/android/java/src/org/chromium/net",
   "+third_party/blink/public/common/context_menu_data/context_menu_data.h",
-  "+third_party/blink/public/mojom/annotation/annotation.mojom-shared.h",
   "+ui/accessibility",
   "+ui/android",
   "+ui/base",
-  "+ui/gfx",
-  "+ui/menus/android"
+  "+ui/gfx"
 ]
-
-specific_include_rules = {
-  'PageContentProtoViewStructureBuilder\.java': [
-    "+components/optimization_guide/content/browser/android/java/src/org/chromium/components/optimization_guide/content/PageContentProtoProviderBridge.java",
-  ],
-  'PageContentProtoViewStructureBuilderUnitTest\.java':[
-    "+components/optimization_guide/content/browser/android/java/src/org/chromium/components/optimization_guide/content/PageContentProtoProviderBridge.java",
-  ],
-  'PageContentProtoViewStructureBuilderTest\.java':[
-     "+chrome/test/android",
-  ],
-}

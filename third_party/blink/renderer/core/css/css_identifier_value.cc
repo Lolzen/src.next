@@ -52,6 +52,9 @@ CSSIdentifierValue::CSSIdentifierValue(const Length& length)
     case Length::kStretch:
       value_id_ = CSSValueID::kStretch;
       break;
+    case Length::kFillAvailable:
+      value_id_ = CSSValueID::kWebkitFillAvailable;
+      break;
     case Length::kFitContent:
       value_id_ = CSSValueID::kFitContent;
       break;

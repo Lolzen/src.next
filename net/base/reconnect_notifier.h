@@ -11,7 +11,6 @@
 #include <set>
 
 #include "base/functional/callback.h"
-#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
 #include "net/base/net_export.h"
@@ -58,8 +57,6 @@ class NET_EXPORT ConnectionChangeNotifier {
     // Notify on a network change event.
     virtual void OnNetworkEvent(NetworkChangeEvent event) = 0;
 
-    base::WeakPtr<Observer> GetWeakPtr();
-
    private:
     friend class ConnectionChangeNotifier;
 
@@ -69,8 +66,6 @@ class NET_EXPORT ConnectionChangeNotifier {
     void OnAttach(base::WeakPtr<ConnectionChangeNotifier> notifier);
 
     base::WeakPtr<ConnectionChangeNotifier> notifier_;
-
-    base::WeakPtrFactory<Observer> weak_factory_{this};
   };
 
   ConnectionChangeNotifier();
@@ -121,34 +116,21 @@ struct NET_EXPORT ConnectionKeepAliveConfig {
   // Enables the connection keep alive mechanism to periodically send PING
   // to the server when there are no active requests.
   bool enable_connection_keep_alive = false;
-
-  // The QUIC connection options which will be sent to the server in order to
-  // enable certain QUIC features. This should be set using `QuicTag`s (32-bit
-  // value represented in ASCII equivalent e.g. EXMP). If we want to set
-  // multiple features, then the values should be separated with a comma
-  // (e.g. "ABCD,EFGH").
-  std::string quic_connection_options;
 };
 
 // Keeps track of the connection management relevant information (e.g.
 // connection keep alive configs, reconnect notification configs) to be passed
 // on to the underlying connection.
 struct NET_EXPORT ConnectionManagementConfig {
-  ConnectionManagementConfig();
-  ~ConnectionManagementConfig();
-  ConnectionManagementConfig(const ConnectionManagementConfig& other);
-  ConnectionManagementConfig(ConnectionManagementConfig&& other);
-
-  ConnectionManagementConfig& operator=(
-      const ConnectionManagementConfig& other) = default;
-  ConnectionManagementConfig& operator=(ConnectionManagementConfig&& other) =
-      default;
+  ConnectionManagementConfig() = default;
+  ~ConnectionManagementConfig() = default;
 
   // Connection keep alive related information.
   std::optional<ConnectionKeepAliveConfig> keep_alive_config;
 
   // A reference to the `ConnectionChangeNotifier::Observer`.
-  base::WeakPtr<ConnectionChangeNotifier::Observer> connection_change_observer;
+  raw_ptr<ConnectionChangeNotifier::Observer> connection_change_observer =
+      nullptr;
 };
 
 }  // namespace net

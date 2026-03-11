@@ -4,56 +4,46 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import android.app.Activity;
+import android.content.Context;
 
-import androidx.annotation.LayoutRes;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.chromium.base.Token;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
-import org.chromium.chrome.browser.multiwindow.MultiInstanceManager;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.components.collaboration.CollaborationService;
 import org.chromium.components.tab_group_sync.TabGroupSyncService;
-
-import java.util.function.Supplier;
 
 /**
  * A coordinator for the overflow menu in tab groups. This applies to both the TabGridDialog toolbar
  * and tab group cards on GTS. It is responsible for creating a list of menu items, setting up the
  * menu and displaying the menu.
  */
-@NullMarked
 public abstract class TabGroupOverflowMenuCoordinator extends TabOverflowMenuCoordinator<Token> {
 
     /**
      * @param menuLayout The menu layout to use.
-     * @param flyoutMenuLayout The menu layout for flyout popups to use.
      * @param onItemClickedCallback A callback for listening to clicks.
      * @param tabModelSupplier The supplier of the tab model.
-     * @param multiInstanceManager The {@link MultiInstanceManager}.
      * @param tabGroupSyncService Used to checking if a group is shared or synced.
      * @param collaborationService Used for checking the user is the owner of a group.
-     * @param activity The {@link Activity} that the coordinator resides in.
+     * @param context The {@link Context} that the coordinator resides in.
      */
     protected TabGroupOverflowMenuCoordinator(
-            @LayoutRes int menuLayout,
-            @LayoutRes int flyoutMenuLayout,
+            int menuLayout,
             OnItemClickedCallback<Token> onItemClickedCallback,
             Supplier<TabModel> tabModelSupplier,
-            @Nullable MultiInstanceManager multiInstanceManager,
             @Nullable TabGroupSyncService tabGroupSyncService,
-            CollaborationService collaborationService,
-            Activity activity) {
+            @NonNull CollaborationService collaborationService,
+            @NonNull Context context) {
         super(
                 menuLayout,
-                flyoutMenuLayout,
                 onItemClickedCallback,
                 tabModelSupplier,
-                multiInstanceManager,
                 tabGroupSyncService,
                 collaborationService,
-                activity);
+                context);
     }
 
     @Override

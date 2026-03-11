@@ -99,15 +99,13 @@ class TryValueFlipsTest : public PageTestBase {
 
   Vector<String> ActualFlipsVector(const TryTacticList& tactic_list) {
     TryValueFlips flips;
-    return DeclarationStrings(
-        flips.FlipSet(tactic_list, WritingMode::kHorizontalTb));
+    return DeclarationStrings(flips.FlipSet(tactic_list));
   }
 };
 
 TEST_F(TryValueFlipsTest, None) {
   TryValueFlips flips;
-  EXPECT_FALSE(
-      flips.FlipSet(Tactics(TryTactic::kNone), WritingMode::kHorizontalTb));
+  EXPECT_FALSE(flips.FlipSet(Tactics(TryTactic::kNone)));
 }
 
 // Flips without kFlipStart:
@@ -844,8 +842,7 @@ TEST_P(FlipValueTest, All) {
   FlipValueTestData param = GetParam();
   Declaration input = ParseDeclaration(String(param.input));
   Declaration expected = ParseDeclaration(String(param.expected));
-  TryTacticTransform transform = TryTacticTransform(
-      param.tactic, param.writing_direction.GetWritingMode());
+  TryTacticTransform transform = TryTacticTransform(param.tactic);
   const CSSValue* actual_value = TryValueFlips::FlipValue(
       input.property_id, input.value, transform, param.writing_direction);
   ASSERT_TRUE(actual_value);
@@ -935,8 +932,7 @@ INSTANTIATE_TEST_SUITE_P(TryValueFlipsTest,
 TEST_P(NoFlipValueTest, All) {
   NoFlipValueTestData param = GetParam();
   Declaration input = ParseDeclaration(String(param.input));
-  TryTacticTransform transform = TryTacticTransform(
-      param.tactic, param.writing_direction.GetWritingMode());
+  TryTacticTransform transform = TryTacticTransform(param.tactic);
   const CSSValue* actual_value = TryValueFlips::FlipValue(
       input.property_id, input.value, transform, param.writing_direction);
   ASSERT_TRUE(actual_value);

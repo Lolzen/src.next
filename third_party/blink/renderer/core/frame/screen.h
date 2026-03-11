@@ -69,8 +69,12 @@ class CORE_EXPORT Screen : public EventTarget,
   void Trace(Visitor*) const override;
 
   // EventTarget:
-  const AtomicString& InterfaceName() const override;
+  const WTF::AtomicString& InterfaceName() const override;
   ExecutionContext* GetExecutionContext() const override;
+
+  // True if information about the device's screen size should be reduced in
+  // this context.
+  bool ShouldReduceScreenSize() const;
 
   // Whether the device’s visual output extends over multiple screens.
   // https://w3c.github.io/window-management/

@@ -29,8 +29,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PATTERN_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PATTERN_H_
 
-#include <memory>
-
+#include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/platform/graphics/image.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_record.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_shader.h"
@@ -41,7 +40,7 @@ class SkMatrix;
 
 namespace blink {
 
-class PLATFORM_EXPORT Pattern {
+class PLATFORM_EXPORT Pattern : public RefCounted<Pattern> {
  public:
   enum RepeatMode {
     kRepeatModeX = 1 << 0,
@@ -51,14 +50,12 @@ class PLATFORM_EXPORT Pattern {
     kRepeatModeXY = kRepeatModeX | kRepeatModeY
   };
 
-  static std::unique_ptr<Pattern> CreateImagePattern(
-      scoped_refptr<Image>,
-      RepeatMode = kRepeatModeXY);
-  static std::unique_ptr<Pattern> CreatePaintRecordPattern(
+  static scoped_refptr<Pattern> CreateImagePattern(scoped_refptr<Image>,
+                                                   RepeatMode = kRepeatModeXY);
+  static scoped_refptr<Pattern> CreatePaintRecordPattern(
       PaintRecord,
       const gfx::RectF& record_bounds,
       RepeatMode = kRepeatModeXY);
-
   Pattern(const Pattern&) = delete;
   Pattern& operator=(const Pattern&) = delete;
   virtual ~Pattern();

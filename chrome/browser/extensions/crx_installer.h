@@ -18,12 +18,13 @@
 #include "base/scoped_observation.h"
 #include "base/values.h"
 #include "base/version.h"
+#include "chrome/browser/extensions/extension_install_prompt.h"
+#include "chrome/browser/extensions/manifest_check_level.h"
+#include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "components/sync/model/string_ordinal.h"
-#include "extensions/browser/extension_install_prompt_client.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/install_flag.h"
-#include "extensions/browser/manifest_check_level.h"
 #include "extensions/browser/preload_check.h"
 #include "extensions/browser/sandboxed_unpacker.h"
 #include "extensions/buildflags/buildflags.h"
@@ -33,7 +34,8 @@
 
 static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
-class ExtensionInstallPrompt;
+class ExtensionServiceTest;
+class ScopedProfileKeepAlive;
 class SkBitmap;
 
 namespace base {
@@ -45,8 +47,6 @@ class BrowserContext;
 }
 
 namespace extensions {
-FORWARD_DECLARE_TEST(ExtensionServiceTest, InstallExtensionDuringShutdown);
-
 class CrxInstallError;
 class ExtensionRegistrar;
 class ExtensionUpdaterTest;
@@ -54,9 +54,8 @@ struct InstallApproval;
 enum class InstallationStage;
 class MockCrxInstaller;
 class PreloadCheckGroup;
-class ScopedBrowserContextKeepAlive;
 
-// This class installs a crx file into a browser context.
+// This class installs a crx file into a profile.
 //
 // Installing a CRX is a multi-step process, including unpacking the crx,
 // validating it, prompting the user, and installing. Since many of these
@@ -82,7 +81,7 @@ class ScopedBrowserContextKeepAlive;
 //
 // Installation is aborted if the CrxInstaller object learns that Chrome is
 // terminating during the install.
-class CrxInstaller : public SandboxedUnpackerClient {
+class CrxInstaller : public SandboxedUnpackerClient, public ProfileObserver {
  public:
   // A callback to be executed when the install finishes.
   using InstallerResultCallback = ExtensionSystem::InstallUpdateCallback;
@@ -105,35 +104,33 @@ class CrxInstaller : public SandboxedUnpackerClient {
   CrxInstaller(const CrxInstaller&) = delete;
   CrxInstaller& operator=(const CrxInstaller&) = delete;
 
-  static void EnsureShutdownNotifierFactoryBuilt();
-
   // Extensions will be installed into the default install directory, then
   // registered with the extensions system. This does a silent install - see
   // below for other options.
   static scoped_refptr<CrxInstaller> CreateSilent(
       content::BrowserContext* context);
 
-  // Same as above, but use `client` to generate a confirmation prompt.
+  // Same as above, but use |client| to generate a confirmation prompt.
   static scoped_refptr<CrxInstaller> Create(
       content::BrowserContext* context,
       std::unique_ptr<ExtensionInstallPrompt> client);
 
-  // Same as the previous method, except use the `approval` to bypass the
-  // prompt. Note that the caller retains ownership of `approval`.
+  // Same as the previous method, except use the |approval| to bypass the
+  // prompt. Note that the caller retains ownership of |approval|.
   static scoped_refptr<CrxInstaller> Create(
       content::BrowserContext* context,
       std::unique_ptr<ExtensionInstallPrompt> client,
       const InstallApproval* approval);
 
-  // Install the crx in `source_file`. The file must be a CRX3. A publisher
+  // Install the crx in |source_file|. The file must be a CRX3. A publisher
   // proof in the file is required unless off-webstore installation is allowed.
   void InstallCrx(const base::FilePath& source_file);
 
-  // Install the crx in `source_file`.
+  // Install the crx in |source_file|.
   virtual void InstallCrxFile(const CRXFileInfo& source_file);
 
-  // Install the unpacked crx in `unpacked_dir`.
-  // If `delete_source_` is true, `unpacked_dir` will be removed at the end of
+  // Install the unpacked crx in |unpacked_dir|.
+  // If |delete_source_| is true, |unpacked_dir| will be removed at the end of
   // the installation.
   void InstallUnpackedCrx(const ExtensionId& extension_id,
                           const std::string& public_key,
@@ -143,16 +140,15 @@ class CrxInstaller : public SandboxedUnpackerClient {
   void InstallUserScript(const base::FilePath& source_file,
                          const GURL& download_url);
 
-  // Update the extension `extension_id` with the unpacked crx in
-  // `unpacked_dir`.
-  // If `delete_source_` is true, `unpacked_dir` will be removed at the end of
+  // Update the extension |extension_id| with the unpacked crx in
+  // |unpacked_dir|.
+  // If |delete_source_| is true, |unpacked_dir| will be removed at the end of
   // the update.
   void UpdateExtensionFromUnpackedCrx(const ExtensionId& extension_id,
                                       const std::string& public_key,
                                       const base::FilePath& unpacked_dir);
 
-  void OnInstallPromptDone(
-      ExtensionInstallPromptClient::DoneCallbackPayload payload);
+  void OnInstallPromptDone(ExtensionInstallPrompt::DoneCallbackPayload payload);
 
   void InitializeCreationFlagsForUpdate(const Extension* extension,
                                         const int initial_flags);
@@ -182,7 +178,7 @@ class CrxInstaller : public SandboxedUnpackerClient {
   void set_expected_hash(const std::string& val) { expected_hash_ = val; }
 
   // Set the exact version the installed extension should have. If
-  // `fail_install_if_unexpected` is true, installation will fail if the actual
+  // |fail_install_if_unexpected| is true, installation will fail if the actual
   // version doesn't match. If it is false, the installation will still
   // be performed, but the extension will not be granted any permissions.
   void set_expected_version(const base::Version& val,
@@ -212,8 +208,8 @@ class CrxInstaller : public SandboxedUnpackerClient {
   }
   void set_withhold_permissions();
 
-  // If `apps_require_extension_mime_type_` is set to true, be sure to set
-  // `original_mime_type_` as well.
+  // If |apps_require_extension_mime_type_| is set to true, be sure to set
+  // |original_mime_type_| as well.
   void set_apps_require_extension_mime_type(
       bool apps_require_extension_mime_type) {
     apps_require_extension_mime_type_ = apps_require_extension_mime_type;
@@ -223,11 +219,11 @@ class CrxInstaller : public SandboxedUnpackerClient {
     original_mime_type_ = original_mime_type;
   }
 
-  bool was_triggered_by_user_download() const {
-    return was_triggered_by_user_download_;
+  extension_misc::CrxInstallCause install_cause() const {
+    return install_cause_;
   }
-  void set_was_triggered_by_user_download() {
-    was_triggered_by_user_download_ = true;
+  void set_install_cause(extension_misc::CrxInstallCause install_cause) {
+    install_cause_ = install_cause;
   }
 
   OffStoreInstallAllowReason off_store_install_allow_reason() const {
@@ -254,6 +250,9 @@ class CrxInstaller : public SandboxedUnpackerClient {
   void set_bypassed_safebrowsing_friction_for_testing(bool val) {
     set_install_flag(kInstallFlagBypassedSafeBrowsingFriction, val);
   }
+  void set_browser_terminating_for_test(bool val) {
+    browser_terminating_ = val;
+  }
 
   // Callback to be invoked when the crx file has passed the expectations check
   // after unpack success and the ownership of the crx file lies with the
@@ -263,7 +262,7 @@ class CrxInstaller : public SandboxedUnpackerClient {
 
   bool did_handle_successfully() const { return did_handle_successfully_; }
 
-  content::BrowserContext* browser_context() { return browser_context_; }
+  Profile* profile() { return profile_; }
 
   const Extension* extension() const { return extension_.get(); }
 
@@ -277,15 +276,14 @@ class CrxInstaller : public SandboxedUnpackerClient {
   void RunInstallerCallbacks(const std::optional<CrxInstallError>& error);
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(ExtensionServiceTest,
-                           InstallExtensionDuringShutdown);
+  friend class ::ExtensionServiceTest;
   friend class BookmarkAppInstallFinalizerTest;
   friend class ExtensionUpdaterTest;
   friend class FakeCrxInstaller;
   friend class MockCrxInstaller;
 
   CrxInstaller(content::BrowserContext* context,
-               std::unique_ptr<ExtensionInstallPromptClient> client,
+               std::unique_ptr<ExtensionInstallPrompt> client,
                const InstallApproval* approval);
   ~CrxInstaller() override;
 
@@ -318,14 +316,14 @@ class CrxInstaller : public SandboxedUnpackerClient {
   void OnUnpackFailure(const CrxInstallError& error) override;
   void OnUnpackSuccess(const base::FilePath& temp_dir,
                        const base::FilePath& extension_dir,
-                       std::unique_ptr<base::DictValue> original_manifest,
+                       std::unique_ptr<base::Value::Dict> original_manifest,
                        const Extension* extension,
                        const SkBitmap& install_icon,
-                       base::DictValue ruleset_install_prefs) override;
+                       base::Value::Dict ruleset_install_prefs) override;
   void OnStageChanged(InstallationStage stage) override;
 
-  // Called on BrowserContext shutdown.
-  void Shutdown();
+  // ProfileObserver
+  void OnProfileWillBeDestroyed(Profile* profile) override;
 
   // Called on the UI thread to start the requirements, policy and blocklist
   // checks on the extension.
@@ -342,8 +340,8 @@ class CrxInstaller : public SandboxedUnpackerClient {
   void UpdateCreationFlagsAndCompleteInstall(
       WithholdingBehavior withholding_behavior);
 
-  // Runs on File thread. Install the unpacked extension into the browser
-  // context and notify the frontend.
+  // Runs on File thread. Install the unpacked extension into the profile and
+  // notify the frontend.
   void CompleteInstall(bool updates_from_webstore);
 
   // Reloads extension on File thread and reports installation result back
@@ -357,8 +355,6 @@ class CrxInstaller : public SandboxedUnpackerClient {
   void ReportSuccessFromUIThread();
   // Always report from the UI thread.
   void ReportInstallationStage(InstallationStage stage);
-  // Returns false if it cannot acquire resources.
-  bool AcquireKeepAlive();
   void NotifyCrxInstallBegin();
   void NotifyCrxInstallComplete(const std::optional<CrxInstallError>& error);
 
@@ -378,10 +374,10 @@ class CrxInstaller : public SandboxedUnpackerClient {
   virtual void OnUnpackSuccessOnSharedFileThread(
       base::FilePath temp_dir,
       base::FilePath extension_dir,
-      std::unique_ptr<base::DictValue> original_manifest,
+      std::unique_ptr<base::Value::Dict> original_manifest,
       scoped_refptr<const Extension> extension,
       SkBitmap install_icon,
-      base::DictValue ruleset_install_prefs);
+      base::Value::Dict ruleset_install_prefs);
 
   void set_install_flag(int flag, bool val) {
     if (val) {
@@ -391,7 +387,7 @@ class CrxInstaller : public SandboxedUnpackerClient {
     }
   }
 
-  // Returns `unpacker_task_runner_`. Initializes it if it's still nullptr.
+  // Returns |unpacker_task_runner_|. Initializes it if it's still nullptr.
   base::SequencedTaskRunner* GetUnpackerTaskRunner();
 
   // Called when the browser is terminating.
@@ -405,11 +401,14 @@ class CrxInstaller : public SandboxedUnpackerClient {
   // policy overrides.
   bool UpdatesFromWebstore(const Extension& extension);
 
-  // The BrowserContext the extension is being installed in.
-  raw_ptr<content::BrowserContext> browser_context_;
+  // The Profile the extension is being installed in.
+  raw_ptr<Profile, DanglingUntriaged> profile_;
 
   // Prevent Profile destruction until the CrxInstaller is done.
-  std::unique_ptr<ScopedBrowserContextKeepAlive> profile_keep_alive_;
+  std::unique_ptr<ScopedProfileKeepAlive> profile_keep_alive_;
+  // ... but |profile_| could still get destroyed early, if Chrome shuts down
+  // completely. We need to perform some cleanup if that happens.
+  base::ScopedObservation<Profile, ProfileObserver> profile_observation_{this};
 
   // Cached for convenience.
   raw_ptr<ExtensionRegistrar> registrar_;
@@ -432,7 +431,7 @@ class CrxInstaller : public SandboxedUnpackerClient {
   mojom::ManifestLocation install_source_;
 
   // Indicates whether the user has already approved the extension to be
-  // installed. If true, `expected_manifest_` and `expected_id_` must match
+  // installed. If true, |expected_manifest_| and |expected_id_| must match
   // those of the CRX.
   bool approved_;
 
@@ -444,12 +443,12 @@ class CrxInstaller : public SandboxedUnpackerClient {
   std::string expected_hash_;
 
   // A copy of the expected manifest, before any transformations like
-  // localization have taken place. If `approved_` is true, then the extension's
+  // localization have taken place. If |approved_| is true, then the extension's
   // manifest must match this for the install to proceed.
-  std::unique_ptr<base::DictValue> expected_manifest_;
+  std::unique_ptr<base::Value::Dict> expected_manifest_;
 
   // The level of checking when comparing the actual manifest against
-  // the `expected_manifest_`.
+  // the |expected_manifest_|.
   ManifestCheckLevel expected_manifest_check_level_ =
       ManifestCheckLevel::kStrict;
 
@@ -460,11 +459,11 @@ class CrxInstaller : public SandboxedUnpackerClient {
   // If valid, contains the expected version of the extension we're installing.
   // Important for external sources, where claiming the wrong version could
   // cause unnecessary unpacking of an extension at every restart.
-  // See also `fail_install_if_unexpected_version_`!
+  // See also |fail_install_if_unexpected_version_|!
   base::Version expected_version_;
 
   // If true, installation will fail if the actual version doesn't match
-  // `expected_version_`. If false, the extension will still be installed, but
+  // |expected_version_|. If false, the extension will still be installed, but
   // not granted any permissions.
   bool fail_install_if_unexpected_version_;
 
@@ -477,12 +476,12 @@ class CrxInstaller : public SandboxedUnpackerClient {
   // to false.
   bool delete_source_;
 
-  // The ordinal of the NTP apps page `extension_` will be shown on.
+  // The ordinal of the NTP apps page |extension_| will be shown on.
   syncer::StringOrdinal page_ordinal_;
 
   // A copy of the unmodified original manifest, before any transformations like
   // localization have taken place.
-  std::unique_ptr<base::DictValue> original_manifest_;
+  std::unique_ptr<base::Value::Dict> original_manifest_;
 
   // If valid, contains the current version of the extension we're
   // installing (for upgrades).
@@ -497,7 +496,7 @@ class CrxInstaller : public SandboxedUnpackerClient {
 
   // The client we will work with to do the installation. This can be NULL, in
   // which case the install is silent.
-  std::unique_ptr<ExtensionInstallPromptClient> client_;
+  std::unique_ptr<ExtensionInstallPrompt> client_;
 
   // The root of the unpacked extension directory. This is a subdirectory of
   // temp_dir_, so we don't have to delete it explicitly.
@@ -507,7 +506,7 @@ class CrxInstaller : public SandboxedUnpackerClient {
   // Used to trigger extra checks before installing.
   bool apps_require_extension_mime_type_;
 
-  // Allows for the possibility of a normal install (one in which a `client`
+  // Allows for the possibility of a normal install (one in which a |client|
   // is provided in the ctor) to proceed without showing the permissions prompt
   // dialog.
   bool allow_silent_install_;
@@ -517,11 +516,12 @@ class CrxInstaller : public SandboxedUnpackerClient {
   bool grant_permissions_;
 
   // The value of the content type header sent with the CRX.
-  // Ignored unless `require_extension_mime_type_` is true.
+  // Ignored unless |require_extension_mime_type_| is true.
   std::string original_mime_type_;
 
-  // Was the extension install initiated by a user downloading the extension?
-  bool was_triggered_by_user_download_ = false;
+  // What caused this install?  Used only for histograms that report
+  // on failure rates, broken down by the cause of the install.
+  extension_misc::CrxInstallCause install_cause_;
 
   // Creation flags to use for the extension.  These flags will be used
   // when calling Extension::Create() by the crx installer.
@@ -539,7 +539,7 @@ class CrxInstaller : public SandboxedUnpackerClient {
 
   // Whether we should produce an error if the manifest declares requirements
   // that are not met. If false and there is an unmet requirement, the install
-  // will continue but the extension will be disabled.
+  // will continue but the extension will be distabled.
   bool error_on_unsupported_requirements_;
 
   // Sequenced task runner where most file I/O operations will be performed.
@@ -552,6 +552,9 @@ class CrxInstaller : public SandboxedUnpackerClient {
   // Lazily initialized by GetUnpackerTaskRunner().
   scoped_refptr<base::SequencedTaskRunner> unpacker_task_runner_;
 
+  // Used to show the install dialog.
+  ExtensionInstallPrompt::ShowDialogCallback show_dialog_callback_;
+
   // Whether the update is initiated by the user from the extension settings
   // page.
   bool update_from_settings_page_;
@@ -560,7 +563,7 @@ class CrxInstaller : public SandboxedUnpackerClient {
   int install_flags_;
 
   // Install prefs needed for the Declarative Net Request API.
-  base::DictValue ruleset_install_prefs_;
+  base::Value::Dict ruleset_install_prefs_;
 
   // Checks that may run before installing the extension.
   std::unique_ptr<PreloadCheck> policy_check_;
@@ -577,9 +580,11 @@ class CrxInstaller : public SandboxedUnpackerClient {
   // after unpack success.
   ExpectationsVerifiedCallback expectations_verified_callback_;
 
-  // Subscription for a callback that runs when the BrowserContext is
-  // destroyed.
-  base::CallbackListSubscription browser_context_shutdown_subscription_;
+  // Subscription to browser termination.
+  base::CallbackListSubscription on_browser_terminating_subscription_;
+
+  // True if the browser is terminating.
+  bool browser_terminating_ = false;
 };
 
 }  // namespace extensions

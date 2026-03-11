@@ -25,10 +25,8 @@ import org.mockito.junit.MockitoRule;
 
 import org.chromium.base.ContextUtils;
 import org.chromium.base.test.BaseRobolectricTestRunner;
-import org.chromium.base.test.util.Features.EnableFeatures;
 import org.chromium.base.test.util.HistogramWatcher;
 import org.chromium.chrome.browser.omnibox.test.R;
-import org.chromium.components.omnibox.OmniboxFeatureList;
 import org.chromium.components.omnibox.suggestions.OmniboxSuggestionUiType;
 import org.chromium.ui.modelutil.MVCListAdapter.ModelList;
 import org.chromium.ui.modelutil.PropertyModel;
@@ -38,10 +36,7 @@ import java.util.Set;
 
 /** Unit tests for the OmniboxSuggestionsDropdownAdapter component. */
 @RunWith(BaseRobolectricTestRunner.class)
-@EnableFeatures({OmniboxFeatureList.ANDROID_HUB_SEARCH_TAB_GROUPS})
 public class OmniboxSuggestionsDropdownAdapterUnitTest {
-    public static final Set<Integer> OBSOLETE_UI_TYPES =
-            Set.of(OmniboxSuggestionUiType.OBSOLETE_QUERY_TILES);
     public @Rule MockitoRule mockitoRule = MockitoJUnit.rule();
     private @Mock DropdownItemProcessor mProcessor;
     private Context mContext;
@@ -61,10 +56,12 @@ public class OmniboxSuggestionsDropdownAdapterUnitTest {
 
     @Test
     public void createView_allUiTypesHaveAssociatedViewTypes() {
+        Set<Integer> deprecatedViewTypes = Set.of();
+
         for (@OmniboxSuggestionUiType int type = OmniboxSuggestionUiType.DEFAULT;
                 type < OmniboxSuggestionUiType.COUNT;
                 type++) {
-            if (OBSOLETE_UI_TYPES.contains(type)) continue;
+            if (deprecatedViewTypes.contains(type)) continue;
 
             var view = mAdapter.createView(mContainer, type);
             // Each view type should have a corresponding view object.
@@ -81,7 +78,6 @@ public class OmniboxSuggestionsDropdownAdapterUnitTest {
         for (@OmniboxSuggestionUiType int type = OmniboxSuggestionUiType.DEFAULT;
                 type < OmniboxSuggestionUiType.COUNT;
                 type++) {
-            if (OBSOLETE_UI_TYPES.contains(type)) continue;
             ViewHolder viewHolder = mAdapter.onCreateViewHolder(mContainer, type);
             assertNotNull(viewHolder);
             assertNotNull(viewHolder.itemView);
@@ -112,7 +108,6 @@ public class OmniboxSuggestionsDropdownAdapterUnitTest {
         for (@OmniboxSuggestionUiType int type = OmniboxSuggestionUiType.DEFAULT;
                 type < OmniboxSuggestionUiType.COUNT;
                 type++) {
-            if (OBSOLETE_UI_TYPES.contains(type)) continue;
             doReturn(type).when(mProcessor).getViewTypeId();
             doReturn(commonModel).when(mProcessor).createModel();
 
@@ -137,7 +132,6 @@ public class OmniboxSuggestionsDropdownAdapterUnitTest {
         for (@OmniboxSuggestionUiType int type = OmniboxSuggestionUiType.DEFAULT;
                 type < OmniboxSuggestionUiType.COUNT;
                 type++) {
-            if (OBSOLETE_UI_TYPES.contains(type)) continue;
             doReturn(type).when(mProcessor).getViewTypeId();
             mModel.add(new DropdownItemViewInfo(mProcessor, new PropertyModel(), null));
 
@@ -151,9 +145,7 @@ public class OmniboxSuggestionsDropdownAdapterUnitTest {
         // Confirm all views created, but none of them have been reused (reuse at 0%).
         try (var watcher =
                 HistogramWatcher.newBuilder()
-                        .expectIntRecords(
-                                "Android.Omnibox.SuggestionView.SessionViewsCreated",
-                                OmniboxSuggestionUiType.COUNT - OBSOLETE_UI_TYPES.size())
+                        .expectIntRecords("Android.Omnibox.SuggestionView.SessionViewsCreated", 10)
                         .expectIntRecords("Android.Omnibox.SuggestionView.SessionViewsReused", 0)
                         .build()) {
             mAdapter.recordSessionMetrics();
@@ -168,7 +160,6 @@ public class OmniboxSuggestionsDropdownAdapterUnitTest {
         for (@OmniboxSuggestionUiType int type = OmniboxSuggestionUiType.DEFAULT;
                 type < OmniboxSuggestionUiType.COUNT;
                 type++) {
-            if (OBSOLETE_UI_TYPES.contains(type)) continue;
             doReturn(type).when(mProcessor).getViewTypeId();
             mModel.add(new DropdownItemViewInfo(mProcessor, new PropertyModel(), null));
 
@@ -185,9 +176,7 @@ public class OmniboxSuggestionsDropdownAdapterUnitTest {
 
         try (var watcher =
                 HistogramWatcher.newBuilder()
-                        .expectIntRecords(
-                                "Android.Omnibox.SuggestionView.SessionViewsCreated",
-                                OmniboxSuggestionUiType.COUNT - OBSOLETE_UI_TYPES.size())
+                        .expectIntRecords("Android.Omnibox.SuggestionView.SessionViewsCreated", 10)
                         .expectIntRecords("Android.Omnibox.SuggestionView.SessionViewsReused", 50)
                         .build()) {
             mAdapter.recordSessionMetrics();
@@ -200,7 +189,6 @@ public class OmniboxSuggestionsDropdownAdapterUnitTest {
         for (@OmniboxSuggestionUiType int type = OmniboxSuggestionUiType.DEFAULT;
                 type < OmniboxSuggestionUiType.COUNT;
                 type++) {
-            if (OBSOLETE_UI_TYPES.contains(type)) continue;
             doReturn(type).when(mProcessor).getViewTypeId();
             mModel.add(new DropdownItemViewInfo(mProcessor, new PropertyModel(), null));
             mAdapter.onCreateViewHolder(mContainer, type);

@@ -32,7 +32,8 @@ DownloadDialogResult::~DownloadDialogResult() = default;
 DownloadDialogBridge::DownloadDialogBridge() : is_dialog_showing_(false) {
   JNIEnv* env = base::android::AttachCurrentThread();
   java_obj_.Reset(env, Java_DownloadDialogBridge_create(
-                           env, reinterpret_cast<intptr_t>(this)));
+                           env, reinterpret_cast<intptr_t>(this))
+                           .obj());
   DCHECK(!java_obj_.is_null());
 }
 
@@ -83,20 +84,19 @@ void DownloadDialogBridge::ShowDialog(
 
 void DownloadDialogBridge::OnComplete(
     JNIEnv* env,
-    std::string& returned_path,
-    bool did_user_confirm) {
+    const base::android::JavaParamRef<jobject>& obj,
+    std::string& returned_path) {
   DownloadDialogResult dialog_result;
-  dialog_result.location_result =
-      did_user_confirm
-          ? DownloadLocationDialogResult::USER_CONFIRMED
-          : DownloadLocationDialogResult::CONFIRMED_WITHOUT_USER_INPUT;
+  dialog_result.location_result = DownloadLocationDialogResult::USER_CONFIRMED;
   dialog_result.file_path = base::FilePath(returned_path);
 
   CompleteSelection(std::move(dialog_result));
   is_dialog_showing_ = false;
 }
 
-void DownloadDialogBridge::OnCanceled(JNIEnv* env) {
+void DownloadDialogBridge::OnCanceled(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& obj) {
   if (dialog_callback_) {
     DownloadDialogResult dialog_result;
     dialog_result.location_result = DownloadLocationDialogResult::USER_CANCELED;
@@ -116,9 +116,9 @@ void DownloadDialogBridge::CompleteSelection(DownloadDialogResult result) {
 }
 
 // static
-static void JNI_DownloadDialogBridge_SetDownloadAndSaveFileDefaultDirectory(
+void JNI_DownloadDialogBridge_SetDownloadAndSaveFileDefaultDirectory(
     JNIEnv* env,
-    const base::android::JavaRef<jobject>& jpref_service,
+    const base::android::JavaParamRef<jobject>& jpref_service,
     std::string& directory) {
   PrefService* pref_service =
       PrefServiceAndroid::FromPrefServiceAndroid(jpref_service);
@@ -127,5 +127,3 @@ static void JNI_DownloadDialogBridge_SetDownloadAndSaveFileDefaultDirectory(
   pref_service->SetFilePath(prefs::kDownloadDefaultDirectory, path);
   pref_service->SetFilePath(prefs::kSaveFileDefaultDirectory, path);
 }
-
-DEFINE_JNI(DownloadDialogBridge)

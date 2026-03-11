@@ -45,7 +45,6 @@ std::optional<std::pair<unsigned, int>> DetermineCounterTypeAndValue(
     case kPseudoIdBefore:
     case kPseudoIdAfter:
     case kPseudoIdPickerIcon:
-    case kPseudoIdInterestHint:
     case kPseudoIdMarker:
     case kPseudoIdScrollMarkerGroup:
     case kPseudoIdScrollMarker:
@@ -58,7 +57,7 @@ std::optional<std::pair<unsigned, int>> DetermineCounterTypeAndValue(
   if (directives.IsDefined()) {
     unsigned type_mask = 0;
     int value = directives.CombinedValue();
-    type_mask |= directives.HasIncrement()
+    type_mask |= directives.IsIncrement()
                      ? static_cast<unsigned>(
                            CountersAttachmentContext::Type::kIncrementType)
                      : 0u;
@@ -67,7 +66,7 @@ std::optional<std::pair<unsigned, int>> DetermineCounterTypeAndValue(
             ? static_cast<unsigned>(CountersAttachmentContext::Type::kResetType)
             : 0;
     type_mask |=
-        directives.HasSet()
+        directives.IsSet()
             ? static_cast<unsigned>(CountersAttachmentContext::Type::kSetType)
             : 0;
     return std::make_pair(type_mask, value);
@@ -233,11 +232,9 @@ void CountersAttachmentContext::MaybeCreateListItemCounter(
   DCHECK(layout_object);
   RemoveStaleCounters(*layout_object, list_item_);
   if (ListItemOrdinal* ordinal = ListItemOrdinal::Get(element)) {
-    if (!RuntimeEnabledFeatures::CSSListCounterAccountingEnabled()) {
-      if (const auto& explicit_value = ordinal->ExplicitValue()) {
-        CreateCounter(*layout_object, list_item_, explicit_value.value());
-        return;
-      }
+    if (const auto& explicit_value = ordinal->ExplicitValue()) {
+      CreateCounter(*layout_object, list_item_, explicit_value.value());
+      return;
     }
     int value = ListItemOrdinal::IsInReversedOrderedList(element) ? -1 : 1;
     unsigned type_mask =
@@ -246,13 +243,8 @@ void CountersAttachmentContext::MaybeCreateListItemCounter(
     return;
   }
   if (auto* olist = DynamicTo<HTMLOListElement>(element)) {
-    int value;
-    if (RuntimeEnabledFeatures::CSSListCounterAccountingEnabled()) {
-      value = base::saturated_cast<int>(olist->InitialCounter());
-    } else {
-      value =
-          base::ClampAdd(olist->InitialCounter(), olist->IsReversed() ? 1 : -1);
-    }
+    int value = base::ClampAdd(olist->StartConsideringItemCount(),
+                               olist->IsReversed() ? 1 : -1);
     CreateCounter(*layout_object, list_item_, value);
     return;
   }
@@ -508,25 +500,12 @@ void CountersAttachmentContext::RemoveCounterIfAncestorExists(
     return;
   }
   const LayoutObject& previous_object = *previous_entry->layout_object;
-  const auto* previous_element = DynamicTo<Element>(previous_object.GetNode());
-  const auto* element = DynamicTo<Element>(layout_object.GetNode());
-  if (!previous_element || !element) {
-    return;
-  }
-  // If previous element is ancestor to current element or previous element is
-  // previous sibling of an ancestor to current element, remove last counter
-  // from stack, as it will never be inherited, since we always inherit from
-  // ancestor first, so previous counter will always be inherited instead of
-  // last one.
-  if (IsAncestorOf(*previous_element, *element)) {
-    counter_stack.pop_back();
-    return;
-  }
-  const Element* parent =
-      LayoutTreeBuilderTraversal::ParentElement(*previous_element);
-  if (parent && IsAncestorOf(*parent, *element) &&
-      parent != LayoutTreeBuilderTraversal::ParentElement(*element)) {
-    counter_stack.pop_back();
+  if (const auto* element = DynamicTo<Element>(layout_object.GetNode())) {
+    const auto* previous_element =
+        DynamicTo<Element>(previous_object.GetNode());
+    if (previous_element && IsAncestorOf(*previous_element, *element)) {
+      counter_stack.pop_back();
+    }
   }
 }
 

@@ -134,7 +134,7 @@ class BASE_EXPORT GSL_OWNER ListValue {
   bool contains(const DictValue& val) const;
   bool contains(const ListValue& val) const;
 
-  // Removes all values from this list.
+  // Removes all value from this list.
   REINITIALIZES_AFTER_MOVE void clear();
 
   // Removes the value referenced by `pos` in this list and returns an
@@ -148,7 +148,7 @@ class BASE_EXPORT GSL_OWNER ListValue {
   iterator erase(iterator first, iterator last);
   const_iterator erase(const_iterator first, const_iterator last);
 
-  // Creates a deep copy of this list.
+  // Creates a deep copy of this dictionary.
   ListValue Clone() const;
 
   // Appends `value` to the end of this list.
@@ -168,10 +168,10 @@ class BASE_EXPORT GSL_OWNER ListValue {
   void Append(ListValue&& value) &;
 
   // Rvalue overrides of the `Append` methods, which allow you to construct
-  // a `ListValue` builder-style:
+  // a `Value::List` builder-style:
   //
-  // ListValue result =
-  //   ListValue().Append("first value").Append(2).Append(true);
+  // Value::List result =
+  //   Value::List().Append("first value").Append(2).Append(true);
   //
   // Each method returns a rvalue reference to `this`, so this is as efficient
   // as stand-alone calls to `Append`, while at the same time making it harder
@@ -179,7 +179,7 @@ class BASE_EXPORT GSL_OWNER ListValue {
   //
   // The equivalent code without using these builder-style methods:
   //
-  // ListValue no_builder_example;
+  // Value::List no_builder_example;
   // no_builder_example.Append("first value");
   // no_builder_example.Append(2);
   // no_builder_example.Append(true);
@@ -214,15 +214,18 @@ class BASE_EXPORT GSL_OWNER ListValue {
     return std::erase_if(storage_, predicate);
   }
 
-  // Estimates dynamic memory usage. See
+  // Estimates dynamic memory usage. Requires tracing support
+  // (enable_base_tracing gn flag), otherwise always returns 0. See
   // base/trace_event/memory_usage_estimator.h for more info.
   size_t EstimateMemoryUsage() const;
 
   // Serializes to a string for logging and debug purposes.
   std::string DebugString() const;
 
+#if BUILDFLAG(ENABLE_BASE_TRACING)
   // Write this object into a trace.
   void WriteIntoTrace(perfetto::TracedValue) const;
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
  private:
   using ListStorage = std::vector<Value>;
@@ -264,8 +267,21 @@ class BASE_EXPORT GSL_OWNER DictValue {
   // results in a faster initial sort operation. Takes move iterators to avoid
   // having to clone the input.
   template <class IteratorType>
-  DictValue(std::move_iterator<IteratorType> first,
-            std::move_iterator<IteratorType> last);
+  explicit DictValue(std::move_iterator<IteratorType> first,
+                     std::move_iterator<IteratorType> last) {
+    // Need to move into a vector first, since `storage_` currently uses
+    // unique_ptrs.
+    std::vector<std::pair<std::string, std::unique_ptr<Value>>> values;
+    for (auto current = first; current != last; ++current) {
+      // With move iterators, no need to call Clone(), but do need to move
+      // to a temporary first, as accessing either field individually will
+      // directly from the iterator will delete the other field.
+      auto value = *current;
+      values.emplace_back(std::move(value.first),
+                          std::make_unique<Value>(std::move(value.second)));
+    }
+    storage_ = flat_map<std::string, std::unique_ptr<Value>>(std::move(values));
+  }
 
   DictValue(PassKey<internal::JSONParser>,
             flat_map<std::string, std::unique_ptr<Value>>);
@@ -278,10 +294,6 @@ class BASE_EXPORT GSL_OWNER DictValue {
 
   // Returns the number of entries in this dictionary.
   size_t size() const;
-
-  // Increase the capacity of the backing container, but does not change the
-  // size. Assume all existing iterators will be invalidated.
-  void reserve(size_t capacity);
 
   // Returns an iterator to the first entry in this dictionary.
   iterator begin();
@@ -320,10 +332,10 @@ class BASE_EXPORT GSL_OWNER DictValue {
   const Value* Find(std::string_view key) const;
   Value* Find(std::string_view key);
 
-  // Similar to `Find()` above, but returns `std::nullopt`/`nullptr` if the type
-  // of the entry does not match. `bool`, `int`, and `double` are returned in a
-  // wrapped `std::optional`; blobs, `DictValue`, and `ListValue` are returned
-  // by pointer.
+  // Similar to `Find()` above, but returns `std::nullopt`/`nullptr` if the
+  // type of the entry does not match. `bool`, `int`, and `double` are
+  // returned in a wrapped `std::optional`; blobs, `Value::Dict`, and
+  // `Value::List` are returned by pointer.
   std::optional<bool> FindBool(std::string_view key) const;
   std::optional<int> FindInt(std::string_view key) const;
   // Returns a non-null value for both `Value::Type::DOUBLE` and
@@ -362,22 +374,18 @@ class BASE_EXPORT GSL_OWNER DictValue {
   Value* Set(std::string_view key, DictValue&& value) &;
   Value* Set(std::string_view key, ListValue&& value) &;
 
-  // Same as above, but more efficient if the new key is greater than all
-  // pre-existing keys in the dictionary.
-  Value* Set_HintAtEnd(std::string_view key, Value&& value) &;
-
   // Rvalue overrides of the `Set` methods, which allow you to construct
-  // a `DictValue` builder-style:
+  // a `Value::Dict` builder-style:
   //
-  // DictValue result =
-  //     DictValue()
+  // Value::Dict result =
+  //     Value::Dict()
   //         .Set("key-1", "first value")
   //         .Set("key-2", 2)
   //         .Set("key-3", true)
-  //         .Set("nested-dictionary", DictValue()
+  //         .Set("nested-dictionary", Value::Dict()
   //                                       .Set("nested-key-1", "value")
   //                                       .Set("nested-key-2", true))
-  //         .Set("nested-list", ListValue()
+  //         .Set("nested-list", Value::List()
   //                                 .Append("nested-list-value")
   //                                 .Append(5)
   //                                 .Append(true));
@@ -388,16 +396,16 @@ class BASE_EXPORT GSL_OWNER DictValue {
   //
   // The equivalent code without using these builder-style methods:
   //
-  // DictValue no_builder_example;
+  // Value::Dict no_builder_example;
   // no_builder_example.Set("key-1", "first value")
   // no_builder_example.Set("key-2", 2)
   // no_builder_example.Set("key-3", true)
-  // DictValue nested_dictionary;
+  // Value::Dict nested_dictionary;
   // nested_dictionary.Set("nested-key-1", "value");
   // nested_dictionary.Set("nested-key-2", true);
   // no_builder_example.Set("nested_dictionary",
   //                        std::move(nested_dictionary));
-  // ListValue nested_list;
+  // Value::List nested_list;
   // nested_list.Append("nested-list-value");
   // nested_list.Append(5);
   // nested_list.Append(true);
@@ -407,14 +415,14 @@ class BASE_EXPORT GSL_OWNER DictValue {
   // chained `Set` calls. In these cases you can use a trailing empty comment
   // to influence the code formatting:
   //
-  // DictValue result = DictValue().Set(
+  // Value::Dict result = Value::Dict().Set(
   //     "nested",
-  //     base::DictValue().Set("key", "value").Set("other key", "other"));
+  //     base::Value::Dict().Set("key", "value").Set("other key", "other"));
   //
-  // DictValue result = DictValue().Set("nested",
-  //                                    base::DictValue()  //
-  //                                        .Set("key", "value")
-  //                                        .Set("other key", "value"));
+  // Value::Dict result = Value::Dict().Set("nested",
+  //                                        base::Value::Dict() //
+  //                                           .Set("key", "value")
+  //                                           .Set("other key", "value"));
   //
   DictValue&& Set(std::string_view key, Value&& value) &&;
   DictValue&& Set(std::string_view key, bool value) &&;
@@ -496,10 +504,10 @@ class BASE_EXPORT GSL_OWNER DictValue {
   Value* SetByDottedPath(std::string_view path, ListValue&& value) &;
 
   // Rvalue overrides of the `SetByDottedPath` methods, which allow you to
-  // construct a `DictValue` builder-style:
+  // construct a `Value::Dict` builder-style:
   //
-  // DictValue result =
-  //     DictValue()
+  // Value::Dict result =
+  //     Value::Dict()
   //         .SetByDottedPath("a.nested.dictionary.with.key-1", "first value")
   //         .Set("local-key-1", 2));
   //
@@ -509,20 +517,23 @@ class BASE_EXPORT GSL_OWNER DictValue {
   // Warning: repeatedly using this API to enter entries in the same nested
   // dictionary is inefficient, so do not write this:
   //
-  // DictValue bad_example =
-  //     DictValue()
-  //         .SetByDottedPath("nested.dictionary.key-1", "first value")
-  //         .SetByDottedPath("nested.dictionary.key-2", "second value")
-  //         .SetByDottedPath("nested.dictionary.key-3", "third value");
+  // Value::Dict bad_example =
+  //   Value::Dict()
+  //     .SetByDottedPath("nested.dictionary.key-1", "first value")
+  //     .SetByDottedPath("nested.dictionary.key-2", "second value")
+  //     .SetByDottedPath("nested.dictionary.key-3", "third value");
   //
-  // Instead, simply write this:
+  // Instead, simply write this
   //
-  // DictValue good_example = DictValue().Set(
-  //     "nested", base::DictValue().Set("dictionary",
-  //                                     base::DictValue()
-  //                                         .Set("key-1", "first value")
-  //                                         .Set("key-2", "second value")
-  //                                         .Set("key-3", "third value")));
+  // Value::Dict good_example =
+  //   Value::Dict()
+  //     .Set("nested",
+  //          base::Value::Dict()
+  //            .Set("dictionary",
+  //                 base::Value::Dict()
+  //                   .Set(key-1", "first value")
+  //                   .Set(key-2", "second value")
+  //                   .Set(key-3", "third value")));
   //
   //
   DictValue&& SetByDottedPath(std::string_view path, Value&& value) &&;
@@ -545,15 +556,18 @@ class BASE_EXPORT GSL_OWNER DictValue {
 
   std::optional<Value> ExtractByDottedPath(std::string_view path);
 
-  // Estimates dynamic memory usage. See
+  // Estimates dynamic memory usage. Requires tracing support
+  // (enable_base_tracing gn flag), otherwise always returns 0. See
   // base/trace_event/memory_usage_estimator.h for more info.
   size_t EstimateMemoryUsage() const;
 
   // Serializes to a string for logging and debug purposes.
   std::string DebugString() const;
 
+#if BUILDFLAG(ENABLE_BASE_TRACING)
   // Write this object into a trace.
   void WriteIntoTrace(perfetto::TracedValue) const;
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
  private:
   BASE_EXPORT friend bool operator==(const DictValue& lhs,
@@ -587,13 +601,13 @@ class BASE_EXPORT GSL_OWNER DictValue {
 //
 // Do not use `Value` if a more specific type would be more appropriate.  For
 // example, a function that only accepts dictionary values should have a
-// `base::DictValue` parameter, not a `base::Value` parameter.
+// `base::Value::Dict` parameter, not a `base::Value` parameter.
 //
 // Construction:
 //
 // `Value` is directly constructible from `bool`, `int`, `double`, binary blobs
 // (`std::vector<uint8_t>`), `std::string_view`, `std::u16string_view`,
-// `DictValue`, and `ListValue`.
+// `Value::Dict`, and `Value::List`.
 //
 // Copying:
 //
@@ -604,13 +618,13 @@ class BASE_EXPORT GSL_OWNER DictValue {
 //
 // `GetBool()`, GetInt()`, et cetera `CHECK()` that the `Value` has the correct
 // subtype before returning the contained value. `bool`, `int`, `double` are
-// returned by value. Binary blobs, `std::string`, `DictValue`, `ListValue` are
-// returned by reference.
+// returned by value. Binary blobs, `std::string`, `Value::Dict`, `Value::List`
+// are returned by reference.
 //
-// `GetIfBool()`, `GetIfInt()`, et cetera return `std::nullopt`/`nullptr` if the
-// `Value` does not have the correct subtype; otherwise, returns the value
+// `GetIfBool()`, `GetIfInt()`, et cetera return `std::nullopt`/`nullptr` if
+// the `Value` does not have the correct subtype; otherwise, returns the value
 // wrapped in an `std::optional` (for `bool`, `int`, `double`) or by pointer
-// (for binary blobs, `std::string`, `DictValue`, `ListValue`).
+// (for binary blobs, `std::string`, `Value::Dict`, `Value::List`).
 //
 // Note: both `GetDouble()` and `GetIfDouble()` still return a non-null result
 // when the subtype is `Value::Type::INT`. In that case, the stored value is
@@ -623,11 +637,11 @@ class BASE_EXPORT GSL_OWNER DictValue {
 //
 // ## Dictionaries and Lists
 //
-// `Value` provides the `DictValue` and `ListValue` container types for working
-// with dictionaries and lists of values respectively, rather than exposing the
-// underlying container types directly. This allows the types to provide
-// convenient helpers for dictionaries and lists, as well as giving greater
-// flexibility for changing implementation details in the future.
+// `Value` provides the `Value::Dict` and `Value::List` container types for
+// working with dictionaries and lists of values respectively, rather than
+// exposing the underlying container types directly. This allows the types to
+// provide convenient helpers for dictionaries and lists, as well as giving
+// greater flexibility for changing implementation details in the future.
 //
 // Both container types support enough STL-isms to be usable in range-based for
 // loops and generic operations such as those from <algorithm>.
@@ -657,25 +671,25 @@ class BASE_EXPORT GSL_OWNER DictValue {
 // "paths": `FindByDottedPath()`, `SetByDottedPath()`, `RemoveByDottedPath()`,
 // and `ExtractByDottedPath()`. Dotted paths are a convenience method of naming
 // intermediate nested dictionaries, separating the components of the path using
-// '.' characters. For example, finding a string path on a `DictValue` using the
-// dotted path:
+// '.' characters. For example, finding a string path on a `Value::Dict` using
+// the dotted path:
 //
 //   "aaa.bbb.ccc"
 //
 // Will first look for a `Value::Type::DICT` associated with the key "aaa", then
-// another `Value::Type::DICT` under the "aaa" dict associated with the key
-// "bbb", and then a `Value::Type::STRING` under the "bbb" dict associated with
-// the key "ccc".
+// another `Value::Type::DICT` under the "aaa" dict associated with the
+// key "bbb", and then a `Value::Type::STRING` under the "bbb" dict associated
+// with the key "ccc".
 //
 // If a path only has one component (i.e. has no dots), please use the regular,
 // non-path APIs.
 //
 // Lists support:
-// - `empty()`, `size()`, `begin()`, `end()`, `cbegin()`, `cend()`, `rbegin()`,
-//       `rend()`, `front()`, `back()`, `reserve()`, `operator[]`, `contains()`,
-//       `clear()`, `erase()`: Identical to the STL container equivalents, with
-//       additional safety checks, e.g. `operator[]` will `CHECK()` if the index
-//       is out of range.
+// - `empty()`, `size()`, `begin()`, `end()`, `cbegin()`, `cend()`,
+//       `rbegin()`, `rend()`, `front()`, `back()`, `reserve()`, `operator[]`,
+//       `contains()`, `clear()`, `erase()`: Identical to the STL container
+//       equivalents, with additional safety checks, e.g. `operator[]` will
+//       `CHECK()` if the index is out of range.
 // - `Clone()`: Create a deep copy.
 // - `Append()`: Append a value to the end of the list. Accepts `Value` or any
 //       of the subtypes that `Value` can hold.
@@ -686,6 +700,9 @@ class BASE_EXPORT GSL_OWNER DictValue {
 class BASE_EXPORT GSL_OWNER Value {
  public:
   using BlobStorage = BlobStorage;
+
+  using Dict = DictValue;
+  using List = ListValue;
 
   enum class Type : unsigned char {
     NONE = 0,
@@ -755,10 +772,10 @@ class BASE_EXPORT GSL_OWNER Value {
   explicit Value(BlobStorage&& value) noexcept;
 
   // Constructor for `Value::Type::DICT`.
-  explicit Value(DictValue&& value) noexcept;
+  explicit Value(Dict&& value) noexcept;
 
   // Constructor for `Value::Type::LIST`.
-  explicit Value(ListValue&& value) noexcept;
+  explicit Value(List&& value) noexcept;
 
   ~Value();
 
@@ -780,7 +797,7 @@ class BASE_EXPORT GSL_OWNER Value {
 
   // Returns the stored data if the type matches, or `std::nullopt`/`nullptr`
   // otherwise. `bool`, `int`, and `double` are returned in a wrapped
-  // `std::optional`; blobs, `DictValue`, and `ListValue` are returned by
+  // `std::optional`; blobs, `Value::Dict`, and `Value::List` are returned by
   // pointer.
   std::optional<bool> GetIfBool() const;
   std::optional<int> GetIfInt() const;
@@ -791,14 +808,14 @@ class BASE_EXPORT GSL_OWNER Value {
   std::string* GetIfString();
   const BlobStorage* GetIfBlob() const;
   BlobStorage* GetIfBlob();
-  const DictValue* GetIfDict() const;
-  DictValue* GetIfDict();
-  const ListValue* GetIfList() const;
-  ListValue* GetIfList();
+  const Dict* GetIfDict() const;
+  Dict* GetIfDict();
+  const List* GetIfList() const;
+  List* GetIfList();
 
   // Similar to the `GetIf...()` variants above, but fails with a `CHECK()` on a
   // type mismatch. `bool`, `int`, and `double` are returned by value; blobs,
-  // `DictValue`, and `ListValue` are returned by reference.
+  // `Value::Dict`, and `Value::List` are returned by reference.
   bool GetBool() const;
   int GetInt() const;
   // Returns a value for both `Value::Type::DOUBLE` and `Value::Type::INT`,
@@ -808,10 +825,10 @@ class BASE_EXPORT GSL_OWNER Value {
   std::string& GetString() LIFETIME_BOUND;
   const BlobStorage& GetBlob() const LIFETIME_BOUND;
   BlobStorage& GetBlob() LIFETIME_BOUND;
-  const DictValue& GetDict() const LIFETIME_BOUND;
-  DictValue& GetDict() LIFETIME_BOUND;
-  const ListValue& GetList() const LIFETIME_BOUND;
-  ListValue& GetList() LIFETIME_BOUND;
+  const Dict& GetDict() const LIFETIME_BOUND;
+  Dict& GetDict() LIFETIME_BOUND;
+  const List& GetList() const LIFETIME_BOUND;
+  List& GetList() LIFETIME_BOUND;
 
   // Transfers ownership of the underlying value. Similarly to `Get...()`
   // variants above, fails with a `CHECK()` on a type mismatch. After
@@ -820,8 +837,11 @@ class BASE_EXPORT GSL_OWNER Value {
   // potential use-after-move mistakes.
   std::string TakeString() &&;
   BlobStorage TakeBlob() &&;
-  DictValue TakeDict() &&;
-  ListValue TakeList() &&;
+  Dict TakeDict() &&;
+  List TakeList() &&;
+
+
+
   // Note: Do not add more types. See the file-level comment above for why.
 
   // Comparison operators so that Values can easily be used with standard
@@ -851,15 +871,18 @@ class BASE_EXPORT GSL_OWNER Value {
   bool operator==(const DictValue& rhs) const;
   bool operator==(const ListValue& rhs) const;
 
-  // Estimates dynamic memory usage. See
+  // Estimates dynamic memory usage. Requires tracing support
+  // (enable_base_tracing gn flag), otherwise always returns 0. See
   // base/trace_event/memory_usage_estimator.h for more info.
   size_t EstimateMemoryUsage() const;
 
   // Serializes to a string for logging and debug purposes.
   std::string DebugString() const;
 
+#if BUILDFLAG(ENABLE_BASE_TRACING)
   // Write this object into a trace.
   void WriteIntoTrace(perfetto::TracedValue) const;
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
   template <typename Visitor>
   auto Visit(Visitor&& visitor) const {
@@ -930,27 +953,27 @@ class BASE_EXPORT GSL_OWNER Value {
                DoubleStorage,
                std::string,
                BlobStorage,
-               DictValue,
-               ListValue>
+               Dict,
+               List>
       data_;
 };
 
-// Adapter so `DictValue` or `ListValue` can be directly passed to JSON
+// Adapter so `Value::Dict` or `Value::List` can be directly passed to JSON
 // serialization methods without having to clone the contents and transfer
 // ownership of the clone to a `Value` wrapper object.
 //
 // Like `std::string_view` and `span<T>`, this adapter does NOT retain
 // ownership. Any underlying object that is passed by reference (i.e.
-// `std::string`, `Value::BlobStorage`, `DictValue`, `ListValue`, or `Value`)
-// MUST remain live as long as there is a `ValueView` referencing it.
+// `std::string`, `Value::BlobStorage`, `Value::Dict`, `Value::List`, or
+// `Value`) MUST remain live as long as there is a `ValueView` referencing it.
 //
-// While it might be nice to just use the `std::variant` type directly, the need
-// to use `std::reference_wrapper` makes it clunky. `std::variant` and
+// While it might be nice to just use the `std::variant` type directly, the
+// need to use `std::reference_wrapper` makes it clunky. `std::variant` and
 // `std::reference_wrapper` both support implicit construction, but C++ only
 // allows at most one user-defined conversion in an implicit conversion
 // sequence. If this adapter and its implicit constructors did not exist,
-// callers would need to use `std::ref` or `std::cref` to pass `DictValue` or
-// `ListValue` to a function with a `ValueView` parameter.
+// callers would need to use `std::ref` or `std::cref` to pass `Value::Dict` or
+// `Value::List` to a function with a `ValueView` parameter.
 class BASE_EXPORT GSL_POINTER ValueView {
  public:
   ValueView() = default;
@@ -968,8 +991,8 @@ class BASE_EXPORT GSL_POINTER ValueView {
   // UTF-8, so it would not be possible to implement this without allocating an
   // entirely new UTF-8 string.
   ValueView(const Value::BlobStorage& value) : data_view_(value) {}
-  ValueView(const DictValue& value) : data_view_(value) {}
-  ValueView(const ListValue& value) : data_view_(value) {}
+  ValueView(const Value::Dict& value) : data_view_(value) {}
+  ValueView(const Value::List& value) : data_view_(value) {}
   ValueView(const Value& value);
 
   // This is the only 'getter' method provided as `ValueView` is not intended
@@ -990,8 +1013,8 @@ class BASE_EXPORT GSL_POINTER ValueView {
                    Value::DoubleStorage,
                    std::string_view,
                    std::reference_wrapper<const Value::BlobStorage>,
-                   std::reference_wrapper<const DictValue>,
-                   std::reference_wrapper<const ListValue>>;
+                   std::reference_wrapper<const Value::Dict>,
+                   std::reference_wrapper<const Value::List>>;
 
  public:
   using DoubleStorageForTest = Value::DoubleStorage;
@@ -1061,8 +1084,10 @@ class BASE_EXPORT ValueDeserializer {
 
 // Stream operator so Values can be pretty printed by gtest.
 BASE_EXPORT std::ostream& operator<<(std::ostream& out, const Value& value);
-BASE_EXPORT std::ostream& operator<<(std::ostream& out, const DictValue& dict);
-BASE_EXPORT std::ostream& operator<<(std::ostream& out, const ListValue& list);
+BASE_EXPORT std::ostream& operator<<(std::ostream& out,
+                                     const Value::Dict& dict);
+BASE_EXPORT std::ostream& operator<<(std::ostream& out,
+                                     const Value::List& list);
 
 // Stream operator so that enum class Types can be used in log statements.
 BASE_EXPORT std::ostream& operator<<(std::ostream& out,
@@ -1076,24 +1101,6 @@ bool ListValue::contains(const T& val,
   return std::ranges::any_of(storage_, [&](const Value& value) {
     return (value.*test)() && (value.*get)() == val;
   });
-}
-
-template <class IteratorType>
-DictValue::DictValue(std::move_iterator<IteratorType> first,
-                     std::move_iterator<IteratorType> last) {
-  // Need to move into a vector first, since `storage_` currently uses
-  // unique_ptrs.
-  std::vector<std::pair<std::string, std::unique_ptr<Value>>> values;
-  values.reserve(static_cast<size_t>(std::distance(first, last)));
-  for (auto current = first; current != last; ++current) {
-    // With move iterators, no need to call Clone(), but do need to move
-    // to a temporary first, as accessing either field individually will
-    // directly from the iterator will delete the other field.
-    auto value = *current;
-    values.emplace_back(std::move(value.first),
-                        std::make_unique<Value>(std::move(value.second)));
-  }
-  storage_ = flat_map<std::string, std::unique_ptr<Value>>(std::move(values));
 }
 
 }  // namespace base

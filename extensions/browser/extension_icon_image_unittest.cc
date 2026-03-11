@@ -117,15 +117,14 @@ class ExtensionIconImageTest : public ExtensionsTest,
       return nullptr;
     }
 
-    const base::DictValue* valid_dict = valid_value->GetIfDict();
+    const base::Value::Dict* valid_dict = valid_value->GetIfDict();
     EXPECT_TRUE(valid_dict);
     if (!valid_dict) {
       return nullptr;
     }
 
-    std::u16string utf16_error;
     return Extension::Create(test_file, location, *valid_dict,
-                             Extension::NO_FLAGS, &utf16_error);
+                             Extension::NO_FLAGS, &error);
   }
 
   // IconImage::Delegate overrides:

@@ -4,9 +4,6 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
-import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.Drawable;
@@ -14,20 +11,16 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
 
+import androidx.annotation.Nullable;
 import androidx.annotation.StyleRes;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.widget.TextViewCompat;
 
 import org.chromium.base.Callback;
-import org.chromium.build.annotations.MonotonicNonNull;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.tasks.tab_management.TabListEditorAction.ButtonType;
 import org.chromium.chrome.browser.tasks.tab_management.TabListEditorAction.IconPosition;
 import org.chromium.chrome.browser.tasks.tab_management.TabListEditorAction.ShowMode;
 import org.chromium.chrome.tab_ui.R;
-import org.chromium.components.browser_ui.util.motion.MotionEventInfo;
-import org.chromium.components.browser_ui.util.motion.OnPeripheralClickListener;
 import org.chromium.components.browser_ui.widget.BrowserUiListMenuUtils;
 import org.chromium.ui.modelutil.MVCListAdapter.ListItem;
 
@@ -36,22 +29,7 @@ import java.util.List;
 /**
  * Holds the {@code mActionView} and {@link ListItem} for an item in the {@link TabListEditorMenu}.
  */
-@NullMarked
 public class TabListEditorMenuItem {
-
-    /** Runs when a menu item is clicked. */
-    public interface OnClickRunnable {
-
-        /**
-         * Called when a menu item is clicked.
-         *
-         * @param triggeringMotion the {@link MotionEventInfo} that triggered the click; it is
-         *     {@code null} if {@link android.view.MotionEvent} wasn't available when the click was
-         *     detected, such as in {@link android.view.View.OnClickListener}.
-         */
-        void run(@Nullable MotionEventInfo triggeringMotion);
-    }
-
     private final Context mContext;
 
     private final ListItem mListItem;
@@ -61,10 +39,10 @@ public class TabListEditorMenuItem {
     private boolean mEnabled;
     private boolean mShouldDismissMenu;
     private boolean mActionViewShowing;
-    private @Nullable ColorStateList mIconTint;
+    private ColorStateList mIconTint;
 
-    private @MonotonicNonNull OnClickRunnable mOnClickRunnable;
-    private @Nullable Callback<List<TabListEditorItemSelectionId>> mOnSelectionStateChange;
+    private Runnable mOnClickRunnable;
+    private Callback<List<Integer>> mOnSelectionStateChange;
 
     /**
      * @param context for loading resources.
@@ -95,7 +73,7 @@ public class TabListEditorMenuItem {
         }
     }
 
-    public @Nullable View getActionView() {
+    public View getActionView() {
         return mActionView;
     }
 
@@ -142,7 +120,8 @@ public class TabListEditorMenuItem {
                     mContext.getResources()
                             .getQuantityString(contentDescriptionResourceId, itemCount, itemCount);
         }
-        mListItem.model.set(TabListEditorActionProperties.CONTENT_DESCRIPTION, contentDescription);
+        mListItem.model.set(
+                TabListEditorActionProperties.CONTENT_DESCRIPTION, contentDescription);
         if (mActionView != null) {
             mActionView.setContentDescription(contentDescription);
         }
@@ -207,20 +186,10 @@ public class TabListEditorMenuItem {
         }
     }
 
-    @SuppressLint("ClickableViewAccessibility")
-    public void setOnClickListener(OnClickRunnable runnable) {
+    public void setOnClickListener(Runnable runnable) {
         mOnClickRunnable = runnable;
         if (mActionView != null) {
-            // For non-peripheral clicks.
-            mActionView.setOnClickListener(v -> onClick(/* triggeringMotion= */ null));
-            // For peripheral clicks. This will intercept the event and prevent OnClickListener
-            // from being called for peripheral events.
-            mActionView.setOnTouchListener(
-                    new OnPeripheralClickListener(
-                            mActionView,
-                            (triggeringMotion) -> {
-                                onClick(triggeringMotion);
-                            }));
+            mActionView.setOnClickListener(v -> onClick());
         }
     }
 
@@ -232,25 +201,21 @@ public class TabListEditorMenuItem {
         return mShouldDismissMenu;
     }
 
-    public void setOnSelectionStateChange(Callback<List<TabListEditorItemSelectionId>> callback) {
+    public void setOnSelectionStateChange(Callback<List<Integer>> callback) {
         mOnSelectionStateChange = callback;
     }
 
-    /**
-     * Handler for click events on the menu item or action view.
-     *
-     * @param triggeringMotion see {@link OnClickRunnable#run(MotionEventInfo)}.
-     */
-    public boolean onClick(@Nullable MotionEventInfo triggeringMotion) {
+    /** Handler for click events on the menu item or action view. */
+    public boolean onClick() {
         if (!mEnabled) return false;
 
-        assumeNonNull(mOnClickRunnable).run(triggeringMotion);
+        mOnClickRunnable.run();
 
         return true;
     }
 
     /** Updates the {@link TabListEditorAction} with the currently selected tabs. */
-    public void onSelectionStateChange(List<TabListEditorItemSelectionId> itemIds) {
-        assumeNonNull(mOnSelectionStateChange).onResult(itemIds);
+    public void onSelectionStateChange(List<Integer> tabIds) {
+        mOnSelectionStateChange.onResult(tabIds);
     }
 }

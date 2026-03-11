@@ -17,7 +17,6 @@
 #include "third_party/blink/renderer/platform/graphics/dark_mode_color_filter.h"
 #include "third_party/blink/renderer/platform/graphics/dark_mode_image_cache.h"
 #include "third_party/blink/renderer/platform/graphics/dark_mode_image_classifier.h"
-#include "third_party/blink/renderer/platform/graphics/dark_mode_settings.h"
 #include "third_party/blink/renderer/platform/graphics/image.h"
 #include "third_party/blink/renderer/platform/wtf/hash_functions.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -77,9 +76,8 @@ sk_sp<cc::ColorFilter> GetDarkModeFilterForImageOnMainThread(
     // default frame is completely received. This will help get correct
     // classification results for incremental content received for the given
     // image.
-    if (!image->IsBitmapImage() || image->FirstFrameIsComplete()) {
+    if (!image->IsBitmapImage() || image->CurrentFrameIsComplete())
       cache->Add(rounded_src, color_filter);
-    }
   }
   return color_filter;
 }
@@ -118,7 +116,8 @@ DarkModeFilter::DarkModeFilter(const DarkModeSettings& settings)
 DarkModeFilter::~DarkModeFilter() {}
 
 DarkModeFilter::ImmutableData::ImmutableData(const DarkModeSettings& settings)
-    : foreground_classifier(nullptr),
+    : settings(settings),
+      foreground_classifier(nullptr),
       background_classifier(nullptr),
       image_classifier(nullptr),
       color_filter(nullptr),
@@ -133,7 +132,12 @@ DarkModeFilter::ImmutableData::ImmutableData(const DarkModeSettings& settings)
       DarkModeColorClassifier::MakeForegroundColorClassifier(settings);
   background_classifier =
       DarkModeColorClassifier::MakeBackgroundColorClassifier(settings);
-  image_classifier = std::make_unique<DarkModeImageClassifier>();
+  image_classifier = std::make_unique<DarkModeImageClassifier>(
+      settings.image_classifier_policy);
+}
+
+DarkModeImagePolicy DarkModeFilter::GetDarkModeImagePolicy() const {
+  return immutable_.settings.image_policy;
 }
 
 // Heuristic to maintain contrast for borders and selections (see:
@@ -200,6 +204,12 @@ void DarkModeFilter::ApplyFilterToImage(Image* image,
                                         const SkRect& src) {
   DCHECK(image);
   DCHECK(flags);
+  DCHECK_NE(GetDarkModeImagePolicy(), DarkModeImagePolicy::kFilterNone);
+
+  if (GetDarkModeImagePolicy() == DarkModeImagePolicy::kFilterAll) {
+    flags->setColorFilter(GetImageFilter());
+    return;
+  }
 
   // Raster-side dark mode path - Just set the dark mode on flags and dark
   // mode will be applied at compositor side during rasterization.
@@ -218,6 +228,12 @@ void DarkModeFilter::ApplyFilterToImage(Image* image,
 }
 
 bool DarkModeFilter::ShouldApplyFilterToImage(ImageType type) const {
+  DarkModeImagePolicy image_policy = GetDarkModeImagePolicy();
+  if (image_policy == DarkModeImagePolicy::kFilterNone)
+    return false;
+  if (image_policy == DarkModeImagePolicy::kFilterAll)
+    return true;
+
   // kIcon: Do not consider images being drawn into bigger rect as these
   // images are not meant for icons or representing smaller widgets. These
   // images are considered as photos which should be untouched.
@@ -231,6 +247,7 @@ bool DarkModeFilter::ShouldApplyFilterToImage(ImageType type) const {
 sk_sp<cc::ColorFilter> DarkModeFilter::GenerateImageFilter(
     const SkPixmap& pixmap,
     const SkIRect& src) const {
+  DCHECK(immutable_.settings.image_policy == DarkModeImagePolicy::kFilterSmart);
   DCHECK(immutable_.image_filter);
 
   return (immutable_.image_classifier->Classify(pixmap, src) ==

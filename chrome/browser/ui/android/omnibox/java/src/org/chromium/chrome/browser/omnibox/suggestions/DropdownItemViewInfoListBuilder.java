@@ -4,19 +4,15 @@
 
 package org.chromium.chrome.browser.omnibox.suggestions;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
 import android.text.TextUtils;
 
 import androidx.annotation.VisibleForTesting;
 
-import org.chromium.base.supplier.MonotonicObservableSupplier;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.build.annotations.Initializer;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
-import org.chromium.chrome.browser.browser_controls.BrowserControlsStateProvider.ControlsPosition;
-import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.omnibox.UrlBarEditingTextStateProvider;
 import org.chromium.chrome.browser.omnibox.styles.OmniboxImageSupplier;
 import org.chromium.chrome.browser.omnibox.suggestions.answer.AnswerSuggestionProcessor;
@@ -28,7 +24,6 @@ import org.chromium.chrome.browser.omnibox.suggestions.entity.EntitySuggestionPr
 import org.chromium.chrome.browser.omnibox.suggestions.groupseparator.GroupSeparatorProcessor;
 import org.chromium.chrome.browser.omnibox.suggestions.header.HeaderProcessor;
 import org.chromium.chrome.browser.omnibox.suggestions.mostvisited.MostVisitedTilesProcessor;
-import org.chromium.chrome.browser.omnibox.suggestions.tabgroup.TabGroupSuggestionProcessor;
 import org.chromium.chrome.browser.omnibox.suggestions.tail.TailSuggestionProcessor;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.share.ShareDelegate;
@@ -38,56 +33,29 @@ import org.chromium.components.omnibox.AutocompleteMatch;
 import org.chromium.components.omnibox.AutocompleteResult;
 import org.chromium.components.omnibox.GroupsProto.GroupConfig;
 import org.chromium.components.omnibox.OmniboxFeatures;
-import org.chromium.components.omnibox.OmniboxSuggestionType;
 import org.chromium.ui.modelutil.PropertyModel;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
+import java.util.Optional;
 
 /** Builds DropdownItemViewInfo list from AutocompleteResult for the Suggestions list. */
 @NullMarked
 class DropdownItemViewInfoListBuilder {
     private final List<SuggestionProcessor> mPriorityOrderedSuggestionProcessors;
-    private final Supplier<@Nullable Tab> mActivityTabSupplier;
+    private final Supplier<Tab> mActivityTabSupplier;
 
     private GroupSeparatorProcessor mGroupSeparatorProcessor;
     private HeaderProcessor mHeaderProcessor;
     private @Nullable Supplier<ShareDelegate> mShareDelegateSupplier;
-    private @Nullable OmniboxImageSupplier mImageSupplier;
-    private final BookmarkState mBookmarkState;
-    private final MonotonicObservableSupplier<@ControlsPosition Integer> mToolbarPositionSupplier;
+    private Optional<OmniboxImageSupplier> mImageSupplier;
+    private BookmarkState mBookmarkState;
 
-    DropdownItemViewInfoListBuilder(
-            Supplier<@Nullable Tab> tabSupplier,
-            BookmarkState bookmarkState,
-            MonotonicObservableSupplier<@ControlsPosition Integer> toolbarPositionSupplier) {
+    DropdownItemViewInfoListBuilder(Supplier<Tab> tabSupplier, BookmarkState bookmarkState) {
         mPriorityOrderedSuggestionProcessors = new ArrayList<>();
         mActivityTabSupplier = tabSupplier;
-        mImageSupplier = null;
+        mImageSupplier = Optional.empty();
         mBookmarkState = bookmarkState;
-        mToolbarPositionSupplier = toolbarPositionSupplier;
-    }
-
-    /**
-     * Creates a UI context object containing common dependencies for suggestion processors.
-     *
-     * @param context Current context
-     * @param host Component creating suggestion view delegates and responding to suggestion events
-     * @param textProvider Provider of querying/editing the Omnibox
-     * @return AutocompleteUIContext with all necessary dependencies
-     */
-    private AutocompleteUIContext createUIContext(
-            Context context, SuggestionHost host, UrlBarEditingTextStateProvider textProvider) {
-        return new AutocompleteUIContext(
-                context,
-                host,
-                textProvider,
-                mImageSupplier,
-                mBookmarkState,
-                mActivityTabSupplier,
-                mShareDelegateSupplier,
-                mToolbarPositionSupplier);
     }
 
     /**
@@ -102,30 +70,36 @@ class DropdownItemViewInfoListBuilder {
             Context context, SuggestionHost host, UrlBarEditingTextStateProvider textProvider) {
         assert mPriorityOrderedSuggestionProcessors.size() == 0 : "Processors already initialized.";
 
+        final Supplier<ShareDelegate> shareSupplier =
+                () -> mShareDelegateSupplier == null ? null : mShareDelegateSupplier.get();
+
         mImageSupplier =
-                OmniboxFeatures.isLowMemoryDevice() ? null : new OmniboxImageSupplier(context);
+                OmniboxFeatures.isLowMemoryDevice()
+                        ? Optional.empty()
+                        : Optional.of(new OmniboxImageSupplier(context));
 
-        AutocompleteUIContext uiContext = createUIContext(context, host, textProvider);
-
-        mGroupSeparatorProcessor = new GroupSeparatorProcessor(uiContext.context);
-        mHeaderProcessor = new HeaderProcessor(uiContext.context);
-        registerSuggestionProcessor(new EditUrlSuggestionProcessor(uiContext));
-        registerSuggestionProcessor(new AnswerSuggestionProcessor(uiContext));
-        registerSuggestionProcessor(new ClipboardSuggestionProcessor(uiContext));
-        registerSuggestionProcessor(new EntitySuggestionProcessor(uiContext));
-        registerSuggestionProcessor(new TailSuggestionProcessor(uiContext));
-        registerSuggestionProcessor(new MostVisitedTilesProcessor(uiContext));
-        if (OmniboxFeatures.sAndroidHubSearchTabGroups.isEnabled()) {
-            registerSuggestionProcessor(new TabGroupSuggestionProcessor(uiContext));
-        }
-        registerSuggestionProcessor(new BasicSuggestionProcessor(uiContext));
+        mGroupSeparatorProcessor = new GroupSeparatorProcessor(context);
+        mHeaderProcessor = new HeaderProcessor(context);
+        registerSuggestionProcessor(
+                new EditUrlSuggestionProcessor(
+                        context, host, mImageSupplier, mActivityTabSupplier, shareSupplier));
+        registerSuggestionProcessor(
+                new AnswerSuggestionProcessor(context, host, textProvider, mImageSupplier));
+        registerSuggestionProcessor(
+                new ClipboardSuggestionProcessor(context, host, mImageSupplier));
+        registerSuggestionProcessor(
+                new EntitySuggestionProcessor(
+                        context, host, textProvider, mImageSupplier, mBookmarkState));
+        registerSuggestionProcessor(new TailSuggestionProcessor(context, host));
+        registerSuggestionProcessor(new MostVisitedTilesProcessor(context, host, mImageSupplier));
+        registerSuggestionProcessor(
+                new BasicSuggestionProcessor(
+                        context, host, textProvider, mImageSupplier, mBookmarkState));
     }
 
     void destroy() {
-        if (mImageSupplier != null) {
-            mImageSupplier.destroy();
-        }
-        mImageSupplier = null;
+        mImageSupplier.ifPresent(s -> s.destroy());
+        mImageSupplier = Optional.empty();
     }
 
     /**
@@ -134,7 +108,7 @@ class DropdownItemViewInfoListBuilder {
      *
      * @param processor SuggestionProcessor that handles OmniboxSuggestions.
      */
-    @VisibleForTesting
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     void registerSuggestionProcessor(SuggestionProcessor processor) {
         mPriorityOrderedSuggestionProcessors.add(processor);
     }
@@ -163,9 +137,7 @@ class DropdownItemViewInfoListBuilder {
      * @param profile Current user profile.
      */
     void setProfile(Profile profile) {
-        if (mImageSupplier != null) {
-            mImageSupplier.setProfile(profile);
-        }
+        mImageSupplier.ifPresent(s -> s.setProfile(profile));
     }
 
     /**
@@ -183,9 +155,7 @@ class DropdownItemViewInfoListBuilder {
      * @param activated Indicates whether omnibox session is activated.
      */
     void onOmniboxSessionStateChange(boolean activated) {
-        if (!activated && mImageSupplier != null) {
-            mImageSupplier.resetCache();
-        }
+        if (!activated) mImageSupplier.ifPresent(s -> s.resetCache());
 
         mHeaderProcessor.onOmniboxSessionStateChange(activated);
         for (int index = 0; index < mPriorityOrderedSuggestionProcessors.size(); index++) {
@@ -196,9 +166,7 @@ class DropdownItemViewInfoListBuilder {
     /** Signals that native initialization has completed. */
     void onNativeInitialized() {
         mHeaderProcessor.onNativeInitialized();
-        if (mImageSupplier != null) {
-            mImageSupplier.onNativeInitialized();
-        }
+        mImageSupplier.ifPresent(s -> s.onNativeInitialized());
 
         for (int index = 0; index < mPriorityOrderedSuggestionProcessors.size(); index++) {
             mPriorityOrderedSuggestionProcessors.get(index).onNativeInitialized();
@@ -249,26 +217,16 @@ class DropdownItemViewInfoListBuilder {
             result.add(new DropdownItemViewInfo(mGroupSeparatorProcessor, model, groupDetails));
         }
 
-        boolean toolbarOnBottom =
-                ChromeFeatureList.sAndroidBottomToolbarV2ReverseOrderSuggestionsList.getValue()
-                        && assumeNonNull(mToolbarPositionSupplier.get()) == ControlsPosition.BOTTOM;
-        var roundingStartEdge =
-                toolbarOnBottom
-                        ? DropdownCommonProperties.BG_BOTTOM_CORNER_ROUNDED
-                        : DropdownCommonProperties.BG_TOP_CORNER_ROUNDED;
-        var roundingEndEdge =
-                toolbarOnBottom
-                        ? DropdownCommonProperties.BG_TOP_CORNER_ROUNDED
-                        : DropdownCommonProperties.BG_BOTTOM_CORNER_ROUNDED;
-
         for (int indexInList = 0; indexInList < numGroupMatches; indexInList++) {
             var indexOnList = firstVerticalPosition + indexInList;
             AutocompleteMatch match = groupMatches.get(indexInList);
             var processor = getProcessorForSuggestion(match, indexOnList);
             var model = processor.createModel();
 
-            model.set(roundingStartEdge, indexInList == 0);
-            model.set(roundingEndEdge, indexInList == numGroupMatches - 1);
+            model.set(DropdownCommonProperties.BG_TOP_CORNER_ROUNDED, indexInList == 0);
+            model.set(
+                    DropdownCommonProperties.BG_BOTTOM_CORNER_ROUNDED,
+                    indexInList == numGroupMatches - 1);
             model.set(DropdownCommonProperties.SHOW_DIVIDER, indexInList < numGroupMatches - 1);
 
             processor.populateModel(input, match, model, indexOnList);
@@ -368,14 +326,6 @@ class DropdownItemViewInfoListBuilder {
             // Inner loop to populate AutocompleteMatch objects belonging to this group.
             while (index < newMatchesCount) {
                 var match = newMatches.get(index);
-                if (OmniboxFeatures.sRemoveSroIncludingVerbatimMatch.getValue()) {
-                    if (match.getType() == OmniboxSuggestionType.SEARCH_WHAT_YOU_TYPED
-                            || match.getType() == OmniboxSuggestionType.URL_WHAT_YOU_TYPED) {
-                        index++;
-                        continue;
-                    }
-                }
-
                 var matchGroupConfig =
                         groupsInfo.getGroupConfigsOrDefault(
                                 match.getGroupId(), GroupConfig.getDefaultInstance());
@@ -383,10 +333,6 @@ class DropdownItemViewInfoListBuilder {
                 currentGroupMatches.add(match);
                 index++;
             }
-
-            // Corner case: if disabling SRO and the verbatim match on the Web, the top group may be
-            // empty.
-            if (currentGroupMatches.isEmpty()) continue;
 
             // Append this suggestions group/section to resulting model, following the render type
             // dictated by GroupConfig.

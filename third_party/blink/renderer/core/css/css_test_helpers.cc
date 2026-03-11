@@ -30,11 +30,9 @@
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/execution_context/security_context.h"
-#include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
 
 namespace blink {
@@ -56,7 +54,7 @@ CSSRuleList* TestStyleSheet::CssRules() {
 
 RuleSet& TestStyleSheet::GetRuleSet() {
   RuleSet& rule_set = style_sheet_->Contents()->EnsureRuleSet(
-      MediaQueryEvaluator(document_->GetFrame()), /*mixins=*/{});
+      MediaQueryEvaluator(document_->GetFrame()));
   rule_set.CompactRulesIfNeeded();
   return rule_set;
 }
@@ -73,7 +71,7 @@ void TestStyleSheet::AddCSSRules(const String& css_text, bool is_empty_sheet) {
 
 CSSStyleSheet* CreateStyleSheet(Document& document) {
   return CSSStyleSheet::CreateInline(
-      document, NullURL(), TextPosition::MinimumPosition(), Utf8Encoding());
+      document, NullURL(), TextPosition::MinimumPosition(), UTF8Encoding());
 }
 
 RuleSet* CreateRuleSet(Document& document, String text) {
@@ -83,8 +81,7 @@ RuleSet* CreateRuleSet(Document& document, String text) {
       MakeGarbageCollected<MediaQueryEvaluator>(document.GetFrame());
   auto* sheet = CSSStyleSheet::Create(document, init, exception_state);
   sheet->replaceSync(text, exception_state);
-  return &sheet->Contents()->EnsureRuleSet(*media_query_evaluator,
-                                           /*mixins=*/{});
+  return &sheet->Contents()->EnsureRuleSet(*media_query_evaluator);
 }
 
 PropertyRegistration* CreatePropertyRegistration(const String& name,
@@ -199,8 +196,7 @@ const CSSValue* ParseLonghand(Document& document,
   }
 
   const auto* context = MakeGarbageCollected<CSSParserContext>(document);
-  CSSParserLocalContext local_context =
-      CSSParserLocalContext::CreateWithoutPropertyForTest();
+  CSSParserLocalContext local_context;
 
   CSSParserTokenStream stream(value);
   return longhand->ParseSingleValue(stream, *context, local_context);
@@ -224,7 +220,7 @@ StyleRuleBase* ParseNestedRule(Document& document,
                                CSSNestingType nesting_type,
                                StyleRule* parent_rule_for_nesting) {
   auto* sheet = CSSStyleSheet::CreateInline(
-      document, NullURL(), TextPosition::MinimumPosition(), Utf8Encoding());
+      document, NullURL(), TextPosition::MinimumPosition(), UTF8Encoding());
   const auto* context = MakeGarbageCollected<CSSParserContext>(document);
   return CSSParser::ParseRule(context, sheet->Contents(), nesting_type,
                               parent_rule_for_nesting, text);
@@ -236,9 +232,7 @@ const CSSValue* ParseValue(Document& document, String syntax, String value) {
     return nullptr;
   }
   const auto* context = MakeGarbageCollected<CSSParserContext>(document);
-  CSSParserLocalContext local_context =
-      CSSParserLocalContext::CreateWithoutPropertyForTest();
-  return syntax_definition->Parse(value, *context, local_context,
+  return syntax_definition->Parse(value, *context,
                                   /* is_animation_tainted */ false);
 }
 
@@ -259,130 +253,6 @@ CSSSelectorList* ParseSelectorList(const String& string,
       stream, context, nesting_type, parent_rule_for_nesting,
       /* semicolon_aborts_nested_selector */ false, sheet, arena);
   return CSSSelectorList::AdoptSelectorVector(vector);
-}
-
-String ToString(PseudoId pseudo_id) {
-  switch (pseudo_id) {
-    case kPseudoIdNone:
-      return "kPseudoIdNone";
-    case kPseudoIdFirstLine:
-      return "kPseudoIdFirstLine";
-    case kPseudoIdFirstLetter:
-      return "kPseudoIdFirstLetter";
-    case kPseudoIdCheckMark:
-      return "kPseudoIdCheckMark";
-    case kPseudoIdBefore:
-      return "kPseudoIdBefore";
-    case kPseudoIdAfter:
-      return "kPseudoIdAfter";
-    case kPseudoIdPickerIcon:
-      return "kPseudoIdPickerIcon";
-    case kPseudoIdInterestHint:
-      return "kPseudoIdInterestHint";
-    case kPseudoIdMarker:
-      return "kPseudoIdMarker";
-    case kPseudoIdBackdrop:
-      return "kPseudoIdBackdrop";
-    case kPseudoIdSelection:
-      return "kPseudoIdSelection";
-    case kPseudoIdScrollbar:
-      return "kPseudoIdScrollbar";
-    case kPseudoIdScrollMarker:
-      return "kPseudoIdScrollMarker";
-    case kPseudoIdScrollMarkerGroup:
-      return "kPseudoIdScrollMarkerGroup";
-    case kPseudoIdScrollButton:
-      return "kPseudoIdScrollButton";
-    case kPseudoIdScrollButtonBlockStart:
-      return "kPseudoIdScrollButtonBlockStart";
-    case kPseudoIdScrollButtonInlineStart:
-      return "kPseudoIdScrollButtonInlineStart";
-    case kPseudoIdScrollButtonInlineEnd:
-      return "kPseudoIdScrollButtonInlineEnd";
-    case kPseudoIdScrollButtonBlockEnd:
-      return "kPseudoIdScrollButtonBlockEnd";
-    case kPseudoIdColumn:
-      return "kPseudoIdColumn";
-    case kPseudoIdSearchText:
-      return "kPseudoIdSearchText";
-    case kPseudoIdTargetText:
-      return "kPseudoIdTargetText";
-    case kPseudoIdHighlight:
-      return "kPseudoIdHighlight";
-    case kPseudoIdSpellingError:
-      return "kPseudoIdSpellingError";
-    case kPseudoIdGrammarError:
-      return "kPseudoIdGrammarError";
-    case kPseudoIdViewTransition:
-      return "kPseudoIdViewTransition";
-    case kPseudoIdViewTransitionGroup:
-      return "kPseudoIdViewTransitionGroup";
-    case kPseudoIdViewTransitionGroupChildren:
-      return "kPseudoIdViewTransitionGroupChildren";
-    case kPseudoIdViewTransitionImagePair:
-      return "kPseudoIdViewTransitionImagePair";
-    case kPseudoIdViewTransitionOld:
-      return "kPseudoIdViewTransitionOld";
-    case kPseudoIdViewTransitionNew:
-      return "kPseudoIdViewTransitionNew";
-    case kPseudoIdFirstLineInherited:
-      return "kPseudoIdFirstLineInherited";
-    case kPseudoIdScrollbarThumb:
-      return "kPseudoIdScrollbarThumb";
-    case kPseudoIdScrollbarButton:
-      return "kPseudoIdScrollbarButton";
-    case kPseudoIdScrollbarTrack:
-      return "kPseudoIdScrollbarTrack";
-    case kPseudoIdScrollbarTrackPiece:
-      return "kPseudoIdScrollbarTrackPiece";
-    case kPseudoIdScrollbarCorner:
-      return "kPseudoIdScrollbarCorner";
-    case kPseudoIdScrollMarkerGroupAfter:
-      return "kPseudoIdScrollMarkerGroupAfter";
-    case kPseudoIdScrollMarkerGroupBefore:
-      return "kPseudoIdScrollMarkerGroupBefore";
-    case kPseudoIdResizer:
-      return "kPseudoIdResizer";
-    case kPseudoIdInputListButton:
-      return "kPseudoIdInputListButton";
-    case kPseudoIdPlaceholder:
-      return "kPseudoIdPlaceholder";
-    case kPseudoIdFileSelectorButton:
-      return "kPseudoIdFileSelectorButton";
-    case kPseudoIdDetailsContent:
-      return "kPseudoIdDetailsContent";
-    case kPseudoIdPickerSelect:
-      return "kPseudoIdPickerSelect";
-    case kPseudoIdPermissionIcon:
-      return "kPseudoIdPermissionIcon";
-    case kAfterLastInternalPseudoId:
-      return "kAfterLastInternalPseudoId";
-    case kPseudoIdOverscrollAreaParent:
-      return "kPseudoIdOverscrollAreaParent";
-    case kPseudoIdInvalid:
-      return "kPseudoIdInvalid";
-  }
-}
-
-String ToString(const PseudoIdFlags& flags) {
-  StringBuilder builder;
-
-  builder.Append("[");
-
-  for (int i = PseudoIdFlags::kFirstValid; i <= PseudoIdFlags::kLastValid;
-       ++i) {
-    PseudoId pseudo_id = static_cast<PseudoId>(i);
-    if (flags.Has(pseudo_id)) {
-      if (builder.length() > 1) {
-        builder.Append(", ");
-      }
-      builder.Append(css_test_helpers::ToString(pseudo_id));
-    }
-  }
-
-  builder.Append("]");
-
-  return builder.ToString();
 }
 
 }  // namespace css_test_helpers

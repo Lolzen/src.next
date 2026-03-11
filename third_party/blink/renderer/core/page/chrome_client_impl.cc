@@ -248,32 +248,33 @@ void ChromeClientImpl::SetWindowRect(const gfx::Rect& requested_rect,
                                                   adjusted_rect);
 }
 
+void ChromeClientImpl::Minimize(LocalFrame&) {
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-void ChromeClientImpl::Minimize(LocalFrame&,
-                                WindowingControlsChangeCallback callback) {
   DCHECK(web_view_);
-  web_view_->Minimize(std::move(callback));
+  web_view_->Minimize();
+#endif
 }
 
-void ChromeClientImpl::Maximize(LocalFrame&,
-                                WindowingControlsChangeCallback callback) {
+void ChromeClientImpl::Maximize(LocalFrame&) {
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   DCHECK(web_view_);
-  web_view_->Maximize(std::move(callback));
+  web_view_->Maximize();
+#endif
 }
 
-void ChromeClientImpl::Restore(LocalFrame&,
-                               WindowingControlsChangeCallback callback) {
+void ChromeClientImpl::Restore(LocalFrame&) {
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   DCHECK(web_view_);
-  web_view_->Restore(std::move(callback));
+  web_view_->Restore();
+#endif
 }
 
-void ChromeClientImpl::SetResizable(bool resizable,
-                                    LocalFrame& frame,
-                                    WindowingControlsChangeCallback callback) {
+void ChromeClientImpl::SetResizable(bool resizable, LocalFrame& frame) {
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   DCHECK(web_view_);
-  web_view_->SetResizable(resizable, std::move(callback));
+  web_view_->SetResizable(resizable);
+#endif
 }
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
 gfx::Rect ChromeClientImpl::RootWindowRect(LocalFrame& frame) {
   // The WindowRect() for each WebFrameWidget will be the same rect of the top
@@ -313,15 +314,9 @@ void ChromeClientImpl::TakeFocus(mojom::blink::FocusType type) {
 void ChromeClientImpl::SetKeyboardFocusURL(Element* new_focus_element) {
   DCHECK(web_view_);
   KURL focus_url;
-  bool is_mouse_focus =
-      new_focus_element && new_focus_element->GetDocument().LastFocusType() ==
-                               mojom::blink::FocusType::kMouse;
   if (new_focus_element && new_focus_element->IsLiveLink() &&
-      new_focus_element->ShouldHaveFocusAppearance() &&
-      (!RuntimeEnabledFeatures::ClickFocusDoesntPersistStatusBubbleEnabled() ||
-       !is_mouse_focus)) {
+      new_focus_element->ShouldHaveFocusAppearance())
     focus_url = new_focus_element->HrefURL();
-  }
   web_view_->SetKeyboardFocusURL(focus_url);
 }
 
@@ -347,11 +342,6 @@ void ChromeClientImpl::StartDragging(LocalFrame* frame,
 bool ChromeClientImpl::AcceptsLoadDrops() const {
   DCHECK(web_view_);
   return web_view_->GetRendererPreferences().can_accept_load_drops;
-}
-
-std::optional<bool> ChromeClientImpl::GetWebRTCPostQuantumKeyAgreement() const {
-  CHECK(web_view_);
-  return web_view_->GetRendererPreferences().webrtc_post_quantum_key_agreement;
 }
 
 Page* ChromeClientImpl::CreateWindowDelegate(
@@ -425,6 +415,39 @@ void ChromeClientImpl::SetOverscrollBehavior(
   DCHECK(main_frame.IsOutermostMainFrame());
   main_frame.GetWidgetForLocalRoot()->SetOverscrollBehavior(
       overscroll_behavior);
+}
+
+void ChromeClientImpl::Show(LocalFrame& frame,
+                            LocalFrame& opener_frame,
+                            NavigationPolicy navigation_policy,
+                            bool user_gesture) {
+  DCHECK(web_view_);
+  const WebWindowFeatures& features = frame.GetPage()->GetWindowFeatures();
+  gfx::Rect bounds(features.x, features.y, features.width, features.height);
+
+  // The minimum size from popups opened from borderless apps differs from
+  // normal apps. When window.open is called, display-mode for the new frame is
+  // still undefined as the app hasn't loaded yet, thus opener frame is used.
+  int minimum_size =
+      navigation_policy == NavigationPolicy::kNavigationPolicyNewPopup &&
+              DisplayModeIsBorderless(opener_frame)
+          ? blink::kMinimumBorderlessWindowSize
+          : blink::kMinimumWindowSize;
+
+  // TODO(crbug.com/1515106): Refactor so that the limits only live browser-side
+  // instead of now partly being duplicated browser-side and renderer side.
+  const gfx::Rect rect_adjusted_for_minimum =
+      AdjustWindowRectForMinimum(bounds, minimum_size);
+  const gfx::Rect adjusted_rect = AdjustWindowRectForDisplay(
+      rect_adjusted_for_minimum, frame, minimum_size);
+  // Request the unadjusted rect if the browser may honor cross-screen bounds.
+  // Permission state is not readily available, so adjusted bounds are clamped
+  // to the same-screen, to retain legacy behavior of synchronous pending values
+  // and to avoid exposing other screen details to frames without permission.
+  // TODO(crbug.com/897300): Use permission state for better sync estimates or
+  // store unadjusted pending window rects if that will not break many sites.
+  web_view_->Show(opener_frame.GetLocalFrameToken(), navigation_policy,
+                  rect_adjusted_for_minimum, adjusted_rect, user_gesture);
 }
 
 bool ChromeClientImpl::ShouldReportDetailedMessageForSourceAndSeverity(
@@ -619,11 +642,6 @@ const display::ScreenInfo& ChromeClientImpl::GetScreenInfo(
 const display::ScreenInfos& ChromeClientImpl::GetScreenInfos(
     LocalFrame& frame) const {
   return frame.GetWidgetForLocalRoot()->GetScreenInfos();
-}
-
-const display::ScreenInfo& ChromeClientImpl::GetOriginalScreenInfo(
-    LocalFrame& frame) const {
-  return frame.GetWidgetForLocalRoot()->GetOriginalScreenInfo();
 }
 
 float ChromeClientImpl::InputEventsScaleForEmulation() const {
@@ -984,7 +1002,7 @@ PopupMenu* ChromeClientImpl::OpenPopupMenu(LocalFrame& frame,
                                            HTMLSelectElement& select) {
   NotifyPopupOpeningObservers();
 
-  if (use_external_popup_menus_) {
+  if (WebViewImpl::UseExternalPopupMenus()) {
     return MakeGarbageCollected<ExternalPopupMenu>(frame, select);
   }
 
@@ -1005,10 +1023,6 @@ void ChromeClientImpl::ClosePagePopup(PagePopup* popup) {
 DOMWindow* ChromeClientImpl::PagePopupWindowForTesting() const {
   DCHECK(web_view_);
   return web_view_->PagePopupWindow();
-}
-
-void ChromeClientImpl::SetUseExternalPopupMenus(bool value) {
-  use_external_popup_menus_ = value;
 }
 
 void ChromeClientImpl::SetBrowserControlsState(float top_height,
@@ -1059,10 +1073,9 @@ viz::FrameSinkId ChromeClientImpl::GetFrameSinkId(LocalFrame* frame) {
 
 void ChromeClientImpl::RequestDecode(LocalFrame* frame,
                                      const cc::DrawImage& image,
-                                     base::OnceCallback<void(bool)> callback,
-                                     bool speculative) {
+                                     base::OnceCallback<void(bool)> callback) {
   FrameWidget* widget = frame->GetWidgetForLocalRoot();
-  widget->RequestDecode(image, std::move(callback), speculative);
+  widget->RequestDecode(image, std::move(callback));
 }
 
 void ChromeClientImpl::NotifyPresentationTime(LocalFrame& frame,
@@ -1071,6 +1084,11 @@ void ChromeClientImpl::NotifyPresentationTime(LocalFrame& frame,
   if (!widget)
     return;
   widget->NotifyPresentationTime(std::move(callback));
+}
+
+void ChromeClientImpl::RequestBeginMainFrameNotExpected(LocalFrame& frame,
+                                                        bool request) {
+  frame.GetWidgetForLocalRoot()->RequestBeginMainFrameNotExpected(request);
 }
 
 int ChromeClientImpl::GetLayerTreeId(LocalFrame& frame) {
@@ -1179,15 +1197,6 @@ void ChromeClientImpl::SetShouldThrottleFrameRate(bool flag,
   }
 
   widget->SetShouldThrottleFrameRate(flag);
-}
-
-void ChromeClientImpl::RequestMainFrameOnCompositorAnimation(
-    LocalFrame& frame,
-    cc::PropertyChangeForcesCommitCriteria criteria,
-    bool force_propagation) {
-  WebFrameWidgetImpl* widget =
-      WebLocalFrameImpl::FromFrame(frame)->LocalRootFrameWidget();
-  widget->RequestMainFrameOnCompositorAnimation(criteria, force_propagation);
 }
 
 void ChromeClientImpl::SetHasScrollEventHandlers(LocalFrame* frame,
@@ -1528,8 +1537,8 @@ gfx::Rect ChromeClientImpl::AdjustWindowRectForDisplay(
   return window;
 }
 
-void ChromeClientImpl::OnFirstContentfulPaint(const base::TimeDelta& duration) {
-  web_view_->OnFirstContentfulPaint(duration);
+void ChromeClientImpl::OnFirstContentfulPaint() {
+  web_view_->OnFirstContentfulPaint();
 }
 
 }  // namespace blink

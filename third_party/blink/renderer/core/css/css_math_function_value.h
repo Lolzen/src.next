@@ -30,7 +30,8 @@ class CORE_EXPORT CSSMathFunctionValue : public CSSPrimitiveValue {
     return expression_.Get();
   }
 
-  const CalculationValue* ToCalcValue(const CSSLengthResolver&) const;
+  scoped_refptr<const CalculationValue> ToCalcValue(
+      const CSSLengthResolver&) const;
 
   bool MayHaveRelativeUnit() const;
 
@@ -68,7 +69,15 @@ class CORE_EXPORT CSSMathFunctionValue : public CSSPrimitiveValue {
   bool IsComputationallyIndependent() const;
   bool IsElementDependent() const;
 
+  // TODO(crbug.com/979895): The semantics of this function is still not very
+  // clear. Do not add new callers before further refactoring and cleanups.
+  // |DoubleValue()| can be called only when the math expression can be
+  // resolved into a single numeric value *without any type conversion* (e.g.,
+  // between px and em). Otherwise, it hits a DCHECK.
+  double DoubleValue() const;
+
   double ComputeSeconds(const CSSLengthResolver&) const;
+  double ComputeDegrees() const;
   double ComputeDegrees(const CSSLengthResolver&) const;
   double ComputeLengthPx(const CSSLengthResolver&) const;
   double ComputeDotsPerPixel(const CSSLengthResolver&) const;
@@ -76,7 +85,14 @@ class CORE_EXPORT CSSMathFunctionValue : public CSSPrimitiveValue {
   double ComputeNumber(const CSSLengthResolver&) const;
   double ComputePercentage(const CSSLengthResolver&) const;
   double ComputeValueInCanonicalUnit(const CSSLengthResolver&) const;
-  std::optional<double> GetValueIfKnown() const;
+  std::optional<double> GetValueIfKnown() const {
+    std::optional<double> val = expression_->GetValueIfKnown();
+    if (val.has_value()) {
+      return ClampToPermittedRange(CSSValueClampingUtils::ClampDouble(*val));
+    } else {
+      return val;
+    }
+  }
 
   bool AccumulateLengthArray(CSSLengthArray& length_array,
                              double multiplier) const;
@@ -125,10 +141,6 @@ class CORE_EXPORT CSSMathFunctionValue : public CSSPrimitiveValue {
       LogicalAxis,
       const TryTacticTransform&,
       const WritingDirectionMode&) const;
-
-  bool HasRandomFunctions() const {
-    return expression_ && expression_->HasRandomFunctions();
-  }
 
   void TraceAfterDispatch(blink::Visitor* visitor) const;
 

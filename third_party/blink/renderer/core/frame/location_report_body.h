@@ -28,7 +28,8 @@ class CORE_EXPORT LocationReportBody : public ReportBody {
       std::optional<uint32_t> line_number,
       std::optional<uint32_t> column_number);
 
-  static ReportLocation CreateReportLocation(SourceLocation* location);
+  static ReportLocation CreateReportLocation(
+      std::unique_ptr<SourceLocation> location);
 
   explicit LocationReportBody(const ReportLocation& location)
       : source_file_(location.file),
@@ -36,8 +37,8 @@ class CORE_EXPORT LocationReportBody : public ReportBody {
         column_number_(location.column_number) {}
 
  protected:
-  explicit LocationReportBody(SourceLocation* location)
-      : LocationReportBody(CreateReportLocation(location)) {}
+  explicit LocationReportBody(std::unique_ptr<SourceLocation> location)
+      : LocationReportBody(CreateReportLocation(std::move(location))) {}
 
   explicit LocationReportBody(
       const String& source_file = g_empty_string,

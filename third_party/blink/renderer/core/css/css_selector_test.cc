@@ -57,7 +57,7 @@ TEST(CSSSelector, Representations) {
       "div::first-line { }"
       ".a.b.c { }"
       "div:not(.a) { }"        // without class a
-      "div:not(:visited) { }"  // without the visited pseudo-class
+      "div:not(:visited) { }"  // without the visited pseudo class
 
       "[attr=\"value\"] { }"   // Exact equality
       "[attr~=\"value\"] { }"  // One of a space-separated list
@@ -635,17 +635,5 @@ TEST(CSSSelector, RenestScope) {
   // the parent rule changed:
   EXPECT_EQ(list, list->Renest(b));
 }
-
-#if DCHECK_IS_ON()
-
-TEST(CSSSelector, ShowWithParentPseudo) {
-  test::TaskEnvironment task_environment;
-  CSSSelectorList* list = ParseSelectorList("& .x");
-  ASSERT_TRUE(list);
-  ASSERT_TRUE(list->First());
-  list->First()->Show();  // Don't crash.
-}
-
-#endif  // DCHECK_IS_ON()
 
 }  // namespace blink

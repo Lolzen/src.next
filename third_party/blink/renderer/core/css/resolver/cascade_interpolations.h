@@ -5,8 +5,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_CSS_RESOLVER_CASCADE_INTERPOLATIONS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_RESOLVER_CASCADE_INTERPOLATIONS_H_
 
-#include <array>
-
 #include "base/check_op.h"
 #include "third_party/blink/renderer/core/animation/interpolation.h"
 #include "third_party/blink/renderer/core/animation/property_handle.h"

@@ -15,7 +15,11 @@
 #endif  // defined(METRICS_IMPLEMENTATION)
 
 #else  // defined(WIN32)
+#if defined(METRICS_IMPLEMENTATION)
 #define METRICS_EXPORT __attribute__((visibility("default")))
+#else
+#define METRICS_EXPORT
+#endif
 #endif
 
 #else  // defined(COMPONENT_BUILD)

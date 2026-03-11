@@ -10,10 +10,10 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.R;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetContent;
 import org.chromium.ui.widget.ButtonCompat;
@@ -22,7 +22,6 @@ import org.chromium.ui.widget.ButtonCompat;
  * A view for the Shared Tab Group Notice Bottom Sheet. Inform the user that changes made to a
  * shared tab group will be visible to everyone in the group.
  */
-@NullMarked
 public class TabGroupShareNoticeBottomSheetView extends LinearLayout implements BottomSheetContent {
     private final ViewGroup mContentView;
     private final ButtonCompat mConfirmButton;
@@ -58,7 +57,8 @@ public class TabGroupShareNoticeBottomSheetView extends LinearLayout implements 
     }
 
     @Override
-    public @Nullable View getToolbarView() {
+    @Nullable
+    public View getToolbarView() {
         return null;
     }
 
@@ -86,12 +86,17 @@ public class TabGroupShareNoticeBottomSheetView extends LinearLayout implements 
     }
 
     @Override
+    public int getPeekHeight() {
+        return HeightMode.DISABLED;
+    }
+
+    @Override
     public boolean hideOnScroll() {
         return true;
     }
 
     @Override
-    public String getSheetContentDescription(Context context) {
+    public @NonNull String getSheetContentDescription(Context context) {
         return context.getString(R.string.tab_group_share_notice_bottom_sheet_content_description);
     }
 

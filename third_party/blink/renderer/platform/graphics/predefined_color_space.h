@@ -22,8 +22,6 @@ enum class PredefinedColorSpace {
   kRec2100HLG,
   kRec2100PQ,
   kSRGBLinear,
-  kDisplayP3Linear,
-  kRec2100Linear,
 };
 
 // Return the gfx::ColorSpace or SkColorSpace for a PredefinedColorSpace.

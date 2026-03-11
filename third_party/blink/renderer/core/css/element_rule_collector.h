@@ -24,6 +24,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_ELEMENT_RULE_COLLECTOR_H_
 
 #include "base/gtest_prod_util.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/stack_allocated.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/container_selector.h"
@@ -131,8 +132,6 @@ namespace blink {
 
 using StyleRuleList = GCedHeapVector<Member<StyleRule>>;
 
-struct ContextWithStyleScopeFrame;
-
 // Manages the process of finding what rules in a RuleSet apply to a given
 // Element. These tend to be used several times in different contexts and should
 // have ClearMatchedRules called before use.
@@ -210,12 +209,12 @@ class CORE_EXPORT ElementRuleCollector {
   void AddTryStyleProperties();
   void AddTryTacticsStyleProperties();
   void BeginAddingAuthorRulesForTreeScope(const TreeScope& tree_scope) {
-    current_rule_tree_scope_ = &tree_scope;
+    current_matching_tree_scope_ = &tree_scope;
     result_.BeginAddingAuthorRulesForTreeScope(tree_scope);
   }
 
   // Return the pseudo id if the style request is for rules associated with a
-  // pseudo-element, or kPseudoNone if not.
+  // pseudo element, or kPseudoNone if not.
   PseudoId GetPseudoId() const { return pseudo_style_request_.pseudo_id; }
   const AtomicString& GetPseudoArgument() const {
     return pseudo_style_request_.pseudo_argument;
@@ -232,25 +231,6 @@ class CORE_EXPORT ElementRuleCollector {
   const HeapVector<MatchedRule, 32>& MatchedRulesForTest() const {
     return matched_rules_;
   }
-
-  // For SVG <use> shadow trees, stylesheets from the referenced subtree are
-  // applied as if they belong to the same scope as the elements for cascading
-  // purposes, and for populating tree-scoped names and references.
-  // However, we need to use the TreeScope of where the rules actually came from
-  // in order to find the stylesheet and create CSSOM wrappers for devtools
-  // tracking. We need to override current_rule_tree_scope_ while collecting
-  // those rules.
-  class ScopedRuleTreeScope {
-    STACK_ALLOCATED();
-
-   public:
-    ScopedRuleTreeScope(ElementRuleCollector& collector,
-                        const TreeScope& rule_tree_scope)
-        : tree_scope_(&collector.current_rule_tree_scope_, &rule_tree_scope) {}
-
-   private:
-    base::AutoReset<const TreeScope*> tree_scope_;
-  };
 
  private:
   // If stop_at_first_match = true, CollectMatchingRules*() will stop
@@ -269,12 +249,13 @@ class CORE_EXPORT ElementRuleCollector {
   bool CollectMatchingRulesInternal(const MatchRequest&, PartNames* part_names);
 
   template <bool stop_at_first_match, bool perf_trace_enabled>
-  bool CollectMatchingRulesForListInternal(base::span<const RuleData>,
-                                           const MatchRequest&,
-                                           const RuleSet*,
-                                           int,
-                                           const SelectorChecker&,
-                                           ContextWithStyleScopeFrame&);
+  bool CollectMatchingRulesForListInternal(
+      base::span<const RuleData>,
+      const MatchRequest&,
+      const RuleSet*,
+      int,
+      const SelectorChecker&,
+      SelectorChecker::SelectorCheckingContext&);
 
   template <bool stop_at_first_match>
   bool CollectMatchingRulesForList(base::span<const RuleData>,
@@ -282,8 +263,11 @@ class CORE_EXPORT ElementRuleCollector {
                                    const RuleSet*,
                                    int,
                                    const SelectorChecker&,
-                                   ContextWithStyleScopeFrame&);
+                                   SelectorChecker::SelectorCheckingContext&);
 
+  bool Match(SelectorChecker&,
+             const SelectorChecker::SelectorCheckingContext&,
+             MatchResult&);
   void DidMatchRule(const RuleData*,
                     uint16_t layer_order,
                     const ContainerQuery*,
@@ -315,9 +299,7 @@ class CORE_EXPORT ElementRuleCollector {
       false;  // Document rules and watched selectors.
   bool suppress_visited_;
   EInsideLink inside_link_;
-  // The TreeScope from which the currently matched rules originate.
-  // This is used to associate rules with stylesheets for devtools.
-  const TreeScope* current_rule_tree_scope_ = nullptr;
+  const TreeScope* current_matching_tree_scope_ = nullptr;
 
   HeapVector<MatchedRule, 32> matched_rules_;
   ContainerSelectorCache container_selector_cache_;

@@ -27,8 +27,10 @@
 #include "base/time/time.h"
 #include "chrome/browser/ash/account_manager/account_manager_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chromeos/ash/components/account_manager/account_manager_factory.h"
 #include "chromeos/ash/components/install_attributes/install_attributes.h"
+#include "components/account_manager_core/chromeos/account_manager_facade_factory.h"
+#include "components/prefs/pref_service.h"
+#include "components/signin/public/base/signin_pref_names.h"
 #include "components/user_manager/user_manager.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #endif
@@ -40,20 +42,35 @@
 namespace {
 
 #if BUILDFLAG(IS_CHROMEOS)
-class ChromeOSChildAccountReconcilorDelegate
+class ChromeOSLimitedAccessAccountReconcilorDelegate
     : public signin::MirrorAccountReconcilorDelegate {
  public:
-  ChromeOSChildAccountReconcilorDelegate(
-      signin::IdentityManager* identity_manager)
-      : signin::MirrorAccountReconcilorDelegate(identity_manager) {}
+  enum class ReconcilorBehavior {
+    kChild,
+    kEnterprise,
+  };
 
-  ChromeOSChildAccountReconcilorDelegate(
-      const ChromeOSChildAccountReconcilorDelegate&) = delete;
-  ChromeOSChildAccountReconcilorDelegate& operator=(
-      const ChromeOSChildAccountReconcilorDelegate&) = delete;
+  ChromeOSLimitedAccessAccountReconcilorDelegate(
+      ReconcilorBehavior reconcilor_behavior,
+      signin::IdentityManager* identity_manager)
+      : signin::MirrorAccountReconcilorDelegate(identity_manager),
+        reconcilor_behavior_(reconcilor_behavior) {}
+
+  ChromeOSLimitedAccessAccountReconcilorDelegate(
+      const ChromeOSLimitedAccessAccountReconcilorDelegate&) = delete;
+  ChromeOSLimitedAccessAccountReconcilorDelegate& operator=(
+      const ChromeOSLimitedAccessAccountReconcilorDelegate&) = delete;
 
   base::TimeDelta GetReconcileTimeout() const override {
-    return base::Seconds(10);
+    switch (reconcilor_behavior_) {
+      case ReconcilorBehavior::kChild:
+        return base::Seconds(10);
+      case ReconcilorBehavior::kEnterprise:
+        // 60 seconds is enough to cover about 99% of all reconcile cases.
+        return base::Seconds(60);
+      default:
+        NOTREACHED();
+    }
   }
 
   void OnReconcileError(const GoogleServiceAuthError& error) override {
@@ -75,12 +92,16 @@ class ChromeOSChildAccountReconcilorDelegate
     user_manager::UserManager::Get()->SaveForceOnlineSignin(
         primary_user->GetAccountId(), true /* force_online_signin */);
 
-    UMA_HISTOGRAM_BOOLEAN(
-        "ChildAccountReconcilor.ForcedUserExitOnReconcileError", true);
-
+    if (reconcilor_behavior_ == ReconcilorBehavior::kChild) {
+      UMA_HISTOGRAM_BOOLEAN(
+          "ChildAccountReconcilor.ForcedUserExitOnReconcileError", true);
+    }
     // Force a logout.
     chrome::AttemptUserExit();
   }
+
+ private:
+  const ReconcilorBehavior reconcilor_behavior_;
 };
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
@@ -123,8 +144,7 @@ AccountReconcilorFactory::BuildServiceInstanceForBrowserContext(
   std::unique_ptr<AccountReconcilor> reconcilor =
       std::make_unique<AccountReconcilor>(
           identity_manager, signin_client,
-          ash::AccountManagerFactory::Get()->GetAccountManagerFacade(
-              profile->GetPath().value()),
+          ::GetAccountManagerFacade(profile->GetPath().value()),
           CreateAccountReconcilorDelegate(profile));
 #else
   std::unique_ptr<AccountReconcilor> reconcilor =
@@ -134,6 +154,15 @@ AccountReconcilorFactory::BuildServiceInstanceForBrowserContext(
 #endif  // BUILDFLAG(IS_CHROMEOS)
   reconcilor->Initialize(true /* start_reconcile_if_tokens_available */);
   return reconcilor;
+}
+
+void AccountReconcilorFactory::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+#if BUILDFLAG(IS_CHROMEOS)
+  registry->RegisterBooleanPref(prefs::kForceLogoutUnauthenticatedUserEnabled,
+                                false);
+#endif
+  AccountReconcilor::RegisterProfilePrefs(registry);
 }
 
 // static
@@ -147,7 +176,17 @@ AccountReconcilorFactory::CreateAccountReconcilorDelegate(Profile* profile) {
       // Only for child accounts on Chrome OS, use the specialized Mirror
       // delegate.
       if (profile->IsChild()) {
-        return std::make_unique<ChromeOSChildAccountReconcilorDelegate>(
+        return std::make_unique<ChromeOSLimitedAccessAccountReconcilorDelegate>(
+            ChromeOSLimitedAccessAccountReconcilorDelegate::ReconcilorBehavior::
+                kChild,
+            IdentityManagerFactory::GetForProfile(profile));
+      }
+
+      if (profile->GetPrefs()->GetBoolean(
+              prefs::kForceLogoutUnauthenticatedUserEnabled)) {
+        return std::make_unique<ChromeOSLimitedAccessAccountReconcilorDelegate>(
+            ChromeOSLimitedAccessAccountReconcilorDelegate::ReconcilorBehavior::
+                kEnterprise,
             IdentityManagerFactory::GetForProfile(profile));
       }
 #endif
@@ -160,7 +199,8 @@ AccountReconcilorFactory::CreateAccountReconcilorDelegate(Profile* profile) {
     case signin::AccountConsistencyMethod::kDice:
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
       return std::make_unique<signin::DiceAccountReconcilorDelegate>(
-          IdentityManagerFactory::GetForProfile(profile));
+          IdentityManagerFactory::GetForProfile(profile),
+          ChromeSigninClientFactory::GetForProfile(profile));
 #else
       NOTREACHED();
 #endif

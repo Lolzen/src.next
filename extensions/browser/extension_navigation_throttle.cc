@@ -4,10 +4,10 @@
 
 #include "extensions/browser/extension_navigation_throttle.h"
 
-#include <algorithm>
 #include <string>
 #include <string_view>
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
 #include "components/guest_view/buildflags/buildflags.h"
 #include "content/public/browser/browser_thread.h"
@@ -42,12 +42,9 @@
 
 #if BUILDFLAG(ENABLE_GUEST_VIEW)
 #include "components/guest_view/browser/guest_view_base.h"
+#include "extensions/browser/guest_view/app_view/app_view_guest.h"
 #include "extensions/browser/guest_view/mime_handler_view/mime_handler_view_embedder.h"
 #include "extensions/browser/guest_view/web_view/web_view_guest.h"
-
-#if BUILDFLAG(ENABLE_PLATFORM_APPS)
-#include "extensions/browser/guest_view/app_view/app_view_guest.h"
-#endif
 #endif
 
 #if BUILDFLAG(ENABLE_PLATFORM_APPS)
@@ -79,14 +76,12 @@ bool ShouldBlockNavigationToPlatformAppResource(
       return false;
     }
 
-#if BUILDFLAG(ENABLE_PLATFORM_APPS)
     // Platform apps can be embedded by other platform apps using an <appview>
     // tag.
     auto* app_view = AppViewGuest::FromGuestViewBase(guest);
     if (app_view) {
       return false;
     }
-#endif
 
     // Webviews owned by the platform app can embed platform app resources via
     // "accessible_resources".
@@ -138,8 +133,8 @@ bool ShouldBlockNavigationToPlatformAppResource(
 }  // namespace
 
 ExtensionNavigationThrottle::ExtensionNavigationThrottle(
-    content::NavigationThrottleRegistry& registry)
-    : content::NavigationThrottle(registry) {}
+    content::NavigationHandle* navigation_handle)
+    : content::NavigationThrottle(navigation_handle) {}
 
 ExtensionNavigationThrottle::~ExtensionNavigationThrottle() = default;
 
@@ -205,7 +200,7 @@ ExtensionNavigationThrottle::WillStartOrRedirectRequest() {
       // domain. Note: We can't use the extension_urls::IsWebstoreDomain check
       // here, as the webstore hosted app is associated with a specific path and
       // we don't want to block navigations to other paths on that domain.
-      if (url.DomainIs(extension_urls::GetNewWebstoreLaunchURL().GetHost())) {
+      if (url.DomainIs(extension_urls::GetNewWebstoreLaunchURL().host())) {
         return content::NavigationThrottle::BLOCK_REQUEST;
       }
     }
@@ -229,7 +224,8 @@ ExtensionNavigationThrottle::WillStartOrRedirectRequest() {
   // block any requests to URLs in their extension origin.
   if (target_extension->is_hosted_app()) {
     std::string_view resource_root_relative_path =
-        url.path().empty() ? std::string_view() : url.path().substr(1);
+        url.path_piece().empty() ? std::string_view()
+                                 : url.path_piece().substr(1);
     if (!IconsInfo::GetIcons(target_extension)
              .ContainsPath(resource_root_relative_path)) {
       return content::NavigationThrottle::BLOCK_REQUEST;
@@ -280,7 +276,7 @@ ExtensionNavigationThrottle::WillStartOrRedirectRequest() {
     bool allowed = true;
     url_request_util::AllowCrossRendererResourceLoadHelper(
         is_guest, target_extension, owner_extension,
-        storage_partition_config.partition_name(), url.GetPath(),
+        storage_partition_config.partition_name(), url.path(),
         navigation_handle()->GetPageTransition(), &allowed);
     if (!allowed) {
       return content::NavigationThrottle::BLOCK_REQUEST;
@@ -361,8 +357,8 @@ ExtensionNavigationThrottle::WillStartOrRedirectRequest() {
   const url::Origin& initiator_origin =
       navigation_handle()->GetInitiatorOrigin().value();
   if (initiator_origin.scheme() == kExtensionScheme &&
-      std::ranges::contains(MimeTypesHandler::GetMIMETypeAllowlist(),
-                            initiator_origin.host())) {
+      base::Contains(MimeTypesHandler::GetMIMETypeAllowlist(),
+                     initiator_origin.host())) {
     return content::NavigationThrottle::PROCEED;
   }
 
@@ -438,7 +434,7 @@ ExtensionNavigationThrottle::WillProcessResponse() {
     return PROCEED;
   }
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_GUEST_VIEW)
   auto* mime_handler_view_embedder =
       MimeHandlerViewEmbedder::Get(navigation_handle()->GetFrameTreeNodeId());
   if (!mime_handler_view_embedder) {

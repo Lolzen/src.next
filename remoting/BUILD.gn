@@ -59,11 +59,11 @@ group("remoting_all") {
     }
   }
 
-  if (enable_remoting_client) {
-    deps += [ "//remoting/client/common" ]
-    if (is_linux) {
-      deps += [ "//remoting/client/cli:remoting_client_main" ]
-    }
+  if (enable_remoting_cli_client) {
+    deps += [
+      "//remoting/client/cli:remoting_client_main",
+      "//remoting/client/common",
+    ]
   }
 }
 
@@ -154,7 +154,7 @@ if (enable_remoting_host) {
       "//remoting/codec:encoder",
       "//remoting/host:common",
       "//remoting/host:test_support",
-      "//remoting/protocol",
+      "//remoting/protocol:protocol",
       "//remoting/signaling:test_support",
       "//remoting/test:test_support",
       "//testing/gtest",

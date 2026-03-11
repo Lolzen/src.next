@@ -6,7 +6,6 @@
 
 #include <optional>
 
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/extensions/chrome_extension_cookies_factory.h"
@@ -21,15 +20,12 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_store_factory.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "net/cookies/cookie_partition_key_collection.h"
 #include "net/extras/sqlite/cookie_crypto_delegate.h"
 #include "net/first_party_sets/first_party_set_metadata.h"
 #include "services/network/cookie_manager.h"
 #include "services/network/restricted_cookie_manager.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -49,9 +45,7 @@ ChromeExtensionCookies::ChromeExtensionCookies(Profile* profile)
         profile_->GetPath().Append(chrome::kExtensionsCookieFilename),
         profile_->ShouldRestoreOldSessionCookies(),
         profile_->ShouldPersistSessionCookies()));
-    creation_config->crypto_delegate = cookie_config::GetCookieCryptoDelegate(
-        g_browser_process->os_crypt_async(),
-        content::GetUIThreadTaskRunner({}));
+    creation_config->crypto_delegate = cookie_config::GetCookieCryptoDelegate();
   }
   creation_config->cookieable_schemes.push_back(extensions::kExtensionScheme);
 
@@ -172,7 +166,7 @@ void ChromeExtensionCookies::IOData::ClearCookies(
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
 
   net::CookieDeletionInfo delete_info;
-  delete_info.host = origin.GetHost();
+  delete_info.host = origin.host();
   GetOrCreateCookieStore()->DeleteAllMatchingInfoAsync(
       std::move(delete_info), std::move(done_callback));
 }
@@ -241,10 +235,6 @@ void ChromeExtensionCookies::OnThirdPartyCookieBlockingChanged(
 
 void ChromeExtensionCookies::Shutdown() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  HostContentSettingsMapFactory::GetForProfile(profile_)->RemoveObserver(this);
-  cookie_settings_observation_.Reset();
-  cookie_settings_ = nullptr;
-
   // Async delete on IO thread, sequencing it after any previously posted
   // operations.
   //

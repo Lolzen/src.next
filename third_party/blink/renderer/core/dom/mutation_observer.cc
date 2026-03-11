@@ -45,7 +45,6 @@
 #include "third_party/blink/renderer/core/html/html_slot_element.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
-#include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/scheduler/public/event_loop.h"
 
 namespace blink {
@@ -113,8 +112,8 @@ class MutationObserverAgentData
     if (active_mutation_observers_.empty() &&
         active_slot_change_list_.empty()) {
       GetSupplementable()->event_loop()->EnqueueMicrotask(
-          BindOnce(&MutationObserverAgentData::DeliverMutations,
-                   WrapWeakPersistent(this)));
+          WTF::BindOnce(&MutationObserverAgentData::DeliverMutations,
+                        WrapWeakPersistent(this)));
     }
   }
 

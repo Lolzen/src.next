@@ -42,8 +42,7 @@ bool RecentlyAudibleHelper::WasRecentlyAudible() const {
 }
 
 base::CallbackListSubscription
-RecentlyAudibleHelper::RegisterRecentlyAudibleChangedCallback(
-    const Callback& callback) {
+RecentlyAudibleHelper::RegisterCallbackForTesting(const Callback& callback) {
   return callback_list_.Add(callback);
 }
 
@@ -112,7 +111,6 @@ void RecentlyAudibleHelper::SetTickClockForTesting(
 void RecentlyAudibleHelper::SetCurrentlyAudibleForTesting() {
   recently_audible_timer_.Stop();
   last_audible_time_ = base::TimeTicks::Max();
-  callback_list_.Notify(true);
 }
 
 void RecentlyAudibleHelper::SetRecentlyAudibleForTesting() {
@@ -122,11 +120,6 @@ void RecentlyAudibleHelper::SetRecentlyAudibleForTesting() {
 void RecentlyAudibleHelper::SetNotRecentlyAudibleForTesting() {
   last_audible_time_ = tick_clock_->NowTicks() - kRecentlyAudibleTimeout;
   recently_audible_timer_.Stop();
-  callback_list_.Notify(false);
-}
-
-void RecentlyAudibleHelper::FireRecentlyAudibleTimerForTesting() {
-  OnRecentlyAudibleTimerFired();
 }
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(RecentlyAudibleHelper);

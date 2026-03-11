@@ -12,8 +12,8 @@
 namespace blink {
 namespace cssvalue {
 
-CSSURIValue::CSSURIValue(const CSSUrlData& url_data)
-    : CSSValue(kURIClass), url_data_(url_data) {}
+CSSURIValue::CSSURIValue(CSSUrlData url_data)
+    : CSSValue(kURIClass), url_data_(std::move(url_data)) {}
 
 CSSURIValue::~CSSURIValue() = default;
 
@@ -26,13 +26,13 @@ SVGResource* CSSURIValue::EnsureResourceReference() const {
 }
 
 void CSSURIValue::ReResolveUrl(const Document& document) const {
-  if (UrlData().ReResolveUrl(document)) {
+  if (url_data_.ReResolveUrl(document)) {
     resource_ = nullptr;
   }
 }
 
 String CSSURIValue::CustomCSSText() const {
-  return UrlData().CssText();
+  return url_data_.CssText();
 }
 
 AtomicString CSSURIValue::FragmentIdentifier() const {
@@ -60,25 +60,25 @@ const AtomicString& CSSURIValue::NormalizedFragmentIdentifier() const {
 }
 
 KURL CSSURIValue::AbsoluteUrl() const {
-  return KURL(UrlData().ResolvedUrl());
+  return KURL(url_data_.ResolvedUrl());
 }
 
 bool CSSURIValue::IsLocal(const Document& document) const {
-  return UrlData().IsLocal(document);
+  return url_data_.IsLocal(document);
 }
 
 bool CSSURIValue::Equals(const CSSURIValue& other) const {
-  return *url_data_ == *other.url_data_;
+  return url_data_ == other.url_data_;
 }
 
-CSSURIValue* CSSURIValue::ComputedCSSValue(const KURL& base_url,
-                                           const TextEncoding& charset) const {
+CSSURIValue* CSSURIValue::ComputedCSSValue(
+    const KURL& base_url,
+    const WTF::TextEncoding& charset) const {
   return MakeGarbageCollected<CSSURIValue>(
-      *UrlData().MakeResolved(base_url, charset));
+      url_data_.MakeResolved(base_url, charset));
 }
 
 void CSSURIValue::TraceAfterDispatch(blink::Visitor* visitor) const {
-  visitor->Trace(url_data_);
   visitor->Trace(resource_);
   CSSValue::TraceAfterDispatch(visitor);
 }

@@ -12,20 +12,16 @@
 #include <string>
 #include <vector>
 
-#include "base/memory/weak_ptr.h"
 #include "base/test/test_future.h"
 #include "net/base/completion_once_callback.h"
-#include "net/base/load_timing_internal_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/request_priority.h"
 #include "net/dns/host_resolver.h"
-#include "net/http/alternative_service.h"
 #include "net/http/http_stream_key.h"
 #include "net/http/http_stream_pool.h"
 #include "net/http/http_stream_pool_job.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/stream_socket.h"
-#include "net/third_party/quiche/src/quiche/quic/core/quic_versions.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "url/scheme_host_port.h"
 
@@ -34,61 +30,51 @@ namespace net {
 class IOBuffer;
 class SSLInfo;
 
-// Provides fake service endpoint resolution results for testing.
-class FakeServiceEndpointResolution {
- public:
-  FakeServiceEndpointResolution();
-  ~FakeServiceEndpointResolution();
-
-  FakeServiceEndpointResolution(const FakeServiceEndpointResolution&);
-  FakeServiceEndpointResolution& operator=(
-      const FakeServiceEndpointResolution&);
-
-  int start_result() const { return start_result_; }
-  const std::vector<ServiceEndpoint>& endpoints() const { return endpoints_; }
-  const std::set<std::string>& aliases() const { return aliases_; }
-  bool endpoints_crypto_ready() const { return endpoints_crypto_ready_; }
-  ResolveErrorInfo resolve_error_info() const { return resolve_error_info_; }
-  RequestPriority priority() const { return priority_; }
-
-  // These setters return `this&` to allow chaining.
-  FakeServiceEndpointResolution& CompleteStartSynchronously(int rv);
-  FakeServiceEndpointResolution& set_start_result(int start_result);
-  FakeServiceEndpointResolution& set_endpoints(
-      std::vector<ServiceEndpoint> endpoints);
-  FakeServiceEndpointResolution& add_endpoint(ServiceEndpoint endpoint);
-  FakeServiceEndpointResolution& set_aliases(std::set<std::string> aliases);
-  FakeServiceEndpointResolution& set_crypto_ready(bool endpoints_crypto_ready);
-  FakeServiceEndpointResolution& set_resolve_error_info(
-      ResolveErrorInfo resolve_error_info);
-  FakeServiceEndpointResolution& set_priority(RequestPriority priority);
-
- private:
-  int start_result_ = ERR_IO_PENDING;
-  std::vector<ServiceEndpoint> endpoints_;
-  std::set<std::string> aliases_;
-  bool endpoints_crypto_ready_ = false;
-  ResolveErrorInfo resolve_error_info_;
-  RequestPriority priority_ = RequestPriority::IDLE;
-};
-
-// A fake ServiceEndpointRequest implementation that provides testing
-// harnesses. See the comment of HostResolver::ServiceEndpointRequest for
-// details.
+// A fake ServiceEndpointRequest implementation that provides testing harnesses.
+// See the comment of HostResolver::ServiceEndpointRequest for details.
 class FakeServiceEndpointRequest : public HostResolver::ServiceEndpointRequest {
  public:
   FakeServiceEndpointRequest();
   ~FakeServiceEndpointRequest() override;
 
-  // Following setter methods return `this&` to allow chaining.
+  // Sets the current endpoints to `endpoints`. Previous endpoints are
+  // discarded.
   FakeServiceEndpointRequest& set_endpoints(
-      std::vector<ServiceEndpoint> endpoints);
-  FakeServiceEndpointRequest& add_endpoint(ServiceEndpoint endpoint);
-  FakeServiceEndpointRequest& set_aliases(std::set<std::string> aliases);
-  FakeServiceEndpointRequest& set_crypto_ready(bool endpoints_crypto_ready);
+      std::vector<ServiceEndpoint> endpoints) {
+    endpoints_ = std::move(endpoints);
+    return *this;
+  }
+
+  // Add `endpoint` to the current endpoints.
+  FakeServiceEndpointRequest& add_endpoint(ServiceEndpoint endpoint) {
+    endpoints_.emplace_back(std::move(endpoint));
+    return *this;
+  }
+
+  // Sets the return value of GetDnsAliasResults().
+  FakeServiceEndpointRequest& set_aliases(std::set<std::string> aliases) {
+    aliases_ = std::move(aliases);
+    return *this;
+  }
+
+  // Sets the return value of EndpointsCryptoReady().
+  FakeServiceEndpointRequest& set_crypto_ready(bool endpoints_crypto_ready) {
+    endpoints_crypto_ready_ = endpoints_crypto_ready;
+    return *this;
+  }
+
+  // Sets the return value of GetResolveErrorInfo().
   FakeServiceEndpointRequest& set_resolve_error_info(
-      ResolveErrorInfo resolve_error_info);
-  FakeServiceEndpointRequest& set_priority(RequestPriority priority);
+      ResolveErrorInfo resolve_error_info) {
+    resolve_error_info_ = resolve_error_info;
+    return *this;
+  }
+
+  RequestPriority priority() const { return priority_; }
+  FakeServiceEndpointRequest& set_priority(RequestPriority priority) {
+    priority_ = priority;
+    return *this;
+  }
 
   // Make `this` complete synchronously when ServiceEndpointRequest::Start()
   // is called.
@@ -103,11 +89,9 @@ class FakeServiceEndpointRequest : public HostResolver::ServiceEndpointRequest {
   // after calling CompleteStartSynchronously().
   FakeServiceEndpointRequest& CallOnServiceEndpointRequestFinished(int rv);
 
-  RequestPriority priority() const { return resolution_.priority(); }
-
   // HostResolver::ServiceEndpointRequest methods:
   int Start(Delegate* delegate) override;
-  base::span<const ServiceEndpoint> GetEndpointResults() override;
+  const std::vector<ServiceEndpoint>& GetEndpointResults() override;
   const std::set<std::string>& GetDnsAliasResults() override;
   bool EndpointsCryptoReady() override;
   ResolveErrorInfo GetResolveErrorInfo() override;
@@ -116,13 +100,14 @@ class FakeServiceEndpointRequest : public HostResolver::ServiceEndpointRequest {
   void ChangeRequestPriority(RequestPriority priority) override;
 
  private:
-  friend class FakeServiceEndpointResolver;
-
   raw_ptr<Delegate> delegate_;
 
-  FakeServiceEndpointResolution resolution_;
-
-  base::WeakPtrFactory<FakeServiceEndpointRequest> weak_ptr_factory_{this};
+  int start_result_ = ERR_IO_PENDING;
+  std::vector<ServiceEndpoint> endpoints_;
+  std::set<std::string> aliases_;
+  bool endpoints_crypto_ready_ = false;
+  ResolveErrorInfo resolve_error_info_;
+  RequestPriority priority_ = RequestPriority::IDLE;
 };
 
 // A fake HostResolver that implements the ServiceEndpointRequest API using
@@ -137,32 +122,12 @@ class FakeServiceEndpointResolver : public HostResolver {
 
   ~FakeServiceEndpointResolver() override;
 
-  // Creates a FakeServiceEndpointRequest that will be used for the next
-  // CreateServiceEndpointRequest() call. CreateServiceEndpointRequest()
-  // consumes the request. If you expect multiple CreateServiceEndpointRequest()
-  // calls, you need to do either:
-  // - Call this method as many times as you expect
-  //   CreateServiceEndpointRequest()
-  // - Configure the default resolution result using
-  //   ConfigureDefaultResolution().
-  base::WeakPtr<FakeServiceEndpointRequest> AddFakeRequest();
-
-  // Configures the default resolution result. It will be used when there are
-  // no requests in the request queue. Overrides the previous default result if
-  // existed.
-  FakeServiceEndpointResolution& ConfigureDefaultResolution();
-
-  // Makes any attempt to create a request that did not match a call to
-  // AddFakeRequest() CHECK. For tests that use test fixtures that call
-  // ConfigureDefaultResolution(), that want more fine grained call over
-  // resolutions.
-  void ClearDefaultResolution() { default_resolution_.reset(); }
-
-  // When called, causes the destructor call to expect all requests added by
-  // AddFakeRequest() to be consumed.
-  void set_expect_all_fake_requests_consumed() {
-    expect_all_fake_requests_consumed_ = true;
-  }
+  // Create a FakeServiceEndpointRequest that will be used for the next
+  // CreateServiceEndpointRequest() call. Note that
+  // CreateServiceEndpointRequest() consumes the request. You will need to call
+  // this method multiple times when you expect multiple
+  // CreateServiceEndpointRequest() calls.
+  FakeServiceEndpointRequest* AddFakeRequest();
 
   // HostResolver methods:
   void OnShutdown() override;
@@ -184,9 +149,7 @@ class FakeServiceEndpointResolver : public HostResolver {
   bool IsHappyEyeballsV3Enabled() const override;
 
  private:
-  bool expect_all_fake_requests_consumed_ = false;
   std::list<std::unique_ptr<FakeServiceEndpointRequest>> requests_;
-  std::optional<FakeServiceEndpointResolution> default_resolution_;
 };
 
 // A helper to build a ServiceEndpoint.
@@ -203,16 +166,8 @@ class ServiceEndpointBuilder {
 
   ServiceEndpointBuilder& set_alpns(std::vector<std::string> alpns);
 
-  // Helper that looks up the alpn string for `quic_version`, and sets the list
-  // of alpns to contain only that value. Clears any other pre-existing ALPNs
-  // already set.
-  ServiceEndpointBuilder& set_alpn(quic::ParsedQuicVersion quic_version);
-
   ServiceEndpointBuilder& set_ech_config_list(
       std::vector<uint8_t> ech_config_list);
-
-  ServiceEndpointBuilder& set_trust_anchor_ids(
-      std::vector<std::vector<uint8_t>> trust_anchor_ids);
 
   ServiceEndpoint endpoint() const { return endpoint_; }
 
@@ -255,18 +210,14 @@ class FakeStreamSocket : public MockClientSocket {
   bool WasEverUsed() const override;
   bool GetSSLInfo(SSLInfo* ssl_info) override;
 
-  // Simulates a situation where a connected socket disconnects after
-  // IsConnected() is called `count` times. Such situation could happen in the
-  // real world.
-  void DisconnectAfterIsConnectedCall(int count = 1);
+  // Simulate a situation where a connected socket immediately disconnects after
+  // checking IsConnected(). This could happen in the real world.
+  void DisconnectAfterIsConnectedCall();
 
  private:
   bool is_idle_ = true;
   bool was_ever_used_ = false;
-  // When set to a positive value, every IsConnected() call decrements this
-  // counter. After this counter reached zero, IsConnected() uses
-  // `is_connected_override_`.
-  mutable int disconnect_after_is_connected_call_count_ = -1;
+  bool disconnect_after_is_connected_call_ = false;
   mutable std::optional<bool> is_connected_override_;
   std::optional<SSLInfo> ssl_info_;
 };
@@ -274,12 +225,13 @@ class FakeStreamSocket : public MockClientSocket {
 // A helper to create an HttpStreamKey.
 class StreamKeyBuilder {
  public:
-  explicit StreamKeyBuilder(std::string_view destination = "http://a.test");
+  explicit StreamKeyBuilder(std::string_view destination = "http://a.test")
+      : destination_(url::SchemeHostPort(GURL(destination))) {}
 
   StreamKeyBuilder(const StreamKeyBuilder&) = delete;
   StreamKeyBuilder& operator=(const StreamKeyBuilder&) = delete;
 
-  ~StreamKeyBuilder();
+  ~StreamKeyBuilder() = default;
 
   StreamKeyBuilder& from_key(const HttpStreamKey& key);
 
@@ -300,12 +252,6 @@ class StreamKeyBuilder {
     return *this;
   }
 
-  StreamKeyBuilder& set_alt_service(
-      std::optional<AlternativeService> alt_service) {
-    alt_service_ = std::move(alt_service);
-    return *this;
-  }
-
   HttpStreamKey Build() const;
 
  private:
@@ -313,7 +259,6 @@ class StreamKeyBuilder {
   PrivacyMode privacy_mode_ = PRIVACY_MODE_DISABLED;
   SecureDnsPolicy secure_dns_policy_ = SecureDnsPolicy::kAllow;
   bool disable_cert_network_fetches_ = true;
-  std::optional<AlternativeService> alt_service_;
 };
 
 // An HttpStreamPool::Job::Delegate implementation for tests.
@@ -349,18 +294,16 @@ class TestJobDelegate : public HttpStreamPool::Job::Delegate {
   // HttpStreamPool::Job::Delegate implementations:
   void OnStreamReady(HttpStreamPool::Job* job,
                      std::unique_ptr<HttpStream> stream,
-                     NextProto negotiated_protocol,
-                     std::optional<SessionSource> session_source) override;
+                     NextProto negotiated_protocol) override;
   RequestPriority priority() const override;
   HttpStreamPool::RespectLimits respect_limits() const override;
   const std::vector<SSLConfig::CertAndStatus>& allowed_bad_certs()
       const override;
-  bool enable_ip_based_pooling_for_h2() const override;
+  bool enable_ip_based_pooling() const override;
   bool enable_alternative_services() const override;
-  NextProtoSet allowed_alpns() const override;
+  bool is_http1_allowed() const override;
   const ProxyInfo& proxy_info() const override;
   const NetLogWithSource& net_log() const override;
-  const perfetto::Flow& flow() const override;
   void OnStreamFailed(HttpStreamPool::Job* job,
                       int status,
                       const NetErrorDetails& net_error_details,
@@ -387,7 +330,6 @@ class TestJobDelegate : public HttpStreamPool::Job::Delegate {
   std::vector<SSLConfig::CertAndStatus> allowed_bad_certs_;
   ProxyInfo proxy_info_ = ProxyInfo::Direct();
   NetLogWithSource net_log_;
-  perfetto::Flow flow_;
 
   std::unique_ptr<HttpStreamPool::Job> job_;
 
@@ -398,9 +340,8 @@ class TestJobDelegate : public HttpStreamPool::Job::Delegate {
 // Convert a ClientSocketPool::GroupId to an HttpStreamKey.
 HttpStreamKey GroupIdToHttpStreamKey(const ClientSocketPool::GroupId& group_id);
 
-// Wait for the `attempt_manager`'s completion.
-void WaitForAttemptManagerComplete(
-    HttpStreamPool::AttemptManager* attempt_manager);
+// Wait for the `group`'s current AttemptManager completion.
+void WaitForAttemptManagerComplete(HttpStreamPool::Group& group);
 
 }  // namespace net
 

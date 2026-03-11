@@ -5,21 +5,23 @@
 package org.chromium.chrome.browser.toolbar.top;
 
 import static org.chromium.build.NullUtil.assertNonNull;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.isToolbarTabletResizeRefactorEnabled;
 import static org.chromium.ui.accessibility.KeyboardFocusUtil.setFocusOnFirstFocusableDescendant;
 
 import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.ColorStateList;
-import android.graphics.Color;
 import android.util.AttributeSet;
+import android.util.TypedValue;
 import android.view.View;
-import android.view.ViewGroup;
+import android.view.View.OnClickListener;
 import android.view.ViewStub;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 
 import androidx.annotation.ColorInt;
 import androidx.annotation.ColorRes;
@@ -30,89 +32,77 @@ import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.view.ViewCompat;
 import androidx.core.widget.ImageViewCompat;
 
-import org.chromium.base.Callback;
-import org.chromium.base.CallbackController;
-import org.chromium.base.supplier.MonotonicObservableSupplier;
+import org.chromium.base.metrics.RecordUserAction;
+import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.build.annotations.Initializer;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
-import org.chromium.chrome.browser.layouts.toolbar.ToolbarWidthConsumer;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.omnibox.LocationBar;
 import org.chromium.chrome.browser.omnibox.LocationBarCoordinator;
 import org.chromium.chrome.browser.omnibox.NewTabPageDelegate;
 import org.chromium.chrome.browser.omnibox.UrlBarData;
-import org.chromium.chrome.browser.omnibox.fusebox.FuseboxCoordinator.FuseboxState;
 import org.chromium.chrome.browser.omnibox.status.StatusCoordinator;
-import org.chromium.chrome.browser.tabmodel.IncognitoStateProvider;
-import org.chromium.chrome.browser.theme.ThemeColorProvider;
+import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.theme.SurfaceColorUpdateUtils;
 import org.chromium.chrome.browser.theme.ThemeUtils;
 import org.chromium.chrome.browser.toolbar.R;
 import org.chromium.chrome.browser.toolbar.ToolbarDataProvider;
 import org.chromium.chrome.browser.toolbar.ToolbarProgressBar;
 import org.chromium.chrome.browser.toolbar.ToolbarTabController;
 import org.chromium.chrome.browser.toolbar.back_button.BackButtonCoordinator;
-import org.chromium.chrome.browser.toolbar.extensions.ExtensionToolbarCoordinator;
-import org.chromium.chrome.browser.toolbar.forward_button.ForwardButtonCoordinator;
-import org.chromium.chrome.browser.toolbar.home_button.HomeButtonCoordinator;
-import org.chromium.chrome.browser.toolbar.incognito.IncognitoIndicatorCoordinator;
 import org.chromium.chrome.browser.toolbar.menu_button.MenuButtonCoordinator;
 import org.chromium.chrome.browser.toolbar.optional_button.ButtonData;
 import org.chromium.chrome.browser.toolbar.optional_button.ButtonData.ButtonSpec;
 import org.chromium.chrome.browser.toolbar.reload_button.ReloadButtonCoordinator;
 import org.chromium.chrome.browser.toolbar.top.CaptureReadinessResult.TopToolbarBlockCaptureReason;
 import org.chromium.chrome.browser.toolbar.top.NavigationPopup.HistoryDelegate;
-import org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId;
 import org.chromium.chrome.browser.ui.theme.BrandedColorScheme;
 import org.chromium.chrome.browser.user_education.UserEducationHelper;
-import org.chromium.components.browser_ui.styles.ChromeColors;
 import org.chromium.components.browser_ui.styles.SemanticColorUtils;
 import org.chromium.components.browser_ui.widget.animation.CancelAwareAnimatorListener;
 import org.chromium.components.feature_engagement.Tracker;
 import org.chromium.ui.base.DeviceFormFactor;
+import org.chromium.ui.interpolators.Interpolators;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
-import java.util.function.Supplier;
 
 /** The Toolbar object for Tablet screens. */
 @SuppressLint("Instantiatable")
 @NullMarked
-public class ToolbarTablet extends ToolbarLayout {
-    private static final int MINIMUM_LOCATION_BAR_WIDTH_DP = 200;
+public class ToolbarTablet extends ToolbarLayout implements OnClickListener {
+    private static final int ICON_FADE_IN_ANIMATION_DELAY_MS = 75;
+    private static final int ICON_FADE_ANIMATION_DURATION_MS = 150;
 
     private ImageButton mHomeButton;
     private ImageButton mBackButton;
+    private ImageButton mForwardButton;
     private ImageButton mReloadButton;
     private ImageButton mBookmarkButton;
-    private View mFixedHeightBackground;
+    private ImageButton mSaveOfflineButton;
+    private @Nullable View mIncognitoIndicator;
 
     private boolean mIsInTabSwitcherMode;
     private boolean mToolbarButtonsVisible;
-    private boolean mOptionalButtonForciblyHidden;
     private @Nullable ImageButton mOptionalButton;
     private boolean mOptionalButtonUsesTint;
 
-    private @Nullable Boolean mIsIncognitoBranded;
+    private @Nullable NavigationPopup mNavigationPopup;
+
+    private Boolean mIsIncognitoBranded;
     private LocationBarCoordinator mLocationBar;
     private ReloadButtonCoordinator mReloadButtonCoordinator;
     private BackButtonCoordinator mBackButtonCoordinator;
-    private IncognitoIndicatorCoordinator mIncognitoIndicatorCoordinator;
-    private ForwardButtonCoordinator mForwardButtonCoordinator;
-    private final Callback<Integer> mFuseboxStateObserver = this::onFuseboxStateChanged;
-    private final CallbackController mCallbackController = new CallbackController();
 
     private final int mStartPaddingWithButtons;
     private final int mStartPaddingWithoutButtons;
     private boolean mShouldAnimateButtonVisibilityChange;
     private @Nullable AnimatorSet mButtonVisibilityAnimators;
-    private @Nullable MonotonicObservableSupplier<Integer> mTabCountSupplier;
+    private HistoryDelegate mHistoryDelegate;
+    private @Nullable ObservableSupplier<Integer> mTabCountSupplier;
     private @Nullable TabletCaptureStateToken mLastCaptureStateToken;
     private @DrawableRes int mBookmarkButtonImageRes;
-    private @Nullable ExtensionToolbarCoordinator mExtensionToolbarCoordinator;
-
-    private final @Nullable ToolbarWidthConsumer[] mToolbarWidthConsumers =
-            new ToolbarWidthConsumer[ToolbarComponentId.COUNT];
 
     /**
      * Constructs a ToolbarTablet object.
@@ -133,10 +123,12 @@ public class ToolbarTablet extends ToolbarLayout {
         super.onFinishInflate();
         mHomeButton = findViewById(R.id.home_button);
         mBackButton = findViewById(R.id.back_button);
+        mForwardButton = findViewById(R.id.forward_button);
         mReloadButton = findViewById(R.id.refresh_button);
 
         mBookmarkButton = findViewById(R.id.bookmark_button);
-        mFixedHeightBackground = findViewById(R.id.toolbar_tablet_fixed_height_bg);
+        mSaveOfflineButton = findViewById(R.id.save_offline_button);
+        setIncognitoIndicatorVisibility();
 
         // Initialize values needed for showing/hiding toolbar buttons when the activity size
         // changes.
@@ -148,31 +140,26 @@ public class ToolbarTablet extends ToolbarLayout {
     @Initializer
     public void setLocationBarCoordinator(LocationBarCoordinator locationBarCoordinator) {
         mLocationBar = locationBarCoordinator;
-        mLocationBar
-                .getFuseboxStateSupplier()
-                .addSyncObserverAndPostIfNonNull(
-                        mCallbackController.makeCancelable(mFuseboxStateObserver));
         final @ColorInt int color = SemanticColorUtils.getColorSurfaceContainer(getContext());
         mLocationBar.getTabletCoordinator().tintBackground(color);
+    }
 
-        mToolbarWidthConsumers[ToolbarComponentId.OMNIBOX_BOOKMARK] =
-                mLocationBar.getBookmarkButtonToolbarWidthConsumer();
-        mToolbarWidthConsumers[ToolbarComponentId.OMNIBOX_ZOOM] =
-                mLocationBar.getZoomButtonToolbarWidthConsumer();
-        mToolbarWidthConsumers[ToolbarComponentId.OMNIBOX_INSTALL] =
-                mLocationBar.getInstallButtonToolbarWidthConsumer();
-        mToolbarWidthConsumers[ToolbarComponentId.OMNIBOX_MIC] =
-                mLocationBar.getMicButtonToolbarWidthConsumer();
-        mToolbarWidthConsumers[ToolbarComponentId.OMNIBOX_LENS] =
-                mLocationBar.getLensButtonToolbarWidthConsumer();
+    /**
+     * Sets up key listeners after native initialization is complete, so that we can invoke native
+     * functions.
+     */
+    @Override
+    public void onNativeLibraryReady() {
+        super.onNativeLibraryReady();
+        mForwardButton.setOnClickListener(this);
+        mForwardButton.setLongClickable(true);
     }
 
     @Override
     public boolean showContextMenuForChild(View originalView) {
-        if (mForwardButtonCoordinator != null
-                && mForwardButtonCoordinator.getButton() == originalView) {
+        if (mForwardButton == originalView) {
             // Display forwards navigation popup.
-            mForwardButtonCoordinator.displayNavigationPopup();
+            displayNavigationPopupForForwardButton(mForwardButton);
             return true;
         }
         return super.showContextMenuForChild(originalView);
@@ -180,8 +167,34 @@ public class ToolbarTablet extends ToolbarLayout {
 
     @Override
     public void onWindowFocusChanged(boolean hasWindowFocus) {
-        mForwardButtonCoordinator.onWindowFocusChanged(hasWindowFocus);
+        // Ensure the the popup is not shown after resuming activity from background.
+        if (hasWindowFocus && mNavigationPopup != null) {
+            mNavigationPopup.dismiss();
+            mNavigationPopup = null;
+        }
         super.onWindowFocusChanged(hasWindowFocus);
+    }
+
+    private void displayNavigationPopupForForwardButton(View anchorView) {
+        Tab tab = getToolbarDataProvider().getTab();
+        if (tab == null || tab.getWebContents() == null) return;
+        mNavigationPopup =
+                new NavigationPopup(
+                        tab.getProfile(),
+                        getContext(),
+                        tab.getWebContents().getNavigationController(),
+                        NavigationPopup.Type.TABLET_FORWARD,
+                        getToolbarDataProvider()::getTab,
+                        mHistoryDelegate);
+        mNavigationPopup.show(anchorView);
+    }
+
+    @Override
+    public void onClick(View v) {
+        if (mForwardButton == v) {
+            forward();
+            RecordUserAction.record("MobileToolbarForward");
+        }
     }
 
     @Override
@@ -200,8 +213,6 @@ public class ToolbarTablet extends ToolbarLayout {
         } else if (mButtonVisibilityAnimators != null) {
             return CaptureReadinessResult.notReady(
                     TopToolbarBlockCaptureReason.TABLET_BUTTON_ANIMATION_IN_PROGRESS);
-        } else if (isLayoutRequested() || isInLayout()) {
-            return CaptureReadinessResult.notReady(TopToolbarBlockCaptureReason.LAYOUT_REQUESTED);
         } else {
             return getReadinessStateWithSuppression();
         }
@@ -238,7 +249,7 @@ public class ToolbarTablet extends ToolbarLayout {
         return new TabletCaptureStateToken(
                 mHomeButton,
                 mBackButton,
-                mForwardButtonCoordinator != null ? mForwardButtonCoordinator.getButton() : null,
+                mForwardButton,
                 mReloadButton,
                 securityIconResource,
                 visibleUrlText,
@@ -257,11 +268,14 @@ public class ToolbarTablet extends ToolbarLayout {
             // TODO (amaralp): Have progress bar observe theme color and incognito changes directly.
             getProgressBar()
                     .setThemeColor(
-                            ChromeColors.getDefaultThemeColor(getContext(), incognitoBranded),
+                            SurfaceColorUpdateUtils.getDefaultThemeColor(
+                                    getContext(), incognitoBranded),
                             incognitoBranded);
             updateRippleBackground();
             mIsIncognitoBranded = incognitoBranded;
         }
+        setIncognitoIndicatorVisibility();
+
         updateNtp();
     }
 
@@ -271,6 +285,13 @@ public class ToolbarTablet extends ToolbarLayout {
             @Nullable ColorStateList activityFocusTint,
             @BrandedColorScheme int brandedColorScheme) {
         ImageViewCompat.setImageTintList(mHomeButton, activityFocusTint);
+        ImageViewCompat.setImageTintList(mForwardButton, activityFocusTint);
+        // The tint of the |mSaveOfflineButton| should not be affected by an activity focus change.
+        ImageViewCompat.setImageTintList(mSaveOfflineButton, tint);
+        ImageViewCompat.setImageTintList(
+                (ImageView) getTabSwitcherButtonCoordinator().getContainerView(),
+                activityFocusTint);
+
         if (mOptionalButton != null && mOptionalButtonUsesTint) {
             ImageViewCompat.setImageTintList(mOptionalButton, activityFocusTint);
         }
@@ -279,7 +300,6 @@ public class ToolbarTablet extends ToolbarLayout {
     @Override
     public void onThemeColorChanged(@ColorInt int color, boolean shouldAnimate) {
         setBackgroundColor(color);
-        mFixedHeightBackground.setBackgroundColor(color);
         final @ColorInt int textBoxColor =
                 ThemeUtils.getTextBoxColorForToolbarBackgroundInNonNativePage(
                         getContext(), color, isIncognitoBranded(), /* isCustomTab= */ false);
@@ -306,21 +326,25 @@ public class ToolbarTablet extends ToolbarLayout {
 
     /** Called when the tab model changes. */
     private void updateRippleBackground() {
-        var toolbarIconRippleId = ToolbarUtils.getToolbarIconRippleId(isIncognitoBranded());
+        var toolbarIconRippleId =
+                isIncognitoBranded()
+                        ? R.drawable.default_icon_background_baseline
+                        : R.drawable.default_icon_background;
         var omniboxIconRippleId =
                 isIncognitoBranded()
                         ? R.drawable.search_box_icon_background_baseline
                         : R.drawable.search_box_icon_background;
 
         mHomeButton.setBackgroundResource(toolbarIconRippleId);
+        mForwardButton.setBackgroundResource(toolbarIconRippleId);
+        getTabSwitcherButtonCoordinator()
+                .getContainerView()
+                .setBackgroundResource(toolbarIconRippleId);
         getMenuButtonCoordinator().updateButtonBackground(toolbarIconRippleId);
 
         mBookmarkButton.setBackgroundResource(omniboxIconRippleId);
+        mSaveOfflineButton.setBackgroundResource(omniboxIconRippleId);
         mLocationBar.updateButtonBackground(omniboxIconRippleId);
-
-        if (mExtensionToolbarCoordinator != null) {
-            mExtensionToolbarCoordinator.updateMenuButtonBackground(toolbarIconRippleId);
-        }
     }
 
     @Override
@@ -332,14 +356,20 @@ public class ToolbarTablet extends ToolbarLayout {
     @Override
     void updateButtonVisibility() {
         mLocationBar.updateButtonVisibility();
-        mForwardButtonCoordinator.updateEnabled();
+    }
+
+    @Override
+    void updateForwardButtonVisibility(boolean canGoForward) {
+        boolean enableButton = canGoForward && !mIsInTabSwitcherMode;
+        mForwardButton.setEnabled(enableButton);
+        mForwardButton.setFocusable(enableButton);
     }
 
     @Override
     void updateBookmarkButton(boolean isBookmarked, boolean editingAllowed) {
         if (isBookmarked) {
-            mBookmarkButtonImageRes = R.drawable.ic_star_filled_24dp;
-            mBookmarkButton.setImageResource(R.drawable.ic_star_filled_24dp);
+            mBookmarkButtonImageRes = R.drawable.btn_star_filled;
+            mBookmarkButton.setImageResource(R.drawable.btn_star_filled);
             final @ColorRes int tint =
                     isIncognitoBranded()
                             ? R.color.default_icon_color_blue_light
@@ -348,8 +378,8 @@ public class ToolbarTablet extends ToolbarLayout {
                     mBookmarkButton, AppCompatResources.getColorStateList(getContext(), tint));
             mBookmarkButton.setContentDescription(getContext().getString(R.string.edit_bookmark));
         } else {
-            mBookmarkButtonImageRes = R.drawable.ic_star_24dp;
-            mBookmarkButton.setImageResource(R.drawable.ic_star_24dp);
+            mBookmarkButtonImageRes = R.drawable.star_outline_24dp;
+            mBookmarkButton.setImageResource(R.drawable.star_outline_24dp);
             ImageViewCompat.setImageTintList(mBookmarkButton, getTint());
             mBookmarkButton.setContentDescription(
                     getContext().getString(R.string.accessibility_menu_bookmark));
@@ -378,19 +408,13 @@ public class ToolbarTablet extends ToolbarLayout {
             ToolbarDataProvider toolbarDataProvider,
             ToolbarTabController tabController,
             MenuButtonCoordinator menuButtonCoordinator,
-            @Nullable ToggleTabStackButtonCoordinator tabSwitcherButtonCoordinator,
+            ToggleTabStackButtonCoordinator tabSwitcherButtonCoordinator,
             HistoryDelegate historyDelegate,
             UserEducationHelper userEducationHelper,
-            MonotonicObservableSupplier<Tracker> trackerSupplier,
+            ObservableSupplier<Tracker> trackerSupplier,
             ToolbarProgressBar progressBar,
             @Nullable ReloadButtonCoordinator reloadButtonCoordinator,
-            @Nullable BackButtonCoordinator backButtonCoordinator,
-            @Nullable ForwardButtonCoordinator forwardButtonCoordinator,
-            @Nullable HomeButtonDisplay homeButtonDisplay,
-            ThemeColorProvider themeColorProvider,
-            IncognitoStateProvider incognitoStateProvider,
-            @Nullable Supplier<Integer> incognitoWindowCountSupplier) {
-        assert tabSwitcherButtonCoordinator != null;
+            @Nullable BackButtonCoordinator backButtonCoordinator) {
         super.initialize(
                 toolbarDataProvider,
                 tabController,
@@ -401,55 +425,16 @@ public class ToolbarTablet extends ToolbarLayout {
                 trackerSupplier,
                 progressBar,
                 reloadButtonCoordinator,
-                backButtonCoordinator,
-                forwardButtonCoordinator,
-                homeButtonDisplay,
-                themeColorProvider,
-                incognitoStateProvider,
-                incognitoWindowCountSupplier);
+                backButtonCoordinator);
+        mHistoryDelegate = historyDelegate;
         mReloadButtonCoordinator = assertNonNull(reloadButtonCoordinator);
         mBackButtonCoordinator = assertNonNull(backButtonCoordinator);
-        mForwardButtonCoordinator = assertNonNull(forwardButtonCoordinator);
         menuButtonCoordinator.setVisibility(true);
-
-        assert incognitoWindowCountSupplier != null;
-        mIncognitoIndicatorCoordinator =
-                new IncognitoIndicatorCoordinator(
-                        /* parentToolbar= */ this,
-                        themeColorProvider,
-                        incognitoStateProvider,
-                        incognitoWindowCountSupplier,
-                        mToolbarButtonsVisible);
-
-        if (homeButtonDisplay instanceof ToolbarWidthConsumer) {
-            mToolbarWidthConsumers[ToolbarComponentId.HOME] =
-                    (HomeButtonCoordinator) homeButtonDisplay;
-        }
-        mToolbarWidthConsumers[ToolbarComponentId.BACK] = mBackButtonCoordinator;
-        mToolbarWidthConsumers[ToolbarComponentId.FORWARD] = mForwardButtonCoordinator;
-        mToolbarWidthConsumers[ToolbarComponentId.RELOAD] = mReloadButtonCoordinator;
-        mToolbarWidthConsumers[ToolbarComponentId.LOCATION_BAR_MINIMUM] =
-                new LocationBarMinWidthConsumer();
-        mToolbarWidthConsumers[ToolbarComponentId.INCOGNITO_INDICATOR] =
-                mIncognitoIndicatorCoordinator;
-        mToolbarWidthConsumers[ToolbarComponentId.ADAPTIVE_BUTTON] =
-                new OptionalButtonToolbarWidthConsumer();
-        mToolbarWidthConsumers[ToolbarComponentId.TAB_SWITCHER] = tabSwitcherButtonCoordinator;
-        mToolbarWidthConsumers[ToolbarComponentId.MENU] = menuButtonCoordinator;
-        mToolbarWidthConsumers[ToolbarComponentId.PADDING] =
-                new ToolbarPaddingWidthConsumer(this, mStartPaddingWithButtons);
-    }
-
-    @Override
-    public void setExtensionToolbarCoordinator(
-            ExtensionToolbarCoordinator extensionToolbarCoordinator) {
-        mExtensionToolbarCoordinator = extensionToolbarCoordinator;
     }
 
     @Override
     public void destroy() {
         super.destroy();
-        mCallbackController.destroy();
         if (mButtonVisibilityAnimators != null) {
             mButtonVisibilityAnimators.removeAllListeners();
             mButtonVisibilityAnimators.cancel();
@@ -458,18 +443,17 @@ public class ToolbarTablet extends ToolbarLayout {
     }
 
     @Override
-    void setTabCountSupplier(MonotonicObservableSupplier<Integer> tabCountSupplier) {
+    void setTabCountSupplier(ObservableSupplier<Integer> tabCountSupplier) {
         mTabCountSupplier = tabCountSupplier;
     }
 
     @Override
-    void setBookmarkClickHandler(@Nullable OnClickListener listener) {
-        assert listener != null;
+    void setBookmarkClickHandler(OnClickListener listener) {
         mLocationBar.setBookmarkClickListener(listener);
     }
 
     @Override
-    void onHomeButtonIsEnabledUpdate(boolean homeButtonEnabled) {
+    void onHomeButtonUpdate(boolean homeButtonEnabled) {
         mHomeButton.setVisibility(homeButtonEnabled ? VISIBLE : GONE);
     }
 
@@ -490,63 +474,15 @@ public class ToolbarTablet extends ToolbarLayout {
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        int width = MeasureSpec.getSize(widthMeasureSpec);
-        if (isToolbarTabletResizeRefactorEnabled()) {
-            allocateAvailableToolbarWidth(
-                    mToolbarWidthConsumers, width, widthMeasureSpec, heightMeasureSpec);
-        } else {
-            // Hide or show toolbar buttons if needed. With the introduction of multi-window on
-            // Android N, the Activity can be < 600dp, in which case the toolbar buttons need to be
-            // moved into the menu so that the location bar is usable. The buttons must be shown
-            // in onMeasure() so that the location bar is usable.
-            setToolbarButtonsVisible(
-                    width >= DeviceFormFactor.getNonMultiDisplayMinimumTabletWidthPx(getContext()));
-        }
+        // Hide or show toolbar buttons if needed. With the introduction of multi-window on
+        // Android N, the Activity can be < 600dp, in which case the toolbar buttons need to be
+        // moved into the menu so that the location bar is usable. The buttons must be shown
+        // in onMeasure() so that the location bar gets measured and laid out correctly.
+        setToolbarButtonsVisible(
+                MeasureSpec.getSize(widthMeasureSpec)
+                        >= DeviceFormFactor.getNonMultiDisplayMinimumTabletWidthPx(getContext()));
+
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-
-        // Trigger a second update if the incognito indicator was measured at a different width than
-        // originally expected, requiring another pass at allocating toolbar width.
-        // TODO(crbug.com/444068280): Revisit this approach to re-allocating width for variable
-        //  width components.
-        if (isToolbarTabletResizeRefactorEnabled()
-                && mIncognitoIndicatorCoordinator.needsUpdateBeforeShowing()) {
-            allocateAvailableToolbarWidth(
-                    mToolbarWidthConsumers, width, widthMeasureSpec, heightMeasureSpec);
-            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-        }
-    }
-
-    @Override
-    public void onWidthConsumerVisibilityChanged() {
-        // Re-allocate width to account for a change in a width consumer's visibility.
-        int unspecifiedSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
-        allocateAvailableToolbarWidth(
-                mToolbarWidthConsumers, getWidth(), unspecifiedSpec, unspecifiedSpec);
-    }
-
-    /**
-     * Allocates available width to toolbar width consumers.
-     *
-     * @param toolbarWidthConsumer The array of all toolbar width consumers.
-     * @param availableWidthDp The available width in dp.
-     * @param widthMeasureSpec The width measure spec to be used for measurement.
-     * @param heightMeasureSpec The height measure spec to be used for measurement.
-     */
-    @VisibleForTesting
-    static void allocateAvailableToolbarWidth(
-            @Nullable ToolbarWidthConsumer[] toolbarWidthConsumer,
-            int availableWidthDp,
-            int widthMeasureSpec,
-            int heightMeasureSpec) {
-        // Iterate through the toolbar components, which will show if there is enough available
-        // width.
-        for (@ToolbarComponentId int toolbarComponentId : ToolbarUtils.RANKED_TOOLBAR_COMPONENTS) {
-            @Nullable ToolbarWidthConsumer widthConsumer = toolbarWidthConsumer[toolbarComponentId];
-            if (widthConsumer == null) continue;
-            availableWidthDp -=
-                    widthConsumer.updateVisibility(
-                            availableWidthDp, widthMeasureSpec, heightMeasureSpec);
-        }
     }
 
     @Override
@@ -558,10 +494,20 @@ public class ToolbarTablet extends ToolbarLayout {
 
         ButtonSpec buttonSpec = buttonData.getButtonSpec();
 
-        mOptionalButton.setBackgroundResource(
-                isIncognitoBranded()
-                        ? R.drawable.default_icon_background_baseline
-                        : R.drawable.default_icon_background);
+        // Set hover highlight for profile, voice search, share and new tab button on tablets. Set
+        // box hover highlight for the rest of button variants.
+        if (buttonData.getButtonSpec().shouldShowBackgroundHighlight()) {
+            mOptionalButton.setBackgroundResource(
+                    isIncognitoBranded()
+                            ? R.drawable.default_icon_background_baseline
+                            : R.drawable.default_icon_background);
+        } else {
+            TypedValue themeRes = new TypedValue();
+            getContext()
+                    .getTheme()
+                    .resolveAttribute(R.attr.selectableItemBackground, themeRes, true);
+            mOptionalButton.setBackgroundResource(themeRes.resourceId);
+        }
 
         // Set hover tooltip text for voice search, share and new tab button on tablets.
         if (buttonSpec.getHoverTooltipTextId() != ButtonSpec.INVALID_TOOLTIP_TEXT_ID) {
@@ -611,100 +557,17 @@ public class ToolbarTablet extends ToolbarLayout {
                 mOptionalButton.getPaddingBottom());
 
         mOptionalButton.setContentDescription(buttonSpec.getContentDescription());
-        mOptionalButtonForciblyHidden = false;
-        setOptionalButtonVisibility(/* isVisible= */ true);
+        mOptionalButton.setVisibility(View.VISIBLE);
         mOptionalButton.setEnabled(buttonData.isEnabled());
     }
 
     @Override
-    protected void hideOptionalButton() {
-        mOptionalButtonForciblyHidden = true;
-        setOptionalButtonVisibility(/* isVisible= */ false);
-    }
-
-    private void setOptionalButtonVisibility(boolean isVisible) {
-        if (mOptionalButton == null) return;
-        mOptionalButton.setVisibility(isVisible ? View.VISIBLE : View.GONE);
-    }
-
-    private class ToolbarPaddingWidthConsumer implements ToolbarWidthConsumer {
-        private final View mToolbarView;
-        private final int mHorizontalPadding;
-
-        ToolbarPaddingWidthConsumer(View toolbarView, int horizontalPadding) {
-            mToolbarView = toolbarView;
-            mHorizontalPadding = horizontalPadding;
+    void hideOptionalButton() {
+        if (mOptionalButton == null || mOptionalButton.getVisibility() == View.GONE) {
+            return;
         }
 
-        @Override
-        public boolean isVisible() {
-            return mToolbarView.getPaddingStart() == mHorizontalPadding
-                    && mToolbarView.getPaddingEnd() == mHorizontalPadding;
-        }
-
-        @Override
-        public int updateVisibility(int availableWidth) {
-            assert availableWidth >= 0;
-            int paddingWidth = Math.min(availableWidth, 2 * mHorizontalPadding);
-            mToolbarView.setPaddingRelative(
-                    paddingWidth / 2, getPaddingTop(), paddingWidth / 2, getPaddingBottom());
-            return paddingWidth;
-        }
-
-        @Override
-        public int updateVisibilityWithAnimation(
-                int availableWidth, Collection<Animator> animators) {
-            return updateVisibility(availableWidth);
-        }
-    }
-
-    private class LocationBarMinWidthConsumer implements ToolbarWidthConsumer {
-        @Override
-        public boolean isVisible() {
-            return true;
-        }
-
-        @Override
-        public int updateVisibility(int availableWidth) {
-            assert isToolbarTabletResizeRefactorEnabled();
-            return Math.min(
-                    availableWidth,
-                    (int)
-                            (MINIMUM_LOCATION_BAR_WIDTH_DP
-                                    * getContext().getResources().getDisplayMetrics().density));
-        }
-
-        @Override
-        public int updateVisibilityWithAnimation(
-                int availableWidth, Collection<Animator> animators) {
-            return updateVisibility(availableWidth);
-        }
-    }
-
-    private class OptionalButtonToolbarWidthConsumer implements ToolbarWidthConsumer {
-        @Override
-        public boolean isVisible() {
-            return mOptionalButton != null && mOptionalButton.getVisibility() == View.VISIBLE;
-        }
-
-        @Override
-        public int updateVisibility(int availableWidth) {
-            assert isToolbarTabletResizeRefactorEnabled();
-            if (mOptionalButtonForciblyHidden) {
-                setOptionalButtonVisibility(false);
-                return 0;
-            }
-
-            int width = getResources().getDimensionPixelSize(R.dimen.toolbar_button_width);
-            setOptionalButtonVisibility(availableWidth >= width);
-            return Math.min(availableWidth, width);
-        }
-
-        @Override
-        public int updateVisibilityWithAnimation(
-                int availableWidth, Collection<Animator> animators) {
-            return updateVisibility(availableWidth);
-        }
+        mOptionalButton.setVisibility(View.GONE);
     }
 
     @Override
@@ -713,10 +576,28 @@ public class ToolbarTablet extends ToolbarLayout {
     }
 
     @Override
+    public ImageView getHomeButton() {
+        return mHomeButton;
+    }
+
+    @Override
     public void requestKeyboardFocus() {
         setFocusOnFirstFocusableDescendant(this);
         // TODO(crbug.com/360423850): Replace this setFocus(mLocationBar) when omnibox keyboard
         // behavior is fixed.
+    }
+
+    private void setIncognitoIndicatorVisibility() {
+        if (mIsIncognitoBranded == null
+                || !ChromeFeatureList.sTabStripIncognitoMigration.isEnabled()) return;
+        if (mIncognitoIndicator == null && mIsIncognitoBranded) {
+            ViewStub stub = findViewById(R.id.incognito_indicator_stub);
+            mIncognitoIndicator = stub.inflate();
+        }
+        if (mIncognitoIndicator != null) {
+            mIncognitoIndicator.setVisibility(
+                    mIsIncognitoBranded && mToolbarButtonsVisible ? VISIBLE : GONE);
+        }
     }
 
     private void setToolbarButtonsVisible(boolean visible) {
@@ -727,12 +608,12 @@ public class ToolbarTablet extends ToolbarLayout {
         if (mShouldAnimateButtonVisibilityChange) {
             runToolbarButtonsVisibilityAnimation(visible);
         } else {
-            mForwardButtonCoordinator.setVisibility(visible);
+            mForwardButton.setVisibility(visible ? View.VISIBLE : View.GONE);
             mReloadButtonCoordinator.setVisibility(visible);
             mBackButtonCoordinator.setVisibility(visible);
             mLocationBar.setShouldShowButtonsWhenUnfocusedForTablet(visible);
             setStartPaddingBasedOnButtonVisibility(visible);
-            mIncognitoIndicatorCoordinator.setVisibility(visible);
+            setIncognitoIndicatorVisibility();
         }
     }
 
@@ -762,36 +643,98 @@ public class ToolbarTablet extends ToolbarLayout {
                 : mStartPaddingWithButtons - mStartPaddingWithoutButtons;
     }
 
-    /** Returns whether tab switcher mode is enabled. */
-    public boolean isInTabSwitcherMode() {
-        return mIsInTabSwitcherMode;
-    }
-
     private void runToolbarButtonsVisibilityAnimation(boolean visible) {
         if (mButtonVisibilityAnimators != null) mButtonVisibilityAnimators.cancel();
 
-        Collection<Animator> animators = new ArrayList<>();
-        animators.add(mForwardButtonCoordinator.getFadeAnimator(visible));
-        animators.add(mReloadButtonCoordinator.getFadeAnimator(visible));
-        animators.add(mBackButtonCoordinator.getFadeAnimator(visible));
-        animators.addAll(createLocationBarButtonsWhenUnfocusedAnimators(visible));
+        mButtonVisibilityAnimators =
+                visible ? buildShowToolbarButtonsAnimation() : buildHideToolbarButtonsAnimation();
+        mButtonVisibilityAnimators.start();
+    }
 
-        mButtonVisibilityAnimators = new AnimatorSet();
-        mButtonVisibilityAnimators.playTogether(animators);
-        mButtonVisibilityAnimators.addListener(
+    private AnimatorSet buildShowToolbarButtonsAnimation() {
+        Collection<Animator> animators = new ArrayList<>();
+
+        animators.add(mLocationBar.createShowButtonAnimatorForTablet(mForwardButton));
+
+        final var reloadButtonAnimator = mReloadButtonCoordinator.getFadeAnimator(true);
+        reloadButtonAnimator.setInterpolator(Interpolators.LINEAR_OUT_SLOW_IN_INTERPOLATOR);
+        reloadButtonAnimator.setStartDelay(ICON_FADE_IN_ANIMATION_DELAY_MS);
+        reloadButtonAnimator.setDuration(ICON_FADE_ANIMATION_DURATION_MS);
+        animators.add(reloadButtonAnimator);
+
+        final var backButtonAnimator = mBackButtonCoordinator.getFadeAnimator(true);
+        backButtonAnimator.setInterpolator(Interpolators.LINEAR_OUT_SLOW_IN_INTERPOLATOR);
+        backButtonAnimator.setStartDelay(ICON_FADE_IN_ANIMATION_DELAY_MS);
+        backButtonAnimator.setDuration(ICON_FADE_ANIMATION_DURATION_MS);
+        animators.add(backButtonAnimator);
+
+        // Add animators for location bar.
+        animators.addAll(
+                mLocationBar.getShowButtonsWhenUnfocusedAnimatorsForTablet(
+                        getStartPaddingDifferenceForButtonVisibilityAnimation()));
+
+        AnimatorSet set = new AnimatorSet();
+        set.playTogether(animators);
+
+        set.addListener(
+                new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationStart(Animator animation) {
+                        keepControlsShownForAnimation();
+                        mForwardButton.setVisibility(View.VISIBLE);
+                        mReloadButtonCoordinator.setVisibility(true);
+                        mBackButtonCoordinator.setVisibility(true);
+
+                        // Set the padding at the start of the animation so the toolbar buttons
+                        // don't jump when the animation ends.
+                        setStartPaddingBasedOnButtonVisibility(true);
+                        setIncognitoIndicatorVisibility();
+                    }
+
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        mButtonVisibilityAnimators = null;
+                        allowBrowserControlsHide();
+                    }
+                });
+
+        return set;
+    }
+
+    private AnimatorSet buildHideToolbarButtonsAnimation() {
+        Collection<Animator> animators = new ArrayList<>();
+
+        ObjectAnimator hideButtonAnimator =
+                mLocationBar.createHideButtonAnimatorForTablet(mForwardButton);
+        if (hideButtonAnimator != null) {
+            animators.add(hideButtonAnimator);
+        }
+
+        final var reloadButtonAnimator = mReloadButtonCoordinator.getFadeAnimator(false);
+        reloadButtonAnimator.setInterpolator(Interpolators.FAST_OUT_LINEAR_IN_INTERPOLATOR);
+        reloadButtonAnimator.setDuration(ICON_FADE_ANIMATION_DURATION_MS);
+        animators.add(reloadButtonAnimator);
+
+        final var backButtonAnimator = mBackButtonCoordinator.getFadeAnimator(false);
+        backButtonAnimator.setInterpolator(Interpolators.FAST_OUT_LINEAR_IN_INTERPOLATOR);
+        backButtonAnimator.setDuration(ICON_FADE_ANIMATION_DURATION_MS);
+        animators.add(backButtonAnimator);
+
+        // Add animators for location bar.
+        animators.addAll(
+                mLocationBar.getHideButtonsWhenUnfocusedAnimatorsForTablet(
+                        getStartPaddingDifferenceForButtonVisibilityAnimation()));
+
+        AnimatorSet set = new AnimatorSet();
+        set.playTogether(animators);
+
+        set.addListener(
                 new CancelAwareAnimatorListener() {
                     @Override
                     public void onStart(Animator animator) {
                         keepControlsShownForAnimation();
-                        if (visible) {
-                            mForwardButtonCoordinator.setVisibility(true);
-                            mReloadButtonCoordinator.setVisibility(true);
-                            mBackButtonCoordinator.setVisibility(true);
-                            mIncognitoIndicatorCoordinator.setVisibility(true);
-                            // Set the padding at the start of the show animation so the toolbar
-                            // buttons don't jump when the animation ends.
-                            setStartPaddingBasedOnButtonVisibility(true);
-                        }
+
+                        setIncognitoIndicatorVisibility();
                     }
 
                     @Override
@@ -802,28 +745,20 @@ public class ToolbarTablet extends ToolbarLayout {
 
                     @Override
                     public void onEnd(Animator animator) {
-                        if (!visible) {
-                            mForwardButtonCoordinator.setVisibility(false);
-                            mReloadButtonCoordinator.setVisibility(false);
-                            mBackButtonCoordinator.setVisibility(false);
-                            mIncognitoIndicatorCoordinator.setVisibility(false);
-                            // Set the padding at the end of the hide animation so the toolbar
-                            // buttons don't jump when the animation starts.
-                            setStartPaddingBasedOnButtonVisibility(false);
-                        }
+                        mForwardButton.setVisibility(View.GONE);
+                        mReloadButtonCoordinator.setVisibility(false);
+                        mBackButtonCoordinator.setVisibility(false);
+
+                        // Set the padding at the end of the animation so the toolbar buttons
+                        // don't jump when the animation starts.
+                        setStartPaddingBasedOnButtonVisibility(false);
+
                         mButtonVisibilityAnimators = null;
                         allowBrowserControlsHide();
                     }
                 });
-        mButtonVisibilityAnimators.start();
-    }
 
-    private List<Animator> createLocationBarButtonsWhenUnfocusedAnimators(boolean shouldShow) {
-        int startPaddingDifference = getStartPaddingDifferenceForButtonVisibilityAnimation();
-        return shouldShow
-                ? mLocationBar.getShowButtonsWhenUnfocusedAnimatorsForTablet(startPaddingDifference)
-                : mLocationBar.getHideButtonsWhenUnfocusedAnimatorsForTablet(
-                        startPaddingDifference);
+        return set;
     }
 
     private int getDimensionPixelSize(@DimenRes int dimenId) {
@@ -841,80 +776,14 @@ public class ToolbarTablet extends ToolbarLayout {
     @VisibleForTesting
     void setReloadButtonCoordinator(ReloadButtonCoordinator coordinator) {
         mReloadButtonCoordinator = coordinator;
-        mToolbarWidthConsumers[ToolbarComponentId.RELOAD] = mReloadButtonCoordinator;
     }
 
     @VisibleForTesting
     void setBackButtonCoordinator(BackButtonCoordinator coordinator) {
         mBackButtonCoordinator = coordinator;
-        mToolbarWidthConsumers[ToolbarComponentId.BACK] = mBackButtonCoordinator;
     }
 
-    void setHomeButtonWidthConsumerForTesting(ToolbarWidthConsumer consumer) {
-        mToolbarWidthConsumers[ToolbarComponentId.HOME] = consumer;
-    }
-
-    void setIncognitoIndicatorCoordinatorForTesting(IncognitoIndicatorCoordinator coordinator) {
-        mIncognitoIndicatorCoordinator = coordinator;
-        mToolbarWidthConsumers[ToolbarComponentId.INCOGNITO_INDICATOR] = coordinator;
-    }
-
-    void setForwardButtonCoordinatorForTesting(ForwardButtonCoordinator coordinator) {
-        mForwardButtonCoordinator = coordinator;
-        mToolbarWidthConsumers[ToolbarComponentId.FORWARD] = mForwardButtonCoordinator;
-    }
-
-    void ensureOptionalButtonWidthConsumerForTesting() {
-        mToolbarWidthConsumers[ToolbarComponentId.ADAPTIVE_BUTTON] =
-                new OptionalButtonToolbarWidthConsumer();
-    }
-
-    void setTabStackButtonCoordinatorForTesting(ToggleTabStackButtonCoordinator coordinator) {
-        mToolbarWidthConsumers[ToolbarComponentId.TAB_SWITCHER] = coordinator;
-    }
-
-    @Override
-    void setMenuButtonCoordinatorForTesting(MenuButtonCoordinator coordinator) {
-        mMenuButtonCoordinator = coordinator;
-        mToolbarWidthConsumers[ToolbarComponentId.MENU] = coordinator;
-    }
-
-    void ensurePaddingWidthConsumer() {
-        mToolbarWidthConsumers[ToolbarComponentId.PADDING] =
-                new ToolbarPaddingWidthConsumer(this, mStartPaddingWithButtons);
-    }
-
-    void ensureLocationBarMidWidthConsumer() {
-        mToolbarWidthConsumers[ToolbarComponentId.LOCATION_BAR_MINIMUM] =
-                new LocationBarMinWidthConsumer();
-    }
-
-    public boolean areAnyToolbarComponentsMissingForWidth(
-            @ToolbarComponentId int[] toolbarComponents) {
-        for (@ToolbarComponentId int toolbarComponentId : toolbarComponents) {
-            @Nullable ToolbarWidthConsumer widthConsumer =
-                    mToolbarWidthConsumers[toolbarComponentId];
-            if (widthConsumer == null || !widthConsumer.isVisible()) return true;
-        }
-        return false;
-    }
-
-    private void onFuseboxStateChanged(@FuseboxState Integer state) {
-        MarginLayoutParams layoutParams = (MarginLayoutParams) getLayoutParams();
-        if (state == FuseboxState.COMPACT || state == FuseboxState.EXPANDED) {
-            mFixedHeightBackground.setVisibility(VISIBLE);
-            setBackgroundColor(Color.TRANSPARENT);
-            setHairlineVisibility(false);
-            layoutParams.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-        } else {
-            mFixedHeightBackground.setVisibility(GONE);
-            setBackgroundColor(
-                    mThemeColorProvider == null
-                            ? SemanticColorUtils.getDefaultBgColor(getContext())
-                            : mThemeColorProvider.getThemeColor());
-            setHairlineVisibility(true);
-            layoutParams.height = ViewGroup.LayoutParams.MATCH_PARENT;
-        }
-        setLayoutParams(layoutParams);
+    public ImageButton getBookmarkButtonForTesting() {
+        return mBookmarkButton;
     }
 }

@@ -16,7 +16,6 @@
 #include <string_view>
 #include <utility>
 
-#include "base/byte_count.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
@@ -28,10 +27,10 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
-#include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "net/base/features.h"
 #include "net/base/parse_number.h"
+#include "net/base/tracing.h"
 #include "net/http/http_byte_range.h"
 #include "net/http/http_log_util.h"
 #include "net/http/http_status_code.h"
@@ -39,7 +38,6 @@
 #include "net/http/structured_headers.h"
 #include "net/log/net_log_capture_mode.h"
 #include "net/log/net_log_values.h"
-#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 #include "third_party/abseil-cpp/absl/strings/ascii.h"
 
 using base::Time;
@@ -168,7 +166,7 @@ int ParseStatus(std::string_view status, std::string& append_to) {
   int response_code = -1;
   // For backwards compatibility, overlarge response codes are permitted.
   // base::StringToInt will clamp the value to INT_MAX.
-  base::StringToInt(std::string_view(status.begin(), first_non_digit),
+  base::StringToInt(base::MakeStringPiece(status.begin(), first_non_digit),
                     &response_code);
   CHECK_GE(response_code, 0);
 
@@ -195,6 +193,10 @@ int ParseStatus(std::string_view status, std::string& append_to) {
 }
 
 }  // namespace
+
+const char HttpResponseHeaders::kContentRange[] = "Content-Range";
+const char HttpResponseHeaders::kLastModified[] = "Last-Modified";
+const char HttpResponseHeaders::kVary[] = "Vary";
 
 struct HttpResponseHeaders::ParsedHeader {
   // A header "continuation" contains only a subsequent value for the
@@ -226,9 +228,6 @@ scoped_refptr<HttpResponseHeaders> HttpResponseHeaders::Builder::Build() {
   return base::MakeRefCounted<HttpResponseHeaders>(BuilderPassKey(), version_,
                                                    status_, headers_);
 }
-
-class HttpResponseHeaders::HeaderSet : public absl::flat_hash_set<std::string> {
-};
 
 HttpResponseHeaders::HttpResponseHeaders(std::string_view raw_input)
     : response_code_(-1) {
@@ -581,7 +580,7 @@ void HttpResponseHeaders::SetHeader(std::string_view name,
   AddHeader(name, value);
 }
 
-void HttpResponseHeaders::AddCookie(std::string_view cookie_string) {
+void HttpResponseHeaders::AddCookie(const std::string& cookie_string) {
   AddHeader("Set-Cookie", cookie_string);
 }
 
@@ -932,10 +931,9 @@ std::optional<base::TimeDelta>
 HttpResponseHeaders::GetCacheControlHeaderValueForTesting(
     const std::string_view directive) const {
   for (size_t iter = 0; auto value = EnumerateHeader(&iter, kCacheControl);) {
-    const std::optional<std::string_view> directive_value = base::RemovePrefix(
-        *value, directive, base::CompareCase::INSENSITIVE_ASCII);
-    if (directive_value.has_value()) {
-      const auto delta = ParseSeconds(*directive_value);
+    if (base::StartsWith(*value, directive,
+                         base::CompareCase::INSENSITIVE_ASCII)) {
+      const auto delta = ParseSeconds(value->substr(directive.size()));
       if (delta.has_value()) {
         return delta;
       }
@@ -1152,9 +1150,9 @@ bool HttpResponseHeaders::IsRedirectResponseCode(int response_code) {
 //   freshness_lifetime + stale_while_revalidate > current_age
 //
 ValidationType HttpResponseHeaders::RequiresValidation(
-    Time request_time,
-    Time response_time,
-    Time current_time) const {
+    const Time& request_time,
+    const Time& response_time,
+    const Time& current_time) const {
   FreshnessLifetimes lifetimes = GetFreshnessLifetimes(response_time);
   if (lifetimes.freshness.is_zero() && lifetimes.staleness.is_zero())
     return VALIDATION_SYNCHRONOUS;
@@ -1185,20 +1183,18 @@ HttpResponseHeaders::CacheControlFreshnessDirectives
 HttpResponseHeaders::ParseCacheControlDirectivesForFreshness() const {
   CacheControlFreshnessDirectives directives;
   for (size_t iter = 0; auto value = EnumerateHeader(&iter, kCacheControl);) {
-    // Result of calling base::RemovePrefix() for values that have prefixes.
-    // nullopt if the prefix that is searched for is not present.
-    std::optional<std::string_view> with_prefix_removed;
     if (base::EqualsCaseInsensitiveASCII(*value, kMustRevalidate)) {
       directives.must_revalidate = true;
     } else if (!directives.max_age &&
-               (with_prefix_removed = base::RemovePrefix(
-                    *value, kMaxAge, base::CompareCase::INSENSITIVE_ASCII))) {
-      directives.max_age = ParseSeconds(*with_prefix_removed);
+               base::StartsWith(*value, kMaxAge,
+                                base::CompareCase::INSENSITIVE_ASCII)) {
+      // Extract just the value part after "max-age="
+      directives.max_age = ParseSeconds(value->substr(kMaxAge.size()));
     } else if (!directives.stale_while_revalidate &&
-               (with_prefix_removed =
-                    base::RemovePrefix(*value, kStaleWhileRevalidate,
-                                       base::CompareCase::INSENSITIVE_ASCII))) {
-      directives.stale_while_revalidate = ParseSeconds(*with_prefix_removed);
+               base::StartsWith(*value, kStaleWhileRevalidate,
+                                base::CompareCase::INSENSITIVE_ASCII)) {
+      directives.stale_while_revalidate =
+          ParseSeconds(value->substr(kStaleWhileRevalidate.size()));
     }
   }
   return directives;
@@ -1228,7 +1224,7 @@ HttpResponseHeaders::ParseCacheControlDirectivesForFreshness() const {
 // the |staleness| time, unless it overridden by another directive.
 //
 HttpResponseHeaders::FreshnessLifetimes
-HttpResponseHeaders::GetFreshnessLifetimes(Time response_time) const {
+HttpResponseHeaders::GetFreshnessLifetimes(const Time& response_time) const {
   FreshnessLifetimes lifetimes;
   // Check for headers that force a response to never be fresh.  For backwards
   // compat, we treat "Pragma: no-cache" as a synonym for "Cache-Control:
@@ -1369,9 +1365,10 @@ HttpResponseHeaders::GetFreshnessLifetimes(Time response_time) const {
 //     resident_time = now - response_time;
 //     current_age = corrected_initial_age + resident_time;
 //
-base::TimeDelta HttpResponseHeaders::GetCurrentAge(Time request_time,
-                                                   Time response_time,
-                                                   Time current_time) const {
+base::TimeDelta HttpResponseHeaders::GetCurrentAge(
+    const Time& request_time,
+    const Time& response_time,
+    const Time& current_time) const {
   // If there is no Date header, then assume that the server response was
   // generated at the time when we received the response.
   Time date_value = GetDateValue().value_or(response_time);
@@ -1521,31 +1518,27 @@ bool HttpResponseHeaders::HasValidators() const {
 
 // From RFC 2616:
 // Content-Length = "Content-Length" ":" 1*DIGIT
-std::optional<base::ByteCount> HttpResponseHeaders::GetContentLength() const {
-  std::optional<int64_t> result = GetInt64HeaderValue("content-length");
-  if (result.has_value()) {
-    return base::ByteCount(result.value());
-  }
-  return std::nullopt;
+int64_t HttpResponseHeaders::GetContentLength() const {
+  return GetInt64HeaderValue("content-length");
 }
 
-std::optional<int64_t> HttpResponseHeaders::GetInt64HeaderValue(
-    std::string_view header) const {
+int64_t HttpResponseHeaders::GetInt64HeaderValue(
+    const std::string& header) const {
   size_t iter = 0;
   std::optional<std::string_view> content_length =
       EnumerateHeader(&iter, header);
   if (!content_length || content_length->empty()) {
-    return std::nullopt;
+    return -1;
   }
 
   if ((*content_length)[0] == '+') {
-    return std::nullopt;
+    return -1;
   }
 
   int64_t result;
   bool ok = base::StringToInt64(*content_length, &result);
   if (!ok || result < 0) {
-    return std::nullopt;
+    return -1;
   }
 
   return result;
@@ -1567,10 +1560,10 @@ bool HttpResponseHeaders::GetContentRangeFor206(
       *content_range, first_byte_position, last_byte_position, instance_length);
 }
 
-base::DictValue HttpResponseHeaders::NetLogParams(
+base::Value::Dict HttpResponseHeaders::NetLogParams(
     NetLogCaptureMode capture_mode) const {
-  base::DictValue dict;
-  base::ListValue headers;
+  base::Value::Dict dict;
+  base::Value::List headers;
   headers.Append(NetLogStringValue(GetStatusLine()));
   size_t iterator = 0;
   std::string name;

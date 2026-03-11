@@ -5,24 +5,19 @@
 #include <stddef.h>
 #include <unistd.h>
 
-#include <cstdint>
-
-#include "base/byte_size.h"
 #include "base/system/sys_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base {
 namespace android {
 
-TEST(SysUtils, AmountOfTotalPhysicalMemory) {
+TEST(SysUtils, AmountOfPhysicalMemory) {
   // Check that the RAM size reported by sysconf() matches the one
-  // computed by base::SysInfo::AmountOfTotalPhysicalMemory().
-  // The sysconf() calls should never return negative, but if they do the test
-  // will fail instead of crashing since they're stored in ByteSizeDelta.
-  const auto sys_ram_size =
-      base::ByteSizeDelta(sysconf(_SC_PHYS_PAGES)) * sysconf(_SC_PAGESIZE);
+  // computed by base::SysInfo::AmountOfPhysicalMemory().
+  size_t sys_ram_size =
+      static_cast<size_t>(sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGESIZE));
   EXPECT_EQ(sys_ram_size,
-            SysInfo::AmountOfTotalPhysicalMemory().AsByteSizeDelta());
+            static_cast<size_t>(SysInfo::AmountOfPhysicalMemory()));
 }
 
 }  // namespace android

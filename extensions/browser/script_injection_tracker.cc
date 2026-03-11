@@ -7,7 +7,7 @@
 #include <algorithm>
 
 #include "base/check_is_test.h"
-#include "base/debug/crash_logging.h"
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ref.h"
 #include "base/strings/string_number_conversions.h"
@@ -99,7 +99,7 @@ class RenderProcessHostUserData : public base::SupportsUserData::Data {
 
   bool HasScript(ScriptInjectionTracker::ScriptType script_type,
                  const ExtensionId& extension_id) const {
-    return GetScripts(script_type).contains(extension_id);
+    return base::Contains(GetScripts(script_type), extension_id);
   }
 
   void AddScript(ScriptInjectionTracker::ScriptType script_type,
@@ -176,7 +176,11 @@ std::vector<const UserScript*> GetLoadedDynamicScripts(
   UserScriptManager* manager =
       ExtensionSystem::Get(process.GetBrowserContext())->user_script_manager();
   if (!manager) {
+    // TODO(crbug.com/412829476): Remove this guard once we enable
+    // UserScriptManager on desktop Android.
+#if BUILDFLAG(ENABLE_EXTENSIONS)
     CHECK_IS_TEST();
+#endif
     return std::vector<const UserScript*>();
   }
 
@@ -304,11 +308,11 @@ bool DoScriptsMatch(const Extension& extension,
 
 // Returns whether an `extension` can inject JavaScript web view scripts into
 // the `frame` / `url`.
-bool DoWebViewScriptsMatch(const Extension& extension,
+bool DoWebViewScripstMatch(const Extension& extension,
                            content::RenderFrameHost& frame) {
 #if BUILDFLAG(ENABLE_GUEST_VIEW)
   content::RenderProcessHost& process = *frame.GetProcess();
-  TRACE_EVENT("extensions", "ScriptInjectionTracker/DoWebViewScriptsMatch",
+  TRACE_EVENT("extensions", "ScriptInjectionTracker/DoWebViewScripstMatch",
               ChromeTrackEvent::kRenderProcessHost, process,
               ChromeTrackEvent::kChromeExtensionId,
               ExtensionIdForTracing(extension.id()));
@@ -319,16 +323,11 @@ bool DoWebViewScriptsMatch(const Extension& extension,
     return false;
   }
 
-  if (!guest->owner_rfh()) {
-    // If the owner RenderFrameHost is no longer around, the URL can't match.
-    return false;
-  }
-
   // Return true if `extension` is an owner of `guest` and it registered
   // content scripts using the `webview.addContentScripts` API.
   GURL owner_site_url = guest->GetOwnerSiteURL();
   if (owner_site_url.SchemeIs(kExtensionScheme) &&
-      owner_site_url.host() == extension.id()) {
+      owner_site_url.host_piece() == extension.id()) {
     WebViewContentScriptManager* script_manager =
         WebViewContentScriptManager::Get(frame.GetBrowserContext());
     int embedder_process_id =
@@ -426,7 +425,7 @@ std::vector<const Extension*> GetExtensionsInjectingContentScripts(
   std::vector<const Extension*> extensions_injecting_scripts;
   for (const auto& it : extensions) {
     const Extension& extension = *it;
-    if (DoWebViewScriptsMatch(extension, frame) ||
+    if (DoWebViewScripstMatch(extension, frame) ||
         DoStaticContentScriptsMatch(extension, frame, url) ||
         DoDynamicContentScriptsMatch(extension, frame, url)) {
       extensions_injecting_scripts.push_back(&extension);
@@ -448,7 +447,7 @@ void AddMatchingScriptsToProcess(const Extension& extension,
     const GURL& url = frame->GetLastCommittedURL();
     if (!any_frame_matches_content_scripts) {
       any_frame_matches_content_scripts =
-          DoWebViewScriptsMatch(extension, *frame) ||
+          DoWebViewScripstMatch(extension, *frame) ||
           DoStaticContentScriptsMatch(extension, *frame, url) ||
           DoDynamicContentScriptsMatch(extension, *frame, url);
     }
@@ -994,7 +993,7 @@ ScopedScriptInjectionTrackerFailureCrashKeys::
   if (extension) {
     do_web_view_scripts_match_crash_key_.emplace(
         GetDoWebViewScriptsMatchCrashKey(),
-        BoolToCrashKeyValue(DoWebViewScriptsMatch(*extension, frame)));
+        BoolToCrashKeyValue(DoWebViewScripstMatch(*extension, frame)));
     do_static_content_scripts_match_crash_key_.emplace(
         GetDoStaticContentScriptsMatchCrashKey(),
         BoolToCrashKeyValue(

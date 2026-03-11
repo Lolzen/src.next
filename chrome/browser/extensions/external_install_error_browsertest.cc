@@ -5,33 +5,22 @@
 #include "chrome/browser/extensions/external_install_error.h"
 
 #include <memory>
-#include <string>
-#include <vector>
 
-#include "base/strings/utf_string_conversions.h"
-#include "base/values.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/external_install_manager.h"
 #include "chrome/browser/extensions/external_provider_manager.h"
 #include "chrome/browser/extensions/webstore_data_fetcher.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/global_error/global_error_waiter.h"
-#include "chrome/grit/branded_strings.h"
-#include "chrome/grit/generated_resources.h"
-#include "components/prefs/pref_service.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/mock_external_provider.h"
-#include "extensions/browser/pref_names.h"
 #include "extensions/browser/test_extension_registry_observer.h"
 #include "testing/gmock/include/gmock/gmock.h"
-#include "third_party/re2/src/re2/re2.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace extensions {
 
@@ -63,9 +52,7 @@ class ExternalInstallErrorTest : public ExtensionBrowserTest {
  protected:
   void InstallExternalExtension(const char* provided_extension_id,
                                 const std::string& version,
-                                const std::string& crx_path,
-                                mojom::ManifestLocation location =
-                                    mojom::ManifestLocation::kExternalPref) {
+                                const std::string& crx_path) {
     ExtensionRegistry* registry = ExtensionRegistry::Get(profile());
 
     {
@@ -77,7 +64,7 @@ class ExternalInstallErrorTest : public ExtensionBrowserTest {
       ExternalProviderManager* external_provider_manager =
           ExternalProviderManager::Get(profile());
       auto provider = std::make_unique<MockExternalProvider>(
-          external_provider_manager, location);
+          external_provider_manager, mojom::ManifestLocation::kExternalPref);
       provider->UpdateOrAddExtension(provided_extension_id, version,
                                      test_data_dir_.AppendASCII(crx_path));
       external_provider_manager->AddProviderForTesting(std::move(provider));
@@ -108,7 +95,7 @@ IN_PROC_BROWSER_TEST_F(ExternalInstallErrorTest,
   FeatureSwitch::ScopedOverride feature_override(
       FeatureSwitch::prompt_for_external_extensions(), true);
 
-  constexpr char kId[] = "akjooamlhcgeopfifcmlggaebeocgokj";
+  const char kId[] = "akjooamlhcgeopfifcmlggaebeocgokj";
   auto mock_response = CreateMockResponse(kId);
   WebstoreDataFetcher::SetMockItemSnippetReponseForTesting(mock_response.get());
 
@@ -140,7 +127,7 @@ IN_PROC_BROWSER_TEST_F(ExternalInstallErrorTest,
   FeatureSwitch::ScopedOverride feature_override(
       FeatureSwitch::prompt_for_external_extensions(), true);
 
-  constexpr char kId[] = "ldnnhddmnhbkjipkidpdiheffobcpfmf";
+  const char kId[] = "ldnnhddmnhbkjipkidpdiheffobcpfmf";
   auto mock_response = CreateMockResponse(kId);
   WebstoreDataFetcher::SetMockItemSnippetReponseForTesting(mock_response.get());
 
@@ -159,85 +146,6 @@ IN_PROC_BROWSER_TEST_F(ExternalInstallErrorTest,
   // Validate that the alert prompt's data corresponds to what is returned from
   // the item snippets API.
   EXPECT_FALSE(alert_prompt->has_webstore_data());
-}
-
-IN_PROC_BROWSER_TEST_F(ExternalInstallErrorTest,
-                       InitialPreinstallUsesProviderInTitle) {
-  FeatureSwitch::ScopedOverride feature_override(
-      FeatureSwitch::prompt_for_external_extensions(), true);
-
-  // Arrange provider  initial list in prefs.
-  constexpr char kProvider[] = "Extension Partner";
-  constexpr char kId[] = "akjooamlhcgeopfifcmlggaebeocgokj";
-  PrefService* prefs = profile()->GetPrefs();
-  {
-    base::ListValue ids;
-    ids.Append(kId);
-    prefs->SetList(pref_names::kInitialInstallList, std::move(ids));
-    prefs->SetString(pref_names::kInitialInstallProviderName, kProvider);
-  }
-
-  auto mock_response = CreateMockResponse(kId);
-  WebstoreDataFetcher::SetMockItemSnippetReponseForTesting(mock_response.get());
-
-  InstallExternalExtension(kId, "1", "update_from_webstore.crx",
-                           mojom::ManifestLocation::kExternalPrefDownload);
-
-  std::vector<ExternalInstallError*> errors =
-      ExternalInstallManager::Get(profile())->GetErrorsForTesting();
-  ASSERT_EQ(1u, errors.size());
-  EXPECT_EQ(kId, errors[0]->extension_id());
-  ExtensionInstallPrompt::Prompt* alert_prompt =
-      errors[0]->GetPromptForTesting();
-  ASSERT_TRUE(alert_prompt);
-
-  // Expect the provider-aware initial-install title.
-  const std::string title_regex_pattern =
-      "Extension Partner has added an extension that may change the way "
-      "(Chromium|Chrome) works.\\n\\nTest extension that updates from webstore";
-  EXPECT_TRUE(re2::RE2::FullMatch(
-      base::UTF16ToUTF8(alert_prompt->GetDialogTitle()), title_regex_pattern));
-}
-
-IN_PROC_BROWSER_TEST_F(ExternalInstallErrorTest,
-                       InitialPreinstallFallbackTitleWhenIdNotListed) {
-  FeatureSwitch::ScopedOverride feature_override(
-      FeatureSwitch::prompt_for_external_extensions(), true);
-
-  constexpr char kProvider[] = "Extension Partner";
-  // Use the non-webstore test extension.
-  constexpr char kId[] = "ldnnhddmnhbkjipkidpdiheffobcpfmf";
-  PrefService* prefs = profile()->GetPrefs();
-  {
-    base::ListValue ids;
-    // NOTE: Intentionally NOT appending kId here.
-    ids.Append("oooooooooooooooooooooooooooooooo");
-    prefs->SetList(pref_names::kInitialInstallList, std::move(ids));
-    prefs->SetString(pref_names::kInitialInstallProviderName, kProvider);
-  }
-
-  auto mock_response = CreateMockResponse(kId);
-  WebstoreDataFetcher::SetMockItemSnippetReponseForTesting(mock_response.get());
-
-  InstallExternalExtension(kId, "1.0.0.0", "good.crx",
-                           mojom::ManifestLocation::kExternalPrefDownload);
-
-  std::vector<ExternalInstallError*> errors =
-      ExternalInstallManager::Get(profile())->GetErrorsForTesting();
-  ASSERT_EQ(1u, errors.size());
-  EXPECT_EQ(kId, errors[0]->extension_id());
-  ExtensionInstallPrompt::Prompt* alert_prompt =
-      errors[0]->GetPromptForTesting();
-  ASSERT_TRUE(alert_prompt);
-
-  const Extension* extension = alert_prompt->extension();
-  ASSERT_TRUE(extension);
-
-  const std::string title_regex_pattern =
-      "Another program on your computer added an extension that may change "
-      "the way (Chromium|Chrome) works.\n\nMy extension 1";
-  EXPECT_TRUE(re2::RE2::FullMatch(
-      base::UTF16ToUTF8(alert_prompt->GetDialogTitle()), title_regex_pattern));
 }
 
 }  // namespace extensions

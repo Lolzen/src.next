@@ -19,8 +19,6 @@ import androidx.annotation.DrawableRes;
 import androidx.annotation.IntDef;
 import androidx.core.widget.ImageViewCompat;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.R;
 import org.chromium.components.browser_ui.styles.SemanticColorUtils;
 import org.chromium.ui.util.ColorUtils;
@@ -32,7 +30,6 @@ import java.lang.annotation.RetentionPolicy;
  * View class for a bubble used in gesture navigation UI that consists of an icon
  * and an optional text.
  */
-@NullMarked
 public class NavigationBubble extends LinearLayout {
     /**
      * Target to close when gesture navigation takes place on the beginning
@@ -81,7 +78,7 @@ public class NavigationBubble extends LinearLayout {
 
     private TextView mText;
     private ImageView mIcon;
-    private @Nullable AnimationListener mListener;
+    private AnimationListener mListener;
 
     // True if arrow bubble is faded out.
     private boolean mArrowFaded;
@@ -93,7 +90,7 @@ public class NavigationBubble extends LinearLayout {
         this(context, null);
     }
 
-    public NavigationBubble(Context context, @Nullable AttributeSet attrs) {
+    public NavigationBubble(Context context, AttributeSet attrs) {
         super(context, attrs);
 
         mBlack = getContext().getColor(R.color.navigation_bubble_arrow);

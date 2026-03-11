@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/rand_util.h"
@@ -57,7 +58,7 @@ static const char kCanvasPageString[] =
     "    window.document.title = \"Ready\";"
     "  </script>"
     "</body>";
-}  // namespace
+}
 
 class SnapshotBrowserTest : public ContentBrowserTest {
  public:
@@ -97,9 +98,8 @@ class SnapshotBrowserTest : public ContentBrowserTest {
   std::unique_ptr<net::test_server::HttpResponse> HandleRequest(
       const net::test_server::HttpRequest& request) {
     GURL absolute_url = embedded_test_server()->GetURL(request.relative_url);
-    if (absolute_url.GetPath() != "/test") {
+    if (absolute_url.path() != "/test")
       return nullptr;
-    }
 
     std::unique_ptr<net::test_server::BasicHttpResponse> http_response(
         new net::test_server::BasicHttpResponse());
@@ -121,16 +121,27 @@ class SnapshotBrowserTest : public ContentBrowserTest {
     }
   }
 
-  SkColor PickRandomColor() {
-    return SkColorSetRGB(base::RandGenerator(256), base::RandGenerator(256),
-                         base::RandGenerator(256));
+  struct ExpectedColor {
+    ExpectedColor() : r(0), g(0), b(0) {}
+    bool operator==(const ExpectedColor& other) const {
+      return (r == other.r && g == other.g && b == other.b);
+    }
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+  };
+
+  void PickRandomColor(ExpectedColor* expected) {
+    expected->r = static_cast<uint8_t>(base::RandInt(0, 256));
+    expected->g = static_cast<uint8_t>(base::RandInt(0, 256));
+    expected->b = static_cast<uint8_t>(base::RandInt(0, 256));
   }
 
   struct SerialSnapshot {
     SerialSnapshot() : host(nullptr) {}
 
     raw_ptr<content::RenderWidgetHost> host;
-    SkColor color;
+    ExpectedColor color;
   };
   std::vector<SerialSnapshot> expected_snapshots_;
 
@@ -143,11 +154,14 @@ class SnapshotBrowserTest : public ContentBrowserTest {
         const SkBitmap* bitmap = image.ToSkBitmap();
         SkColor color = bitmap->getColor(1, 1);
 
-        EXPECT_EQ(SkColorGetR(color), SkColorGetR(expected.color))
+        EXPECT_EQ(static_cast<int>(SkColorGetR(color)),
+                  static_cast<int>(expected.color.r))
             << "Red channels differed";
-        EXPECT_EQ(SkColorGetG(color), SkColorGetG(expected.color))
+        EXPECT_EQ(static_cast<int>(SkColorGetG(color)),
+                  static_cast<int>(expected.color.g))
             << "Green channels differed";
-        EXPECT_EQ(SkColorGetB(color), SkColorGetB(expected.color))
+        EXPECT_EQ(static_cast<int>(SkColorGetB(color)),
+                  static_cast<int>(expected.color.b))
             << "Blue channels differed";
 
         expected_snapshots_.erase(iter);
@@ -156,7 +170,7 @@ class SnapshotBrowserTest : public ContentBrowserTest {
     }
   }
 
-  std::map<content::RenderWidgetHost*, std::vector<SkColor>>
+  std::map<content::RenderWidgetHost*, std::vector<ExpectedColor>>
       expected_async_snapshots_map_;
   int num_remaining_async_snapshots_ = 0;
 
@@ -165,7 +179,7 @@ class SnapshotBrowserTest : public ContentBrowserTest {
     --num_remaining_async_snapshots_;
     auto iterator = expected_async_snapshots_map_.find(rwhi);
     ASSERT_NE(iterator, expected_async_snapshots_map_.end());
-    std::vector<SkColor>& expected_snapshots = iterator->second;
+    std::vector<ExpectedColor>& expected_snapshots = iterator->second;
     const SkBitmap* bitmap = image.ToSkBitmap();
     SkColor color = bitmap->getColor(1, 1);
     bool found = false;
@@ -174,10 +188,10 @@ class SnapshotBrowserTest : public ContentBrowserTest {
     // failure.
     for (auto iter = expected_snapshots.begin();
          iter != expected_snapshots.end(); ++iter) {
-      const SkColor expected = *iter;
-      if (SkColorGetR(color) == SkColorGetR(expected) &&
-          SkColorGetG(color) == SkColorGetG(expected) &&
-          SkColorGetB(color) == SkColorGetB(expected)) {
+      const ExpectedColor& expected = *iter;
+      if (SkColorGetR(color) == expected.r &&
+          SkColorGetG(color) == expected.g &&
+          SkColorGetB(color) == expected.b) {
         // Erase everything up to this color, but not this color
         // itself, since it might be returned again later on
         // subsequent snapshot requests.
@@ -199,15 +213,6 @@ class SnapshotBrowserTest : public ContentBrowserTest {
 // that the multi-window tests would never work on that platform.
 #if !BUILDFLAG(IS_ANDROID)
 
-namespace {
-
-std::string SkColorToHtmlColor(SkColor k) {
-  return base::StringPrintf("#%02x%02x%02x", SkColorGetR(k), SkColorGetG(k),
-                            SkColorGetB(k));
-}
-
-}  // namespace
-
 #if BUILDFLAG(IS_MAC)
 // TODO(crbug.com/40854618): This test is flakey on macOS.
 #define MAYBE_SingleWindowTest DISABLED_SingleWindowTest
@@ -222,11 +227,12 @@ IN_PROC_BROWSER_TEST_F(SnapshotBrowserTest, MAYBE_SingleWindowTest) {
   for (int i = 0; i < 40; ++i) {
     SerialSnapshot expected;
     expected.host = rwhi;
-    expected.color = PickRandomColor();
+    PickRandomColor(&expected.color);
 
-    std::string html = SkColorToHtmlColor(expected.color);
-    std::string script = std::string("fillWithColor(\"") + html + "\");";
-    EXPECT_EQ(html, EvalJs(GetWebContents(shell()), script));
+    std::string colorString = base::StringPrintf(
+        "#%02x%02x%02x", expected.color.r, expected.color.g, expected.color.b);
+    std::string script = std::string("fillWithColor(\"") + colorString + "\");";
+    EXPECT_EQ(colorString, EvalJs(GetWebContents(shell()), script));
 
     expected_snapshots_.push_back(expected);
 
@@ -282,11 +288,14 @@ IN_PROC_BROWSER_TEST_F(SnapshotBrowserTest, MAYBE_SyncMultiWindowTest) {
 
       SerialSnapshot expected;
       expected.host = rwhi;
-      expected.color = PickRandomColor();
+      PickRandomColor(&expected.color);
 
-      std::string html = SkColorToHtmlColor(expected.color);
-      std::string script = std::string("fillWithColor(\"") + html + "\");";
-      EXPECT_EQ(html, EvalJs(GetWebContents(browser), script));
+      std::string colorString =
+          base::StringPrintf("#%02x%02x%02x", expected.color.r,
+                             expected.color.g, expected.color.b);
+      std::string script =
+          std::string("fillWithColor(\"") + colorString + "\");";
+      EXPECT_EQ(colorString, EvalJs(GetWebContents(browser), script));
       expected_snapshots_.push_back(expected);
       // Get the snapshot from the surface rather than the window. The
       // on-screen display path is verified by the GPU tests, and it
@@ -348,19 +357,21 @@ IN_PROC_BROWSER_TEST_F(SnapshotBrowserTest, MAYBE_AsyncMultiWindowTest) {
       Shell* browser = browser_list[browser_index];
       content::RenderWidgetHostImpl* rwhi = GetRenderWidgetHostImpl(browser);
 
-      std::vector<SkColor>& expected_snapshots =
+      std::vector<ExpectedColor>& expected_snapshots =
           expected_async_snapshots_map_[rwhi];
 
       // Pick a unique random color.
-      SkColor expected;
+      ExpectedColor expected;
       do {
-        expected = PickRandomColor();
-      } while (std::ranges::contains(expected_snapshots, expected));
+        PickRandomColor(&expected);
+      } while (base::Contains(expected_snapshots, expected));
       expected_snapshots.push_back(expected);
 
-      std::string html = SkColorToHtmlColor(expected);
-      std::string script = std::string("fillWithColor(\"") + html + "\");";
-      EXPECT_EQ(html, EvalJs(GetWebContents(browser), script));
+      std::string colorString = base::StringPrintf("#%02x%02x%02x", expected.r,
+                                                   expected.g, expected.b);
+      std::string script =
+          std::string("fillWithColor(\"") + colorString + "\");";
+      EXPECT_EQ(colorString, EvalJs(GetWebContents(browser), script));
       // Get the snapshot from the surface rather than the window. The
       // on-screen display path is verified by the GPU tests, and it
       // seems difficult to figure out the colorspace transformation

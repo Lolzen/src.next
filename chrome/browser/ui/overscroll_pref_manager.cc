@@ -4,17 +4,14 @@
 
 #include "chrome/browser/ui/overscroll_pref_manager.h"
 
-#include "base/feature_list.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/content_features.h"
 
-OverscrollPrefManager::OverscrollPrefManager(TabStripModel* tab_strip_model,
-                                             bool is_type_devtools)
-    : tab_strip_model_(tab_strip_model), is_type_devtools_(is_type_devtools) {
+OverscrollPrefManager::OverscrollPrefManager(Browser* browser)
+    : browser_(browser) {
   PrefService* local_state = g_browser_process->local_state();
   if (local_state) {
     overscroll_history_navigation_enabled_ =
@@ -35,15 +32,15 @@ void OverscrollPrefManager::OnOverscrollHistoryNavigationEnabledChanged() {
       g_browser_process->local_state()->GetBoolean(
           prefs::kOverscrollHistoryNavigationEnabled);
 
-  for (int tab_index = 0; tab_index < tab_strip_model_->count(); ++tab_index) {
+  TabStripModel* tab_strip_model = browser_->tab_strip_model();
+  for (int tab_index = 0; tab_index < tab_strip_model->count(); ++tab_index) {
     content::WebContents* web_contents =
-        tab_strip_model_->GetWebContentsAt(tab_index);
+        tab_strip_model->GetWebContentsAt(tab_index);
     web_contents->SetOverscrollNavigationEnabled(
         overscroll_history_navigation_enabled_);
   }
 }
 
-bool OverscrollPrefManager::CanOverscrollContent() const {
-  return !is_type_devtools_ && overscroll_history_navigation_enabled_ &&
-         base::FeatureList::IsEnabled(features::kOverscrollHistoryNavigation);
+bool OverscrollPrefManager::IsOverscrollHistoryNavigationEnabled() const {
+  return overscroll_history_navigation_enabled_;
 }

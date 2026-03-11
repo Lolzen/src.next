@@ -4,9 +4,10 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
+import androidx.annotation.Nullable;
+
 import org.chromium.base.Token;
-import org.chromium.base.supplier.NullableObservableSupplier;
-import org.chromium.build.annotations.NullMarked;
+import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.components.collaboration.messaging.MessageUtils;
@@ -19,17 +20,17 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /** Pushes bubble/dot notifications for tabs. */
-@NullMarked
 public class TabBubbler extends TabObjectNotificationUpdater {
-    private final NullableObservableSupplier<Token> mTabGroupIdSupplier;
+    private final ObservableSupplier<Token> mTabGroupIdSupplier;
 
     public TabBubbler(
             Profile profile,
             TabListNotificationHandler tabListNotificationHandler,
-            NullableObservableSupplier<Token> tabGroupIdSupplier) {
+            ObservableSupplier<Token> tabGroupIdSupplier) {
         super(profile, tabListNotificationHandler);
         mTabGroupIdSupplier = tabGroupIdSupplier;
         // Do not observe mTabGroupIdSupplier. We will be told to #showAll() is this changes.
@@ -37,13 +38,13 @@ public class TabBubbler extends TabObjectNotificationUpdater {
 
     @Override
     public void showAll() {
-        Token tabGroupId = mTabGroupIdSupplier.get();
+        @Nullable Token tabGroupId = mTabGroupIdSupplier.get();
         if (tabGroupId == null) return;
         LocalTabGroupId localTabGroupId = new LocalTabGroupId(tabGroupId);
         EitherGroupId eitherGroupId = EitherGroupId.createLocalId(localTabGroupId);
         List<PersistentMessage> messageList =
                 mMessagingBackendService.getMessagesForGroup(
-                        eitherGroupId, PersistentNotificationType.DIRTY_TAB);
+                        eitherGroupId, Optional.of(PersistentNotificationType.DIRTY_TAB));
 
         Set<Integer> tabIds = new HashSet<>();
         for (PersistentMessage message : messageList) {

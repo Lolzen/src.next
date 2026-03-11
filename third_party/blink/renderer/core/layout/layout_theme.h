@@ -33,11 +33,8 @@
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
+#include "ui/color/color_provider.h"
 #include "ui/gfx/geometry/size.h"
-
-namespace ui {
-class ColorProvider;
-}
 
 namespace blink {
 

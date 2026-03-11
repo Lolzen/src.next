@@ -30,8 +30,7 @@ class ActiveStyleSheetsTest : public PageTestBase {
         MakeGarbageCollected<CSSParserContext>(
             kHTMLStandardMode, SecureContextMode::kInsecureContext));
     contents->ParseString(css_text);
-    contents->EnsureRuleSet(MediaQueryEvaluator(GetDocument().GetFrame()),
-                            /*mixins=*/{});
+    contents->EnsureRuleSet(MediaQueryEvaluator(GetDocument().GetFrame()));
     return MakeGarbageCollected<CSSStyleSheet>(contents);
   }
 };
@@ -125,7 +124,7 @@ TEST_F(ActiveStyleSheetsTest, CompareActiveStyleSheets_Mutated) {
 
   sheet2->Contents()->ClearRuleSet();
   sheet2->Contents()->EnsureRuleSet(
-      MediaQueryEvaluator(GetDocument().GetFrame()), /*mixins=*/{});
+      MediaQueryEvaluator(GetDocument().GetFrame()));
 
   EXPECT_NE(old_sheets[1].second, &sheet2->Contents()->GetRuleSet());
 
@@ -437,7 +436,7 @@ TEST_F(ApplyRulesetsTest, AddUniversalRuleToDocument) {
 }
 
 TEST_F(ApplyRulesetsTest, AddUniversalRuleToShadowTree) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes("<div id=host></div>");
+  GetDocument().body()->setInnerHTML("<div id=host></div>");
   Element* host = GetElementById("host");
   ASSERT_TRUE(host);
 
@@ -476,7 +475,7 @@ TEST_F(ApplyRulesetsTest, AddFontFaceRuleToDocument) {
 }
 
 TEST_F(ApplyRulesetsTest, AddFontFaceRuleToShadowTree) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes("<div id=host></div>");
+  GetDocument().body()->setInnerHTML("<div id=host></div>");
   Element* host = GetElementById("host");
   ASSERT_TRUE(host);
 
@@ -501,14 +500,13 @@ TEST_F(ApplyRulesetsTest, AddFontFaceRuleToShadowTree) {
 }
 
 TEST_F(ApplyRulesetsTest, RemoveSheetFromShadowTree) {
-  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes("<div id=host></div>");
+  GetDocument().body()->setInnerHTML("<div id=host></div>");
   Element* host = GetElementById("host");
   ASSERT_TRUE(host);
 
   ShadowRoot& shadow_root =
       host->AttachShadowRootForTesting(ShadowRootMode::kOpen);
-  shadow_root.SetInnerHTMLWithoutTrustedTypes(
-      "<style>::slotted(#dummy){color:pink}</style>");
+  shadow_root.setInnerHTML("<style>::slotted(#dummy){color:pink}</style>");
   UpdateAllLifecyclePhasesForTest();
 
   ASSERT_EQ(1u, shadow_root.StyleSheets().length());

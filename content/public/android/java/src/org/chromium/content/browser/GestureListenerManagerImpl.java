@@ -66,7 +66,7 @@ public class GestureListenerManagerImpl
     private final RewindableIterator<GestureStateListener> mIterator;
     private final HashMap<GestureStateListener, Integer> mListenerFrequency;
     private @Nullable SelectionPopupControllerImpl mSelectionPopupController;
-    private final ViewAndroidDelegate mViewDelegate;
+    private ViewAndroidDelegate mViewDelegate;
     private @Nullable InternalAccessDelegate mScrollDelegate;
     private final boolean mHidePastePopupOnGSB;
     private final boolean mResetGestureDetectionOnLosingFocus;
@@ -115,7 +115,8 @@ public class GestureListenerManagerImpl
         mViewDelegate.addVerticalScrollDirectionChangeListener(this);
         WindowEventObserverManager.from(mWebContents).addObserver(this);
         mNativeGestureListenerManager =
-                GestureListenerManagerImplJni.get().init(this, mWebContents);
+                GestureListenerManagerImplJni.get()
+                        .init(GestureListenerManagerImpl.this, mWebContents);
         mHidePastePopupOnGSB =
                 ContentFeatureMap.isEnabled(ContentFeatureList.HIDE_PASTE_POPUP_ON_GSB);
         mResetGestureDetectionOnLosingFocus =
@@ -125,7 +126,8 @@ public class GestureListenerManagerImpl
     public void resetGestureDetection() {
         if (mNativeGestureListenerManager != 0) {
             GestureListenerManagerImplJni.get()
-                    .resetGestureDetection(mNativeGestureListenerManager);
+                    .resetGestureDetection(
+                            mNativeGestureListenerManager, GestureListenerManagerImpl.this);
         }
     }
 
@@ -199,28 +201,28 @@ public class GestureListenerManagerImpl
         if (mNativeGestureListenerManager == 0) return;
         GestureListenerManagerImplJni.get()
                 .setMultiTouchZoomSupportEnabled(
-                        mNativeGestureListenerManager, supportsMultiTouchZoom);
+                        mNativeGestureListenerManager,
+                        GestureListenerManagerImpl.this,
+                        supportsMultiTouchZoom);
     }
 
     @Override
     public void updateDoubleTapSupport(boolean supportsDoubleTap) {
         if (mNativeGestureListenerManager == 0) return;
         GestureListenerManagerImplJni.get()
-                .setDoubleTapSupportEnabled(mNativeGestureListenerManager, supportsDoubleTap);
+                .setDoubleTapSupportEnabled(
+                        mNativeGestureListenerManager,
+                        GestureListenerManagerImpl.this,
+                        supportsDoubleTap);
     }
 
+    /** Update all the listeners after touch down event occurred. */
     @CalledByNative
     private void updateOnTouchDown() {
         for (mIterator.rewind(); mIterator.hasNext(); ) mIterator.next().onTouchDown();
     }
 
-    @CalledByNative
-    private void updateOnTouchUp() {
-        for (mIterator.rewind(); mIterator.hasNext(); ) mIterator.next().onTouchUp();
-    }
-
     /** Returns whether there's an active, ongoing fling scroll. */
-    @Override
     public boolean hasActiveFlingScroll() {
         return mHasActiveFlingScroll;
     }
@@ -338,7 +340,8 @@ public class GestureListenerManagerImpl
                 break;
             case EventType.GESTURE_LONG_PRESS:
                 if (!consumed) break;
-                assumeNonNull(mViewDelegate.getContainerView())
+                mViewDelegate
+                        .getContainerView()
                         .performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
                 break;
             case EventType.GESTURE_BEGIN:
@@ -447,7 +450,7 @@ public class GestureListenerManagerImpl
         // Adjust contentWidth/Height to be always at least as big as
         // the actual viewport (as set by onSizeChanged).
         final float deviceScale = rc.getDeviceScaleFactor();
-        View containerView = assumeNonNull(mViewDelegate.getContainerView());
+        View containerView = mViewDelegate.getContainerView();
         contentWidth =
                 Math.max(contentWidth, containerView.getWidth() / (deviceScale * pageScaleFactor));
         contentHeight =
@@ -557,7 +560,6 @@ public class GestureListenerManagerImpl
      * @return true if the embedder handled the event.
      */
     private boolean offerLongPressToEmbedder() {
-        if (mViewDelegate.getContainerView() == null) return false;
         return mViewDelegate.getContainerView().performLongClick();
     }
 
@@ -571,13 +573,20 @@ public class GestureListenerManagerImpl
 
     @NativeMethods
     interface Natives {
-        long init(GestureListenerManagerImpl self, WebContentsImpl webContents);
+        long init(GestureListenerManagerImpl caller, WebContentsImpl webContents);
 
-        void resetGestureDetection(long nativeGestureListenerManager);
+        void resetGestureDetection(
+                long nativeGestureListenerManager, GestureListenerManagerImpl caller);
 
-        void setDoubleTapSupportEnabled(long nativeGestureListenerManager, boolean enabled);
+        void setDoubleTapSupportEnabled(
+                long nativeGestureListenerManager,
+                GestureListenerManagerImpl caller,
+                boolean enabled);
 
-        void setMultiTouchZoomSupportEnabled(long nativeGestureListenerManager, boolean enabled);
+        void setMultiTouchZoomSupportEnabled(
+                long nativeGestureListenerManager,
+                GestureListenerManagerImpl caller,
+                boolean enabled);
 
         void setRootScrollOffsetUpdateFrequency(
                 long nativeGestureListenerManager,

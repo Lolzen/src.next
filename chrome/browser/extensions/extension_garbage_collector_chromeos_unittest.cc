@@ -28,11 +28,11 @@
 #include "components/user_manager/scoped_user_manager.h"
 #include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_names.h"
-#include "content/public/common/buildflags.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/install_flag.h"
 #include "extensions/common/extension_builder.h"
+#include "ppapi/buildflags/buildflags.h"
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 #include "content/public/browser/plugin_service.h"
@@ -70,11 +70,11 @@ class ExtensionGarbageCollectorChromeOSUnitTest
     GetFakeUserManager()->AddUser(user_manager::StubAccountId());
     GetFakeUserManager()->LoginUser(user_manager::StubAccountId());
     ash::ProfileHelper::Get()->SetUserToProfileMappingForTesting(
-        GetFakeUserManager()->GetActiveUser(), profile());
+        GetFakeUserManager()->GetActiveUser(), profile_.get());
   }
 
   void GarbageCollectExtensions() {
-    ExtensionGarbageCollector::Get(profile())
+    ExtensionGarbageCollector::Get(profile_.get())
         ->GarbageCollectExtensionsForTest();
     // Wait for GarbageCollectExtensions task to complete.
     content::RunAllTasksUntilIdle();
@@ -93,16 +93,16 @@ class ExtensionGarbageCollectorChromeOSUnitTest
                                   const std::string& users_string,
                                   const base::FilePath& path) {
     ScopedDictPrefUpdate shared_extensions(
-        TestingBrowserProcess::GetGlobal()->local_state(),
+        testing_local_state_.Get(),
         ExtensionAssetsManagerChromeOS::kSharedExtensions);
 
-    base::DictValue* extension_info_weak = shared_extensions->EnsureDict(id);
+    base::Value::Dict* extension_info_weak = shared_extensions->EnsureDict(id);
 
-    base::DictValue version_info;
+    base::Value::Dict version_info;
     version_info.Set(ExtensionAssetsManagerChromeOS::kSharedExtensionPath,
                      path.value());
 
-    base::ListValue users;
+    base::Value::List users;
     for (const std::string& user :
          base::SplitString(users_string, ",", base::KEEP_WHITESPACE,
                            base::SPLIT_WANT_NONEMPTY)) {
@@ -124,7 +124,9 @@ class ExtensionGarbageCollectorChromeOSUnitTest
         .Build();
   }
 
-  ExtensionPrefs* GetExtensionPrefs() { return ExtensionPrefs::Get(profile()); }
+  ExtensionPrefs* GetExtensionPrefs() {
+    return ExtensionPrefs::Get(profile_.get());
+  }
 
   ash::FakeChromeUserManager* GetFakeUserManager() {
     return static_cast<ash::FakeChromeUserManager*>(
@@ -174,8 +176,8 @@ TEST_F(ExtensionGarbageCollectorChromeOSUnitTest, SharedExtensions) {
 
   EXPECT_TRUE(base::PathExists(path_id2_1));
 
-  const base::DictValue& shared_extensions =
-      TestingBrowserProcess::GetGlobal()->local_state()->GetDict(
+  const base::Value::Dict& shared_extensions =
+      testing_local_state_.Get()->GetDict(
           ExtensionAssetsManagerChromeOS::kSharedExtensions);
 
   EXPECT_FALSE(shared_extensions.Find(kExtensionId1));

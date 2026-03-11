@@ -6,7 +6,6 @@
 #define CHROME_BROWSER_EXTENSIONS_WEBSTORE_DATA_FETCHER_H_
 
 #include <memory>
-#include <optional>
 #include <string>
 
 #include "base/memory/raw_ptr.h"
@@ -68,7 +67,7 @@ class WebstoreDataFetcher {
 
   // Called when a response is received from the item snippet API.
   void OnFetchItemSnippetResponseReceived(
-      std::optional<std::string> response_body);
+      std::unique_ptr<std::string> response_body);
 
   raw_ptr<WebstoreDataFetcherDelegate> delegate_;
   GURL referrer_url_;

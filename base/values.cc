@@ -27,11 +27,14 @@
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/trace_event/memory_usage_estimator.h"  // no-presubmit-check
-#include "base/trace_event/trace_event.h"
+#include "base/trace_event/base_tracing.h"
 #include "base/tracing_buildflags.h"
 #include "base/types/pass_key.h"
 #include "base/types/to_address.h"
+
+#if BUILDFLAG(ENABLE_BASE_TRACING)
+#include "base/trace_event/memory_usage_estimator.h"  // no-presubmit-check
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
 namespace base {
 
@@ -162,10 +165,10 @@ Value::Value(Type type) {
       data_.emplace<BlobStorage>();
       return;
     case Type::DICT:
-      data_.emplace<DictValue>();
+      data_.emplace<Dict>();
       return;
     case Type::LIST:
-      data_.emplace<ListValue>();
+      data_.emplace<List>();
       return;
   }
 
@@ -203,9 +206,9 @@ Value::Value(base::span<const uint8_t> value)
 
 Value::Value(BlobStorage&& value) noexcept : data_(std::move(value)) {}
 
-Value::Value(DictValue&& value) noexcept : data_(std::move(value)) {}
+Value::Value(Dict&& value) noexcept : data_(std::move(value)) {}
 
-Value::Value(ListValue&& value) noexcept : data_(std::move(value)) {}
+Value::Value(List&& value) noexcept : data_(std::move(value)) {}
 
 Value::Value(std::monostate) {}
 
@@ -263,19 +266,19 @@ Value::BlobStorage* Value::GetIfBlob() {
 }
 
 const DictValue* Value::GetIfDict() const {
-  return std::get_if<DictValue>(&data_);
+  return std::get_if<Dict>(&data_);
 }
 
 DictValue* Value::GetIfDict() {
-  return std::get_if<DictValue>(&data_);
+  return std::get_if<Dict>(&data_);
 }
 
 const ListValue* Value::GetIfList() const {
-  return std::get_if<ListValue>(&data_);
+  return std::get_if<List>(&data_);
 }
 
 ListValue* Value::GetIfList() {
-  return std::get_if<ListValue>(&data_);
+  return std::get_if<List>(&data_);
 }
 
 bool Value::GetBool() const {
@@ -318,22 +321,22 @@ Value::BlobStorage& Value::GetBlob() {
 
 const DictValue& Value::GetDict() const {
   DCHECK(is_dict());
-  return std::get<DictValue>(data_);
+  return std::get<Dict>(data_);
 }
 
 DictValue& Value::GetDict() {
   DCHECK(is_dict());
-  return std::get<DictValue>(data_);
+  return std::get<Dict>(data_);
 }
 
 const ListValue& Value::GetList() const {
   DCHECK(is_list());
-  return std::get<ListValue>(data_);
+  return std::get<List>(data_);
 }
 
 ListValue& Value::GetList() {
   DCHECK(is_list());
-  return std::get<ListValue>(data_);
+  return std::get<List>(data_);
 }
 
 std::string Value::TakeString() && {
@@ -376,10 +379,6 @@ bool DictValue::empty() const {
 
 size_t DictValue::size() const {
   return storage_.size();
-}
-
-void DictValue::reserve(size_t capacity) {
-  return storage_.reserve(capacity);
 }
 
 DictValue::iterator DictValue::begin() {
@@ -547,11 +546,6 @@ ListValue* DictValue::EnsureList(std::string_view key) {
 }
 
 Value* DictValue::Set(std::string_view key, Value&& value) & {
-  // These methods should typically be modified together:
-  // Value* DictValue::Set(std::string_view key, Value&& value) &
-  // DictValue::Set_HintAtEnd(std::string_view key, Value&& value) &
-  // DictValue&& DictValue::Set(std::string_view key, Value&& value) &&
-
   DCHECK(IsStringUTF8AllowingNoncharacters(key));
 
   auto wrapped_value = std::make_unique<Value>(std::move(value));
@@ -604,26 +598,7 @@ Value* DictValue::Set(std::string_view key, ListValue&& value) & {
   return Set(key, Value(std::move(value)));
 }
 
-Value* DictValue::Set_HintAtEnd(std::string_view key, Value&& value) & {
-  // These methods should typically be modified together:
-  // Value* DictValue::Set(std::string_view key, Value&& value) &
-  // DictValue::Set_HintAtEnd(std::string_view key, Value&& value) &
-  // DictValue&& DictValue::Set(std::string_view key, Value&& value) &&
-
-  DCHECK(IsStringUTF8AllowingNoncharacters(key));
-
-  auto wrapped_value = std::make_unique<Value>(std::move(value));
-  auto* raw_value = wrapped_value.get();
-  storage_.insert_or_assign(storage_.end(), key, std::move(wrapped_value));
-  return raw_value;
-}
-
 DictValue&& DictValue::Set(std::string_view key, Value&& value) && {
-  // These methods should typically be modified together:
-  // Value* DictValue::Set(std::string_view key, Value&& value) &
-  // DictValue::Set_HintAtEnd(std::string_view key, Value&& value) &
-  // DictValue&& DictValue::Set(std::string_view key, Value&& value) &&
-
   DCHECK(IsStringUTF8AllowingNoncharacters(key));
   storage_.insert_or_assign(key, std::make_unique<Value>(std::move(value)));
   return std::move(*this);
@@ -953,19 +928,25 @@ std::optional<Value> DictValue::ExtractByDottedPath(std::string_view path) {
 }
 
 size_t DictValue::EstimateMemoryUsage() const {
+#if BUILDFLAG(ENABLE_BASE_TRACING)
   return base::trace_event::EstimateMemoryUsage(storage_);
+#else   // BUILDFLAG(ENABLE_BASE_TRACING)
+  return 0;
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 }
 
 std::string DictValue::DebugString() const {
   return DebugStringImpl(*this);
 }
 
+#if BUILDFLAG(ENABLE_BASE_TRACING)
 void DictValue::WriteIntoTrace(perfetto::TracedValue context) const {
   perfetto::TracedDictionary dict = std::move(context).WriteDictionary();
   for (auto kv : *this) {
     dict.Add(perfetto::DynamicString(kv.first), kv.second);
   }
 }
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
 bool operator==(const DictValue& lhs, const DictValue& rhs) {
   auto deref_2nd = [](const auto& p) { return std::tie(p.first, *p.second); };
@@ -1294,19 +1275,25 @@ size_t ListValue::EraseValue(const Value& value) {
 }
 
 size_t ListValue::EstimateMemoryUsage() const {
+#if BUILDFLAG(ENABLE_BASE_TRACING)
   return base::trace_event::EstimateMemoryUsage(storage_);
+#else   // BUILDFLAG(ENABLE_BASE_TRACING)
+  return 0;
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 }
 
 std::string ListValue::DebugString() const {
   return DebugStringImpl(*this);
 }
 
+#if BUILDFLAG(ENABLE_BASE_TRACING)
 void ListValue::WriteIntoTrace(perfetto::TracedValue context) const {
   perfetto::TracedArray array = std::move(context).WriteArray();
   for (const auto& item : *this) {
     array.Append(item);
   }
 }
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
 ListValue::ListValue(const std::vector<Value>& storage) {
   storage_.reserve(storage.size());
@@ -1346,6 +1333,7 @@ bool Value::operator==(const ListValue& rhs) const {
 
 size_t Value::EstimateMemoryUsage() const {
   switch (type()) {
+#if BUILDFLAG(ENABLE_BASE_TRACING)
     case Type::STRING:
       return base::trace_event::EstimateMemoryUsage(GetString());
     case Type::BINARY:
@@ -1354,6 +1342,7 @@ size_t Value::EstimateMemoryUsage() const {
       return GetDict().EstimateMemoryUsage();
     case Type::LIST:
       return GetList().EstimateMemoryUsage();
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
     default:
       return 0;
   }
@@ -1363,6 +1352,7 @@ std::string Value::DebugString() const {
   return DebugStringImpl(*this);
 }
 
+#if BUILDFLAG(ENABLE_BASE_TRACING)
 void Value::WriteIntoTrace(perfetto::TracedValue context) const {
   Visit([&](const auto& member) {
     using T = std::decay_t<decltype(member)>;
@@ -1378,13 +1368,14 @@ void Value::WriteIntoTrace(perfetto::TracedValue context) const {
       std::move(context).WriteString(member);
     } else if constexpr (std::is_same_v<T, BlobStorage>) {
       std::move(context).WriteString("<binary data not supported>");
-    } else if constexpr (std::is_same_v<T, DictValue>) {
+    } else if constexpr (std::is_same_v<T, Dict>) {
       member.WriteIntoTrace(std::move(context));
-    } else if constexpr (std::is_same_v<T, ListValue>) {
+    } else if constexpr (std::is_same_v<T, List>) {
       member.WriteIntoTrace(std::move(context));
     }
   });
 }
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
 ValueView::ValueView(const Value& value)
     : data_view_(

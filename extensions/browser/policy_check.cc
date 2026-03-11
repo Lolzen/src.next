@@ -6,6 +6,7 @@
 
 #include "content/public/browser/browser_context.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/management_policy.h"
 
 namespace extensions {
 
@@ -16,17 +17,9 @@ PolicyCheck::PolicyCheck(content::BrowserContext* context,
 PolicyCheck::~PolicyCheck() = default;
 
 void PolicyCheck::Start(ResultCallback callback) {
-  ExtensionSystem::Get(context_)->management_policy()->UserMayInstall(
-      extension(),
-      base::BindOnce(&PolicyCheck::OnUserMayInstallDone,
-                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
-}
-
-void PolicyCheck::OnUserMayInstallDone(ResultCallback callback,
-                                       ManagementPolicy::Decision decision) {
   Errors errors;
-  if (!decision.allowed) {
-    error_ = std::move(decision.error);
+  if (!ExtensionSystem::Get(context_)->management_policy()->UserMayInstall(
+          extension(), &error_)) {
     DCHECK(!error_.empty());
     errors.insert(Error::kDisallowedByPolicy);
   }

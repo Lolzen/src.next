@@ -4,11 +4,11 @@
 
 package org.chromium.chrome.browser;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ResolveInfo;
+
+import androidx.annotation.Nullable;
 
 import org.jni_zero.CalledByNative;
 import org.jni_zero.JniType;
@@ -17,8 +17,6 @@ import org.jni_zero.NativeMethods;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.task.PostTask;
 import org.chromium.base.task.TaskTraits;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.browserservices.TrustedWebActivityClient;
 import org.chromium.chrome.browser.browserservices.intents.WebappConstants;
 import org.chromium.chrome.browser.tab.Tab;
@@ -44,13 +42,13 @@ import org.chromium.webapk.lib.client.WebApkNavigationClient;
 import java.util.List;
 
 /**
- * Tab Launcher to be used to launch new tabs from background Android Services, when it is not known
- * whether an activity is available. It will send an intent to launch the activity.
+ * Tab Launcher to be used to launch new tabs from background Android Services,
+ * when it is not known whether an activity is available. It will send an intent to launch the
+ * activity.
  *
- * <p>URLs within the scope of a recently launched standalone-capable web app on the Android home
+ * URLs within the scope of a recently launched standalone-capable web app on the Android home
  * screen are launched in the standalone web app frame.
  */
-@NullMarked
 public class ServiceTabLauncher {
     // Name of the extra containing the Id of a tab launch request id.
     public static final String LAUNCH_REQUEST_ID_EXTRA =
@@ -204,7 +202,6 @@ public class ServiceTabLauncher {
             // This currently assumes that the only source is notifications; any future use
             // which adds a different source will need to change this.
             Intent intent = storage.createWebappLaunchIntent();
-            assumeNonNull(intent);
             // Replace the web app URL with the URL from the notification. This is within the
             // webapp's scope, so it is valid.
             intent.putExtra(WebappConstants.EXTRA_URL, url);
@@ -230,6 +227,6 @@ public class ServiceTabLauncher {
 
     @NativeMethods
     public interface Natives {
-        void onWebContentsForRequestAvailable(int requestId, @Nullable WebContents webContents);
+        void onWebContentsForRequestAvailable(int requestId, WebContents webContents);
     }
 }

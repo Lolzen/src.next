@@ -4,12 +4,10 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import org.chromium.build.annotations.NullMarked;
 import org.chromium.ui.modelutil.PropertyKey;
 import org.chromium.ui.modelutil.PropertyModel;
 
 /** List of properties used by TabGridSecondaryItem. */
-@NullMarked
 class ResizableMessageCardViewProperties {
     public static final PropertyModel.WritableIntPropertyKey WIDTH =
             new PropertyModel.WritableIntPropertyKey();

@@ -19,9 +19,11 @@ class BlockBreakToken;
 class ColumnSpannerPath;
 class ConstraintSpace;
 class EarlyBreak;
+class FragmentItems;
 class InlineNode;
 class LayoutBox;
 class LayoutResult;
+class PhysicalBoxFragment;
 class PhysicalFragment;
 enum class BaselineAlgorithmType;
 enum class MathScriptType;
@@ -118,6 +120,7 @@ class CORE_EXPORT BlockNode : public LayoutInputNode {
 
   bool IsFrameSet() const { return box_->IsFrameSet(); }
   bool IsParentNGFrameSet() const { return box_->Parent()->IsFrameSet(); }
+  bool IsParentGrid() const { return box_->Parent()->IsLayoutGrid(); }
 
   // Returns true if this node should pass its percentage resolution block-size
   // to its children. Typically only quirks-mode, auto block-size, block nodes.
@@ -131,16 +134,18 @@ class CORE_EXPORT BlockNode : public LayoutInputNode {
       InlineNode* first_child_out = nullptr) const;
 
   bool IsInlineLevel() const;
+  bool IsAtomicInlineLevel() const;
   bool IsInTopOrViewTransitionLayer() const;
 
   // Returns the aspect ratio of a replaced element.
   LogicalSize GetReplacedAspectRatio() const;
 
-  bool MayContainAnchor() const { return box_->MayContainAnchor(); }
+  // Returns the transform to apply to a child (e.g. for scrollable-overflow).
+  std::optional<gfx::Transform> GetTransformForChildFragment(
+      const PhysicalBoxFragment& child_fragment,
+      PhysicalSize size) const;
 
-  bool IsOverscrollAreaParentPseudoElement() const {
-    return box_->IsPseudo(kPseudoIdOverscrollAreaParent);
-  }
+  bool MayHaveAnchorQuery() const { return box_->MayHaveAnchorQuery(); }
 
   bool HasLeftOverflow() const { return box_->HasLeftOverflow(); }
   bool HasTopOverflow() const { return box_->HasTopOverflow(); }
@@ -161,18 +166,14 @@ class CORE_EXPORT BlockNode : public LayoutInputNode {
   //
   // https://quirks.spec.whatwg.org/#the-body-element-fills-the-html-element-quirk
   bool IsQuirkyAndFillsViewport() const {
-    if (!GetDocument().InQuirksMode()) {
+    if (!GetDocument().InQuirksMode())
       return false;
-    }
-    if (IsOutOfFlowPositioned()) {
+    if (IsOutOfFlowPositioned())
       return false;
-    }
-    if (IsFloating()) {
+    if (IsFloating())
       return false;
-    }
-    if (IsInlineLevel()) {
+    if (IsAtomicInlineLevel())
       return false;
-    }
     return (IsDocumentElement() || IsBody());
   }
 
@@ -207,6 +208,10 @@ class CORE_EXPORT BlockNode : public LayoutInputNode {
       bool use_first_line_style,
       BaselineAlgorithmType baseline_algorithm_type);
 
+  // Write the inline-size and number of columns in a multicol container to
+  // legacy.
+  void StoreColumnSizeAndCount(LayoutUnit inline_size, int count);
+
   bool ShouldApplyLayoutContainment() const {
     return box_->ShouldApplyLayoutContainment();
   }
@@ -222,6 +227,20 @@ class CORE_EXPORT BlockNode : public LayoutInputNode {
   }
   LayoutUnit EmptyLineBlockSize(
       const BlockBreakToken* incoming_break_token) const;
+
+  // After we run the layout algorithm, this function copies back the fragment
+  // position to the layout box.
+  void CopyChildFragmentPosition(
+      const PhysicalBoxFragment& child_fragment,
+      PhysicalOffset,
+      const PhysicalBoxFragment& container_fragment,
+      const BlockBreakToken* previous_container_break_token = nullptr,
+      bool needs_invalidation_check = false) const;
+
+  // If extra columns are added after a multicol has been written back to
+  // legacy, for example for an OOF positioned element, we need to update the
+  // legacy flow thread to encompass those extra columns.
+  void MakeRoomForExtraColumns(LayoutUnit block_size) const;
 
   // Page containers and page border boxes are laid out directly by special
   // algorithms, rather than going via BlockNode::Layout(), so whatever
@@ -261,6 +280,18 @@ class CORE_EXPORT BlockNode : public LayoutInputNode {
       const ConstraintSpace&,
       const LayoutResult&,
       const BlockBreakToken* previous_break_token) const;
+  void CopyFragmentItemsToLayoutBox(
+      const PhysicalBoxFragment& container,
+      const FragmentItems& items,
+      const BlockBreakToken* previous_break_token) const;
+  void PlaceChildrenInLayoutBox(const PhysicalBoxFragment&,
+                                const BlockBreakToken* previous_break_token,
+                                bool needs_invalidation_check = false) const;
+  void PlaceChildrenInFlowThread(
+      LayoutMultiColumnFlowThread*,
+      const ConstraintSpace&,
+      const PhysicalBoxFragment&,
+      const BlockBreakToken* previous_container_break_token) const;
 
   void UpdateMarginPaddingInfoIfNeeded(const ConstraintSpace&,
                                        const PhysicalFragment& fragment) const;

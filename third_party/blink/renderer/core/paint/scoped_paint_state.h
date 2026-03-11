@@ -34,7 +34,7 @@ class ScopedPaintState {
   ScopedPaintState(const LayoutObject& object, const PaintInfo& paint_info)
       : ScopedPaintState(object,
                          paint_info,
-                         paint_info.FragmentDataOverride()) {}
+                         DetermineFragmentToPaint(object, paint_info)) {}
 
   ScopedPaintState(const PhysicalBoxFragment& fragment,
                    const PaintInfo& paint_info)
@@ -78,6 +78,18 @@ class ScopedPaintState {
       : fragment_to_paint_(fragment_data),
         input_paint_info_(paint_info),
         paint_offset_(paint_offset) {}
+
+  const FragmentData* DetermineFragmentToPaint(const LayoutObject& object,
+                                               const PaintInfo& paint_info) {
+    if (const auto* data = paint_info.FragmentDataOverride()) {
+      return data;
+    }
+    // TODO(mstensho): There may actually be more than one fragment, and code
+    // that wants to take the legacy path should really have a
+    // FragmentDataOverride() (so we shouldn't really be here). This is
+    // currently not the case for e.g. frameset children, though.
+    return &object.FirstFragment();
+  }
 
  private:
   void AdjustForPaintProperties(const LayoutObject&);

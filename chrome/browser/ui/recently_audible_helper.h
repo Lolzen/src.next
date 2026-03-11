@@ -50,7 +50,7 @@ class RecentlyAudibleHelper
   // Registers the provided repeating callback for notifications. Destroying
   // the returned subscription will unregister the callback. This is safe to do
   // while in the context of the callback itself.
-  base::CallbackListSubscription RegisterRecentlyAudibleChangedCallback(
+  base::CallbackListSubscription RegisterCallbackForTesting(
       const Callback& callback);
 
   // Allows replacing the tick clock that is used by this class. Setting it back
@@ -64,9 +64,6 @@ class RecentlyAudibleHelper
   void SetCurrentlyAudibleForTesting();
   void SetRecentlyAudibleForTesting();
   void SetNotRecentlyAudibleForTesting();
-
-  // Simulates the recently audible timer firing.
-  void FireRecentlyAudibleTimerForTesting();
 
  private:
   friend class RecentlyAudibleHelperTest;

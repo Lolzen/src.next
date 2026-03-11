@@ -47,7 +47,6 @@ class DocumentType final : public Node {
   Node* Clone(Document& factory,
               NodeCloningData& data,
               ContainerNode* append_to,
-              CustomElementRegistry* fallback_registry,
               ExceptionState& append_exception_state) const override;
 
   InsertionNotificationRequest InsertedInto(ContainerNode&) override;

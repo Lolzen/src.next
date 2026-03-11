@@ -101,11 +101,7 @@ TEST_F(FrameLoaderSimTest, LoadEventProgressBeforeUnloadCanceled) {
     // beforeunload event is dispatched from content's RenderFrameImpl, Blink
     // tests mock this out using a WebFrameTestProxy which doesn't check
     // beforeunload before navigating.
-    base::TimeTicks before_unload_dialog_opened_time;
-    base::TimeTicks before_unload_dialog_closed_time;
-    ASSERT_FALSE(frame_a->Loader().ShouldClose(
-        /*is_reload=*/false, before_unload_dialog_opened_time,
-        before_unload_dialog_closed_time));
+    ASSERT_FALSE(frame_a->Loader().ShouldClose());
 
     EXPECT_FALSE(main_frame->GetDocument()->BeforeUnloadStarted());
     EXPECT_FALSE(frame_a->GetDocument()->BeforeUnloadStarted());
@@ -116,11 +112,7 @@ TEST_F(FrameLoaderSimTest, LoadEventProgressBeforeUnloadCanceled) {
   // Now test the opposite, the user allowing the navigation away.
   {
     chrome_client.SetBeforeUnloadConfirmPanelResultForTesting(true);
-    base::TimeTicks before_unload_dialog_opened_time;
-    base::TimeTicks before_unload_dialog_closed_time;
-    ASSERT_TRUE(frame_a->Loader().ShouldClose(
-        /*is_reload=*/false, before_unload_dialog_opened_time,
-        before_unload_dialog_closed_time));
+    ASSERT_TRUE(frame_a->Loader().ShouldClose());
 
     // The navigation was in frame a so it shouldn't affect the parent.
     EXPECT_FALSE(main_frame->GetDocument()->BeforeUnloadStarted());
@@ -265,10 +257,7 @@ TEST_F(FrameLoaderTest, PolicyContainerIsStoredOnCommitNavigation) {
   MockPolicyContainerHost mock_policy_container_host;
   params->policy_container = std::make_unique<WebPolicyContainer>(
       WebPolicyContainerPolicies{
-          network::ConnectionAllowlists(),
           network::mojom::CrossOriginEmbedderPolicyValue::kNone,
-          network::IntegrityPolicy(),
-          network::IntegrityPolicy(),
           network::mojom::ReferrerPolicy::kAlways,
           std::vector<WebContentSecurityPolicy>(),
       },
@@ -278,15 +267,14 @@ TEST_F(FrameLoaderTest, PolicyContainerIsStoredOnCommitNavigation) {
   local_frame->Loader().CommitNavigation(std::move(params), nullptr);
 
   EXPECT_EQ(*mojom::blink::PolicyContainerPolicies::New(
-                network::ConnectionAllowlists(),
                 network::CrossOriginEmbedderPolicy(
                     network::mojom::CrossOriginEmbedderPolicyValue::kNone),
-                network::IntegrityPolicy(), network::IntegrityPolicy(),
                 network::mojom::ReferrerPolicy::kAlways,
                 Vector<network::mojom::blink::ContentSecurityPolicyPtr>(),
                 /*anonymous=*/false, network::mojom::WebSandboxFlags::kNone,
                 network::mojom::blink::IPAddressSpace::kUnknown,
                 /*can_navigate_top_without_user_gesture=*/true,
+                /*allow_cross_origin_isolation=*/false,
                 /*cross_origin_isolation_enabled_by_dip=*/false),
             local_frame->DomWindow()->GetPolicyContainer()->GetPolicies());
 }

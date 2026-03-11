@@ -8,7 +8,6 @@
 
 namespace net {
 
-// LINT.IfChange(RequestPriorityToString)
 const char* RequestPriorityToString(RequestPriority priority) {
   switch (priority) {
     case THROTTLED:
@@ -26,6 +25,5 @@ const char* RequestPriorityToString(RequestPriority priority) {
   }
   NOTREACHED();
 }
-// LINT.ThenChange(//tools/metrics/histograms/metadata/network/histograms.xml:RequestPriority)
 
 }  // namespace net

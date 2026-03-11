@@ -4,14 +4,14 @@
 
 package org.chromium.content.browser.selection;
 
-import org.chromium.base.SelectionActionMenuClientWrapper.MenuType;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
-import org.chromium.content_public.browser.PendingSelectionMenu;
 import org.chromium.content_public.browser.SelectionClient;
+import org.chromium.content_public.browser.SelectionMenuGroup;
 import org.chromium.content_public.browser.selection.SelectionActionMenuDelegate;
 
 import java.util.Objects;
+import java.util.SortedSet;
 
 /**
  * Stores text selection state and corresponding menu items for caching purposes. The {@link
@@ -31,26 +31,23 @@ public class SelectionMenuCachedResult {
     private final boolean mIsSelectionPassword;
     private final boolean mIsSelectionReadOnly;
     private final String mSelectedText;
-    private final @MenuType int mMenuType;
-    private final PendingSelectionMenu mLastSelectionMenu;
+    private final SortedSet<SelectionMenuGroup> mLastSelectionMenuItems;
 
     public SelectionMenuCachedResult(
             SelectionClient.@Nullable Result classificationResult,
             boolean isSelectionPassword,
             boolean isSelectionReadOnly,
             String selectedText,
-            @MenuType int menuType,
-            PendingSelectionMenu lastSelectionMenu) {
+            SortedSet<SelectionMenuGroup> lastSelectionMenuItems) {
         mClassificationResult = classificationResult;
         mIsSelectionPassword = isSelectionPassword;
         mIsSelectionReadOnly = isSelectionReadOnly;
         mSelectedText = selectedText;
-        mMenuType = menuType;
-        mLastSelectionMenu = lastSelectionMenu;
+        mLastSelectionMenuItems = lastSelectionMenuItems;
     }
 
-    public PendingSelectionMenu getResult() {
-        return mLastSelectionMenu;
+    public SortedSet<SelectionMenuGroup> getResult() {
+        return mLastSelectionMenuItems;
     }
 
     /**
@@ -70,16 +67,14 @@ public class SelectionMenuCachedResult {
             boolean isSelectionPassword,
             boolean isSelectionReadOnly,
             String selectedText,
-            @MenuType int menuType,
             @Nullable SelectionActionMenuDelegate selectionActionMenuDelegate) {
         if (selectionActionMenuDelegate != null
-                && !selectionActionMenuDelegate.canReuseCachedSelectionMenu(menuType)) {
+                && !selectionActionMenuDelegate.canReuseCachedSelectionMenu()) {
             return false;
         }
         if (mIsSelectionPassword != isSelectionPassword
                 || mIsSelectionReadOnly != isSelectionReadOnly
-                || !Objects.equals(mSelectedText, selectedText)
-                || mMenuType != menuType) {
+                || !Objects.equals(mSelectedText, selectedText)) {
             return false;
         }
         if ((mClassificationResult == null) != (classificationResult == null)) {

@@ -47,7 +47,9 @@ void OffscreenCanvasPlaceholder::SetOffscreenCanvasResource(
     viz::ResourceId resource_id) {
   DCHECK(IsOffscreenCanvasRegistered());
   DCHECK(new_frame);
-  CanvasResource::OnPlaceholderReleasedResource(std::move(placeholder_frame_));
+  // The following implicitly returns placeholder_frame_ to its
+  // CanvasResourceDispatcher, via FrameLastUnrefCallback if it was
+  // the last outstanding reference on this thread.
   placeholder_frame_ = std::move(new_frame);
 
   if (deferred_animation_state_ &&

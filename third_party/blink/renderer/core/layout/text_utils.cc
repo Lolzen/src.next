@@ -19,8 +19,11 @@ float ComputeTextWidth(const StringView& text, const ComputedStyle& style) {
   bool directional_override = style.RtlOrdering() == EOrder::kVisual;
   TextRun text_run(text, BidiParagraph::BaseDirectionForStringOrLtr(text),
                    directional_override);
-  return PlainTextPainter::Shared().ComputeInlineSize(text_run,
-                                                      *style.GetFont());
+  if (RuntimeEnabledFeatures::PlainTextPainterEnabled()) {
+    return PlainTextPainter::Shared().ComputeInlineSize(text_run,
+                                                        *style.GetFont());
+  }
+  return style.GetFont()->DeprecatedWidth(text_run);
 }
 
 }  // namespace blink

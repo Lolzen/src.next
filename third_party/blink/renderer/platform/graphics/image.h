@@ -27,8 +27,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_IMAGE_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_IMAGE_H_
 
-#include <optional>
-
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/notreached.h"
@@ -46,6 +44,7 @@
 #include "ui/base/resource/resource_scale_factor.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size_f.h"
 
 class SkMatrix;
@@ -55,10 +54,6 @@ class PaintCanvas;
 class PaintFlags;
 class ImageDecodeCache;
 }  // namespace cc
-
-namespace gfx {
-class RectF;
-}  // namespace gfx
 
 namespace blink {
 
@@ -110,21 +105,16 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
   virtual bool IsBitmapImage() const { return false; }
   virtual bool IsStaticBitmapImage() const { return false; }
 
-  virtual bool IsOpaque() = 0;
+  virtual bool CurrentFrameKnownToBeOpaque() = 0;
 
-  virtual bool FirstFrameIsComplete() { return false; }
-  virtual bool IsLazyDecoded() { return false; }
+  virtual bool CurrentFrameIsComplete() { return false; }
+  virtual bool CurrentFrameIsLazyDecoded() { return false; }
   virtual size_t FrameCount() { return 0; }
   virtual bool IsTextureBacked() const { return false; }
 
-  // Derived classes should override this if they can assure that the image
-  // itself contains only resources from its _own_ security origin. This is not
-  // the same as the image being fetched from the document's security origin.
-  // For example, a bitmap image used in security origin foo but obtained from
-  // security origin bar will still only contain data from origin bar.
-  // As another example, an SVG Image from origin foo that references an image
-  // from origin bar does not have a single security origin.
-  virtual bool HasSingleSecurityOrigin() const { return false; }
+  // Derived classes should override this if they can assure that the current
+  // image frame contains only resources from its own security origin.
+  virtual bool CurrentFrameHasSingleSecurityOrigin() const { return false; }
 
   static Image* NullImage();
   bool IsNull() const { return this == NullImage(); }
@@ -212,7 +202,7 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
   // Returns null string if unknown.
   virtual String FilenameExtension() const;
 
-  // Returns g_null_atom if unknown.
+  // Returns WTF::g_null_atom if unknown.
   virtual const AtomicString& MimeType() const;
 
   virtual void DestroyDecodedData() = 0;
@@ -294,11 +284,11 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
 
   // Most image types have the default orientation. Only bitmap derived image
   // types need to override this method.
-  virtual ImageOrientation Orientation() const {
+  virtual ImageOrientation CurrentFrameOrientation() const {
     return ImageOrientationEnum::kDefault;
   }
   bool HasDefaultOrientation() const {
-    return Orientation() == ImageOrientationEnum::kDefault;
+    return CurrentFrameOrientation() == ImageOrientationEnum::kDefault;
   }
 
   // Correct the src rect (rotate and maybe translate it) to account for a
@@ -364,8 +354,7 @@ class PLATFORM_EXPORT Image : public ThreadSafeRefCounted<Image> {
 
   // Creates and initializes a PaintImageBuilder with the metadata flags for the
   // PaintImage.
-  PaintImageBuilder CreatePaintImageBuilder(
-      std::optional<PaintImage::Id> = std::optional<PaintImage::Id>());
+  PaintImageBuilder CreatePaintImageBuilder();
 
   // Whether or not size is available yet.
   virtual bool IsSizeAvailable() { return true; }

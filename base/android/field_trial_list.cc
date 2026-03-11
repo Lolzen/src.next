@@ -6,11 +6,10 @@
 #include <string>
 
 #include "base/android/jni_string.h"
-#include "base/logging.h"
+#include "base/lazy_instance.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_list_including_low_anonymity.h"
 #include "base/metrics/field_trial_params.h"
-#include "base/no_destructor.h"
 
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "base/base_jni/FieldTrialList_jni.h"
@@ -43,10 +42,8 @@ class TrialLogger : public base::FieldTrialList::Observer {
   ~TrialLogger() override = default;
 };
 
-TrialLogger* GetTrialLogger() {
-  static base::NoDestructor<TrialLogger> trial_logger;
-  return trial_logger.get();
-}
+base::LazyInstance<TrialLogger>::Leaky g_trial_logger =
+    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -55,8 +52,8 @@ static std::string JNI_FieldTrialList_FindFullName(JNIEnv* env,
   return base::FieldTrialList::FindFullName(trial_name);
 }
 
-static bool JNI_FieldTrialList_TrialExists(JNIEnv* env,
-                                           std::string& trial_name) {
+static jboolean JNI_FieldTrialList_TrialExists(JNIEnv* env,
+                                               std::string& trial_name) {
   return base::FieldTrialList::TrialExists(trial_name);
 }
 
@@ -94,12 +91,11 @@ class AndroidFieldTrialListLogActiveTrialsFriendHelper {
 };
 
 static void JNI_FieldTrialList_LogActiveTrials(JNIEnv* env) {
-  static int called_count = 0;
-  DCHECK_EQ(called_count++, 0);  // This need only be called once.
+  DCHECK(!g_trial_logger.IsCreated());  // This need only be called once.
 
   LOG(INFO) << "Logging active field trials...";
   AndroidFieldTrialListLogActiveTrialsFriendHelper::AddObserver(
-      GetTrialLogger());
+      &g_trial_logger.Get());
 
   // Log any trials that were already active before adding the observer.
   std::vector<base::FieldTrial::ActiveGroup> active_groups;
@@ -110,11 +106,11 @@ static void JNI_FieldTrialList_LogActiveTrials(JNIEnv* env) {
   }
 }
 
-static bool JNI_FieldTrialList_CreateFieldTrial(JNIEnv* env,
-                                                std::string& trial_name,
-                                                std::string& group_name) {
+static jboolean JNI_FieldTrialList_CreateFieldTrial(JNIEnv* env,
+                                                    std::string& trial_name,
+                                                    std::string& group_name) {
   return base::FieldTrialList::CreateFieldTrial(trial_name, group_name) !=
          nullptr;
 }
 
-DEFINE_JNI(FieldTrialList)
+DEFINE_JNI_FOR_FieldTrialList()

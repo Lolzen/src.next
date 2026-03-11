@@ -10,15 +10,12 @@ import android.view.View;
 import android.widget.ListView;
 import android.widget.RelativeLayout;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.R;
 
 /**
  * {@link View} class for navigation sheet. Provided as content view for
  * {@link BottomSheet}.
  */
-@NullMarked
 public class NavigationSheetView extends RelativeLayout {
     private ListView mListView;
 
@@ -26,7 +23,7 @@ public class NavigationSheetView extends RelativeLayout {
         this(context, null);
     }
 
-    public NavigationSheetView(Context context, @Nullable AttributeSet attrs) {
+    public NavigationSheetView(Context context, AttributeSet attrs) {
         super(context, attrs);
     }
 

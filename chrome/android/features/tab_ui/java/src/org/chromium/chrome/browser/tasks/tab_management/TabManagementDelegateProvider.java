@@ -5,13 +5,10 @@
 package org.chromium.chrome.browser.tasks.tab_management;
 
 import org.chromium.base.ResettersForTesting;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 
 /** Provider class for {@link TabManagementDelegate}. */
-@NullMarked
 public class TabManagementDelegateProvider {
-    private static @Nullable TabManagementDelegate sTabManagementDelegate;
+    private static TabManagementDelegate sTabManagementDelegate;
 
     /** Returns {@link TabManagementDelegate} implementation. */
     public static TabManagementDelegate getDelegate() {

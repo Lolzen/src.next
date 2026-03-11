@@ -142,8 +142,8 @@ HistoryItem* HistoryItem::Create(const PageState& page_state) {
 HistoryItem::HistoryItem()
     : item_sequence_number_(GenerateSequenceNumber()),
       document_sequence_number_(GenerateSequenceNumber()),
-      navigation_api_key_(CreateCanonicalUUIDString()),
-      navigation_api_id_(CreateCanonicalUUIDString()) {}
+      navigation_api_key_(WTF::CreateCanonicalUUIDString()),
+      navigation_api_id_(WTF::CreateCanonicalUUIDString()) {}
 
 HistoryItem::~HistoryItem() = default;
 
@@ -337,7 +337,7 @@ PageState HistoryItem::ToPageState() const {
 
   std::string encoded_data;
   EncodePageState(state, &encoded_data);
-  return PageState::CreateFromEncodedData(std::move(encoded_data));
+  return PageState::CreateFromEncodedData(encoded_data);
 }
 
 std::vector<std::optional<std::u16string>>

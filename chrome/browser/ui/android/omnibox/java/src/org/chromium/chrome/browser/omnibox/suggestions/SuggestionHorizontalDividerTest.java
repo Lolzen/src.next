@@ -44,11 +44,11 @@ public class SuggestionHorizontalDividerTest {
     @Mock private SimpleRecyclerViewAdapter.ViewHolder mNoDividerViewHolder;
     @Mock private Canvas mCanvas;
 
-    private final PropertyModel mShowDividerModel =
+    private PropertyModel mShowDividerModel =
             new PropertyModel.Builder(DropdownCommonProperties.ALL_KEYS)
                     .with(DropdownCommonProperties.SHOW_DIVIDER, true)
                     .build();
-    private final PropertyModel mNoDividerModel =
+    private PropertyModel mNoDividerModel =
             new PropertyModel.Builder(DropdownCommonProperties.ALL_KEYS)
                     .with(DropdownCommonProperties.SHOW_DIVIDER, false)
                     .build();
@@ -59,7 +59,7 @@ public class SuggestionHorizontalDividerTest {
     @Before
     public void setUp() {
         mActivity = Robolectric.buildActivity(Activity.class).setup().get();
-        mActivity.setTheme(R.style.Theme_BrowserUI_DayNight);
+        mActivity.setTheme(R.style.Theme_BrowserUI);
         mDecoration = new SuggestionHorizontalDivider(mActivity);
         mShowDividerViewHolder.model = mShowDividerModel;
         mNoDividerViewHolder.model = mNoDividerModel;

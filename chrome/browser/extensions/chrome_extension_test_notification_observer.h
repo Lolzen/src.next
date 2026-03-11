@@ -5,15 +5,15 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_CHROME_EXTENSION_TEST_NOTIFICATION_OBSERVER_H_
 #define CHROME_BROWSER_EXTENSIONS_CHROME_EXTENSION_TEST_NOTIFICATION_OBSERVER_H_
 
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/extensions/extension_action_dispatcher.h"
-#include "extensions/buildflags/buildflags.h"
+#include "extensions/common/extension_id.h"
 #include "extensions/test/extension_test_notification_observer.h"
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
+class Browser;
 
 namespace content {
 class BrowserContext;
-class WebContents;
 }
 
 namespace extensions {
@@ -23,6 +23,7 @@ class ChromeExtensionTestNotificationObserver
     : public ExtensionTestNotificationObserver,
       public ExtensionActionDispatcher::Observer {
  public:
+  explicit ChromeExtensionTestNotificationObserver(Browser* browser);
   explicit ChromeExtensionTestNotificationObserver(
       content::BrowserContext* browser_context);
 
@@ -33,10 +34,8 @@ class ChromeExtensionTestNotificationObserver
 
   ~ChromeExtensionTestNotificationObserver() override;
 
-  // Waits for the number of visible page actions for the tab for `web_contents`
-  // to change to `count`.
-  bool WaitForPageActionVisibilityChangeTo(content::WebContents* web_contents,
-                                           int count);
+  // Waits for the number of visible page actions to change to |count|.
+  bool WaitForPageActionVisibilityChangeTo(int count);
 
  private:
   content::BrowserContext* GetBrowserContext();
@@ -46,6 +45,8 @@ class ChromeExtensionTestNotificationObserver
       ExtensionAction* extension_action,
       content::WebContents* web_contents,
       content::BrowserContext* browser_context) override;
+
+  const raw_ptr<Browser, AcrossTasksDanglingUntriaged> browser_;
 };
 
 }  // namespace extensions

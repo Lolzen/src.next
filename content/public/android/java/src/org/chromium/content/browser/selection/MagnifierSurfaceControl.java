@@ -168,6 +168,7 @@ public class MagnifierSurfaceControl implements MagnifierWrapper {
             mTransaction.reparent(mSurfaceControl, null);
             mTransaction.apply();
             mTransaction.close();
+            mSurfaceControl.release();
         }
         mSurfaceControl = null;
         mTransaction = null;

@@ -11,7 +11,7 @@
 #include <set>
 #include <string>
 
-#include "base/no_destructor.h"
+#include "base/lazy_instance.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/preinstalled_app_install_features.h"
@@ -25,7 +25,6 @@
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
-#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 
 namespace {
 
@@ -52,10 +51,8 @@ bool IsLocaleSupported() {
   return true;
 }
 
-std::set<Profile*>& GetPerformNewInstallationProfiles() {
-  static base::NoDestructor<std::set<Profile*>> perform_new_installation;
-  return *perform_new_installation;
-}
+base::LazyInstance<std::set<Profile*>>::Leaky g_perform_new_installation =
+    LAZY_INSTANCE_INITIALIZER;
 }  // namespace
 
 namespace preinstalled_apps {
@@ -66,7 +63,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 
 // static
 bool Provider::DidPerformNewInstallationForProfile(Profile* profile) {
-  return GetPerformNewInstallationProfiles().count(profile);
+  return g_perform_new_installation.Get().count(profile);
 }
 
 void Provider::InitProfileState() {
@@ -127,7 +124,7 @@ void Provider::InitProfileState() {
                                      *new_install_state);
   }
   if (perform_new_installation_)
-    GetPerformNewInstallationProfiles().insert(profile_);
+    g_perform_new_installation.Get().insert(profile_);
 }
 
 Provider::Provider(Profile* profile,
@@ -154,20 +151,20 @@ void Provider::VisitRegisteredExtension() {
     // If pre-installed apps aren't enabled for the profile, we short-circuit
     // the flow to load them from the file (which happens as a result of
     // VisitRegisteredExtension()), and immediately set empty prefs.
-    ExternalProviderImpl::SetPrefs(base::DictValue());
+    ExternalProviderImpl::SetPrefs(base::Value::Dict());
     return;
   }
 
   extensions::ExternalProviderImpl::VisitRegisteredExtension();
 }
 
-void Provider::SetPrefs(base::DictValue prefs) {
+void Provider::SetPrefs(base::Value::Dict prefs) {
   DCHECK(preinstalled_apps_enabled_);
 
   // First, check if this is for a migration from around 2013. Likely not.
   if (is_migration_) {
     DCHECK(!perform_new_installation_);
-    absl::flat_hash_set<std::string> keys_to_erase;
+    std::set<std::string> keys_to_erase;
     // Filter out the new pre-installed apps for migrating users, so that we
     // don't randomly install them out of the blue. Two-pass to keep iterators
     // nice and happy.
@@ -207,7 +204,7 @@ void Provider::SetPrefs(base::DictValue prefs) {
       return true;
     };
 
-    absl::flat_hash_set<std::string> keys_to_erase;
+    std::set<std::string> keys_to_erase;
     for (auto entry : prefs) {
       bool should_re_add = should_re_add_app(entry.first, entry.second);
       if (should_re_add) {

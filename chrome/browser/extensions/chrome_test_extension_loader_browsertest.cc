@@ -8,28 +8,24 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/user_script_loader.h"
 #include "extensions/browser/user_script_manager.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/mojom/host_id.mojom.h"
 #include "extensions/test/test_extension_dir.h"
 #include "net/dns/mock_host_resolver.h"
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
-
 namespace extensions {
 
-class ChromeTestExtensionLoaderTest : public ExtensionApiTest {
+class ChromeTestExtensionLoaderUnitTest : public ExtensionApiTest {
  public:
-  ChromeTestExtensionLoaderTest() = default;
-  ChromeTestExtensionLoaderTest(const ChromeTestExtensionLoaderTest& other) =
-      delete;
-  ChromeTestExtensionLoaderTest& operator=(
-      const ChromeTestExtensionLoaderTest& other) = delete;
-  ~ChromeTestExtensionLoaderTest() override = default;
+  ChromeTestExtensionLoaderUnitTest() = default;
+  ~ChromeTestExtensionLoaderUnitTest() override = default;
 
   void SetUpOnMainThread() override {
     ExtensionApiTest::SetUpOnMainThread();
@@ -41,7 +37,7 @@ class ChromeTestExtensionLoaderTest : public ExtensionApiTest {
 // Tests that when loading an extension, the test loading code waits for
 // content scripts to be fully read and initialized before continuing.
 // Regression test for https://crbug.com/898682.
-IN_PROC_BROWSER_TEST_F(ChromeTestExtensionLoaderTest,
+IN_PROC_BROWSER_TEST_F(ChromeTestExtensionLoaderUnitTest,
                        ContentScriptsAreFullyLoaded) {
   TestExtensionDir test_dir;
   test_dir.WriteManifest(
@@ -88,10 +84,12 @@ IN_PROC_BROWSER_TEST_F(ChromeTestExtensionLoaderTest,
                   ->HasLoadedScripts());
 
   // Sanity check: Test that the scripts inject.
-  content::WebContents* web_contents = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(web_contents, embedded_test_server()->GetURL(
-                                              "example.com", "/simple.html")));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(),
+      embedded_test_server()->GetURL("example.com", "/simple.html")));
 
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   EXPECT_EQ(true, content::EvalJs(web_contents,
                                   "!!document.getElementById('script1');"));
   EXPECT_EQ(true, content::EvalJs(web_contents,

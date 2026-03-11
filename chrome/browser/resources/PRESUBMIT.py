@@ -164,9 +164,9 @@ def CheckNoNewJs(input_api, output_api):
 def CheckNoNewPolymer(input_api, output_api):
   EXCLUDED_PATHS = [
     'chrome/browser/resources/ash/',
-    'chrome/browser/resources/certificate_manager/',
     'chrome/browser/resources/chromeos/',
     'chrome/browser/resources/password_manager/',
+    'chrome/browser/resources/print_preview/',
     'chrome/browser/resources/settings/',
   ]
 
@@ -186,6 +186,5 @@ def CheckNoNewPolymer(input_api, output_api):
 
 def CheckPatchFormatted(input_api, output_api):
   results = input_api.canned_checks.CheckPatchFormatted(input_api, output_api,
-                                                         check_js=True,
-                                                         check_python=False)
+                                                         check_js=True)
   return results

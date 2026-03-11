@@ -65,7 +65,7 @@ class StorageServiceSandboxBrowserTest : public ContentBrowserTest {
 
   mojo::Remote<storage::mojom::TestApi>& GetTestApi() {
     if (!test_api_) {
-      StoragePartitionImpl::GetStorageService()->BindTestApi(
+      StoragePartitionImpl::GetStorageServiceForTesting()->BindTestApi(
           test_api_.BindNewPipeAndPassReceiver().PassPipe());
     }
     return test_api_;

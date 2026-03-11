@@ -122,10 +122,8 @@ SimplifiedLayoutAlgorithm::SimplifiedLayoutAlgorithm(
         physical_fragment.HasCollapsedBorders());
 
     if (const auto* table_column_geometries =
-            physical_fragment.TableColumnGeometries()) {
-      container_builder_.SetTableColumnGeometries(
-          TableColumnGeometries(*table_column_geometries));
-    }
+            physical_fragment.TableColumnGeometries())
+      container_builder_.SetTableColumnGeometries(*table_column_geometries);
 
     if (const auto* table_collapsed_borders =
             physical_fragment.TableCollapsedBorders())
@@ -147,7 +145,7 @@ SimplifiedLayoutAlgorithm::SimplifiedLayoutAlgorithm(
     }
   }
 
-  if (physical_fragment.IsGrid() || physical_fragment.IsGridLanes()) {
+  if (physical_fragment.IsGrid()) {
     container_builder_.TransferGridLayoutData(
         std::make_unique<GridLayoutData>(*result.GetGridLayoutData()));
   } else if (physical_fragment.IsFrameSet()) {
@@ -158,10 +156,6 @@ SimplifiedLayoutAlgorithm::SimplifiedLayoutAlgorithm(
 
   if (physical_fragment.IsHiddenForPaint())
     container_builder_.SetIsHiddenForPaint(true);
-
-  if (auto* gap_geometry = physical_fragment.GetGapGeometry()) {
-    container_builder_.SetGapGeometry(gap_geometry);
-  }
 
   if (auto first_baseline = physical_fragment.FirstBaseline())
     container_builder_.SetFirstBaseline(*first_baseline);
@@ -269,8 +263,9 @@ const LayoutResult* SimplifiedLayoutAlgorithm::Layout() {
     // calculated it.
     const auto* layer = child.GetLayoutBox()->Layer();
     LogicalStaticPosition position = layer->GetStaticPosition();
-    container_builder_.AddOutOfFlowChildCandidate(To<BlockNode>(child),
-                                                  position);
+    container_builder_.AddOutOfFlowChildCandidate(
+        To<BlockNode>(child), position.offset, position.inline_edge,
+        position.block_edge, position.align_self_direction);
   }
 
   if (previous_fragment.Items()) {

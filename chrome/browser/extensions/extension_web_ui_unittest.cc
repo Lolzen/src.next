@@ -13,10 +13,12 @@
 #include "base/run_loop.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_test_with_install.h"
 #include "chrome/browser/extensions/extension_web_ui_override_registrar.h"
 #include "chrome/browser/extensions/external_provider_manager.h"
 #include "chrome/browser/extensions/test_extension_system.h"
+#include "chrome/common/extensions/api/chrome_url_overrides.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/favicon_base/favicon_callback.h"
@@ -27,8 +29,6 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/mock_external_provider.h"
 #include "extensions/browser/test_extension_registry_observer.h"
-#include "extensions/buildflags/buildflags.h"
-#include "extensions/common/api/chrome_url_overrides.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/feature_switch.h"
@@ -46,8 +46,6 @@
 #include "components/user_manager/user_manager_impl.h"
 #endif
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
-
 using extensions::mojom::ManifestLocation;
 
 namespace extensions {
@@ -61,32 +59,6 @@ std::unique_ptr<KeyedService> BuildOverrideRegistrar(
   return std::make_unique<ExtensionWebUIOverrideRegistrar>(context);
 }
 
-class TestOverrideRegistrarObserver
-    : public ExtensionWebUIOverrideRegistrar::Observer {
- public:
-  TestOverrideRegistrarObserver() = default;
-  ~TestOverrideRegistrarObserver() override = default;
-
-  void OnExtensionOverrideAdded(const Extension& extension) override {
-    loaded_extensions_.push_back(extension.id());
-  }
-
-  void OnExtensionOverrideRemoved(const Extension& extension) override {
-    unloaded_extensions_.push_back(extension.id());
-  }
-
-  const std::vector<ExtensionId>& loaded_extensions() const {
-    return loaded_extensions_;
-  }
-  const std::vector<ExtensionId>& unloaded_extensions() const {
-    return unloaded_extensions_;
-  }
-
- private:
-  std::vector<ExtensionId> loaded_extensions_;
-  std::vector<ExtensionId> unloaded_extensions_;
-};
-
 }  // namespace
 
 class ExtensionWebUITest : public testing::Test {
@@ -98,8 +70,8 @@ class ExtensionWebUITest : public testing::Test {
     profile_ = std::make_unique<TestingProfile>();
     TestExtensionSystem* system =
         static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile_.get()));
-    system->CreateExtensionService(base::CommandLine::ForCurrentProcess(),
-                                   base::FilePath(), false);
+    extension_service_ = system->CreateExtensionService(
+        base::CommandLine::ForCurrentProcess(), base::FilePath(), false);
     ExtensionWebUIOverrideRegistrar::GetFactoryInstance()->SetTestingFactory(
         profile_.get(), base::BindRepeating(&BuildOverrideRegistrar));
     ExtensionWebUIOverrideRegistrar::GetFactoryInstance()->Get(profile_.get());
@@ -115,6 +87,7 @@ class ExtensionWebUITest : public testing::Test {
   }
 
   std::unique_ptr<TestingProfile> profile_;
+  raw_ptr<ExtensionService, DanglingUntriaged> extension_service_;
   content::BrowserTaskEnvironment task_environment_;
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -133,19 +106,19 @@ TEST_F(ExtensionWebUITest, ExtensionURLOverride) {
   const char kOverrideResource[] = "1.html";
   // Register a non-component extension.
   auto manifest =
-      base::DictValue()
+      base::Value::Dict()
           .Set(manifest_keys::kName, "ext1")
           .Set(manifest_keys::kVersion, "0.1")
           .Set(manifest_keys::kManifestVersion, 2)
           .Set(api::chrome_url_overrides::ManifestKeys::kChromeUrlOverrides,
-               base::DictValue().Set("bookmarks", kOverrideResource));
+               base::Value::Dict().Set("bookmarks", kOverrideResource));
   scoped_refptr<const Extension> ext_unpacked(
       ExtensionBuilder()
           .SetManifest(std::move(manifest))
           .SetLocation(ManifestLocation::kUnpacked)
           .SetID("abcdefghijabcdefghijabcdefghijaa")
           .Build());
-  registrar()->AddExtension(ext_unpacked.get());
+  ExtensionRegistrar::Get(profile_.get())->AddExtension(ext_unpacked.get());
 
   const GURL kExpectedUnpackedOverrideUrl =
       ext_unpacked->GetResourceURL(kOverrideResource);
@@ -170,12 +143,12 @@ TEST_F(ExtensionWebUITest, ExtensionURLOverride) {
   // Register a component extension
   const char kOverrideResource2[] = "2.html";
   auto manifest2 =
-      base::DictValue()
+      base::Value::Dict()
           .Set(manifest_keys::kName, "ext2")
           .Set(manifest_keys::kVersion, "0.1")
           .Set(manifest_keys::kManifestVersion, 2)
           .Set(api::chrome_url_overrides::ManifestKeys::kChromeUrlOverrides,
-               base::DictValue().Set("bookmarks", kOverrideResource2));
+               base::Value::Dict().Set("bookmarks", kOverrideResource2));
   scoped_refptr<const Extension> ext_component(
       ExtensionBuilder()
           .SetManifest(std::move(manifest2))
@@ -221,58 +194,6 @@ TEST_F(ExtensionWebUITest, ExtensionURLOverride) {
   EXPECT_EQ(kBookmarksUrl, changed_url);
 }
 
-TEST_F(ExtensionWebUITest, OverrideRegistrarObserver) {
-  TestOverrideRegistrarObserver observer;
-  ExtensionWebUIOverrideRegistrar* override_registrar =
-      ExtensionWebUIOverrideRegistrar::GetFactoryInstance()->Get(
-          profile_.get());
-  override_registrar->AddObserver(&observer);
-
-  scoped_refptr<const Extension> extension(
-      ExtensionBuilder("ext1")
-          .SetManifestKey(
-              api::chrome_url_overrides::ManifestKeys::kChromeUrlOverrides,
-              base::DictValue().Set("bookmarks", "1.html"))
-          .Build());
-  const ExtensionId id = extension->id();
-
-  registrar()->AddExtension(extension.get());
-
-  ASSERT_EQ(1u, observer.loaded_extensions().size());
-  EXPECT_EQ(id, observer.loaded_extensions()[0]);
-  EXPECT_TRUE(observer.unloaded_extensions().empty());
-
-  registrar()->DisableExtension(id, {disable_reason::DISABLE_USER_ACTION});
-
-  ASSERT_EQ(1u, observer.loaded_extensions().size());
-  ASSERT_EQ(1u, observer.unloaded_extensions().size());
-  EXPECT_EQ(id, observer.unloaded_extensions()[0]);
-  override_registrar->RemoveObserver(&observer);
-}
-
-TEST_F(ExtensionWebUITest, OverrideRegistrarObserverNoOverride) {
-  TestOverrideRegistrarObserver observer;
-  ExtensionWebUIOverrideRegistrar* override_registrar =
-      ExtensionWebUIOverrideRegistrar::GetFactoryInstance()->Get(
-          profile_.get());
-  override_registrar->AddObserver(&observer);
-
-  scoped_refptr<const Extension> extension(
-      ExtensionBuilder("No override").Build());
-
-  registrar()->AddExtension(extension.get());
-
-  EXPECT_TRUE(observer.loaded_extensions().empty());
-  EXPECT_TRUE(observer.unloaded_extensions().empty());
-
-  registrar()->DisableExtension(extension->id(),
-                                {disable_reason::DISABLE_USER_ACTION});
-
-  EXPECT_TRUE(observer.loaded_extensions().empty());
-  EXPECT_TRUE(observer.unloaded_extensions().empty());
-  override_registrar->RemoveObserver(&observer);
-}
-
 TEST_F(ExtensionWebUITest, TestRemovingDuplicateEntriesForHosts) {
   // Test that duplicate entries for a single extension are removed. This could
   // happen because of https://crbug.com/782959.
@@ -287,14 +208,14 @@ TEST_F(ExtensionWebUITest, TestRemovingDuplicateEntriesForHosts) {
   {
     // Add multiple entries for the same extension.
     ScopedDictPrefUpdate update(prefs, ExtensionWebUI::kExtensionURLOverrides);
-    base::DictValue& all_overrides = update.Get();
+    base::Value::Dict& all_overrides = update.Get();
 
     auto newtab_list =
-        base::ListValue()
-            .Append(base::DictValue()
+        base::Value::List()
+            .Append(base::Value::Dict()
                         .Set("entry", newtab_url.spec())
                         .Set("active", true))
-            .Append(base::DictValue()
+            .Append(base::Value::Dict()
                         .Set("entry",
                              extension->GetResourceURL("oldtab.html").spec())
                         .Set("active", true));
@@ -309,12 +230,12 @@ TEST_F(ExtensionWebUITest, TestRemovingDuplicateEntriesForHosts) {
 
   // Duplicates should be removed (in response to ExtensionSystem::ready()).
   // Only a single entry should remain.
-  const base::DictValue& overrides =
+  const base::Value::Dict& overrides =
       prefs->GetDict(ExtensionWebUI::kExtensionURLOverrides);
-  const base::ListValue* newtab_overrides = overrides.FindList("newtab");
+  const base::Value::List* newtab_overrides = overrides.FindList("newtab");
   ASSERT_TRUE(newtab_overrides);
   ASSERT_EQ(1u, newtab_overrides->size());
-  const base::DictValue& override_dict = (*newtab_overrides)[0].GetDict();
+  const base::Value::Dict& override_dict = (*newtab_overrides)[0].GetDict();
   EXPECT_EQ(newtab_url.spec(), CHECK_DEREF(override_dict.FindString("entry")));
   EXPECT_TRUE(override_dict.FindBool("active").value_or(false));
 }
@@ -358,8 +279,8 @@ TEST_F(ExtensionWebUITest, TestFaviconAlwaysAvailable) {
 
 TEST_F(ExtensionWebUITest, TestNumExtensionsOverridingURL) {
   auto load_extension_overriding_newtab = [this](const char* name) {
-    base::DictValue chrome_url_overrides =
-        base::DictValue().Set("newtab", "newtab.html");
+    base::Value::Dict chrome_url_overrides =
+        base::Value::Dict().Set("newtab", "newtab.html");
     scoped_refptr<const Extension> extension =
         ExtensionBuilder(name)
             .SetLocation(ManifestLocation::kInternal)
@@ -393,8 +314,8 @@ TEST_F(ExtensionWebUITest, TestNumExtensionsOverridingURL) {
                     ntp_url, profile_.get()));
 
   // Disabling an extension should remove it from the override count.
-  registrar()->DisableExtension(extension2->id(),
-                                {disable_reason::DISABLE_USER_ACTION});
+  extension_service_->DisableExtension(extension2->id(),
+                                       disable_reason::DISABLE_USER_ACTION);
   EXPECT_EQ(2u, ExtensionWebUI::GetNumberOfExtensionsOverridingURL(
                     ntp_url, profile_.get()));
 }
@@ -450,9 +371,9 @@ TEST_F(ExtensionWebUIOverrideURLTest,
 
   // URLOverrides pref should not be updated for disabled by default extension.
   PrefService* prefs = profile()->GetPrefs();
-  const base::DictValue& overrides =
+  const base::Value::Dict& overrides =
       prefs->GetDict(ExtensionWebUI::kExtensionURLOverrides);
-  const base::ListValue* newtab_overrides = overrides.FindList("newtab");
+  const base::Value::List* newtab_overrides = overrides.FindList("newtab");
   EXPECT_FALSE(newtab_overrides);
 
   EXPECT_TRUE(registrar()->UninstallExtension(

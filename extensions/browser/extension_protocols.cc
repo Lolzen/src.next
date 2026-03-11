@@ -15,9 +15,9 @@
 #include <vector>
 
 #include "base/base64.h"
-#include "base/callback_list.h"
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
+#include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/format_macros.h"
@@ -54,6 +54,8 @@
 #include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
+#include "crypto/secure_hash.h"
+#include "crypto/sha2.h"
 #include "extensions/browser/content_verifier/content_verifier.h"
 #include "extensions/browser/content_verifier/content_verify_job.h"
 #include "extensions/browser/extension_navigation_ui_data.h"
@@ -118,6 +120,10 @@ using extensions::SharedModuleInfo;
 namespace extensions {
 namespace {
 
+BASE_FEATURE(kOverrideExtensionFilesMimeTypes,
+             "OverrideExtensionFilesMimeTypes",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 ExtensionProtocolTestHandler* g_test_handler = nullptr;
 
 // Stores relevant info about an ExtensionResource, namely: its file path, last
@@ -145,7 +151,7 @@ void GenerateBackgroundPageContents(const Extension* extension,
   *data = "<!DOCTYPE html>\n<body>\n";
   for (const auto& script : BackgroundInfo::GetBackgroundScripts(extension)) {
     *data += "<script src=\"";
-    *data += script.relative_path().AsUTF8Unsafe();
+    *data += script;
     *data += "\"></script>\n";
   }
 }
@@ -221,7 +227,7 @@ bool AllowExtensionResourceLoad(const network::ResourceRequest& request,
   // process to request each other's resources. We can't do a more precise
   // check, since the renderer can lie about which extension has made the
   // request.
-  if (process_map.Contains(request.url.GetHost(), child_id)) {
+  if (process_map.Contains(request.url.host(), child_id)) {
     return true;
   }
 
@@ -258,8 +264,8 @@ bool URLIsForExtensionIcon(const GURL& url, const Extension* extension) {
     return false;
   }
 
-  DCHECK_EQ(url.GetHost(), extension->id());
-  std::string_view path = url.path();
+  DCHECK_EQ(url.host(), extension->id());
+  std::string_view path = url.path_piece();
   DCHECK(path.length() > 0 && path[0] == '/');
   std::string_view path_without_slash = path.substr(1);
   return IconsInfo::GetIcons(extension).ContainsPath(path_without_slash);
@@ -305,7 +311,7 @@ void GetSecurityPolicyForURL(const network::ResourceRequest& request,
                              const std::string** cross_origin_opener_policy,
                              bool* send_cors_header,
                              bool* follow_symlinks_anywhere) {
-  std::string resource_path = request.url.GetPath();
+  std::string resource_path = request.url.path();
 
   // Use default CSP for <webview>.
   if (!is_web_view_request) {
@@ -342,7 +348,7 @@ void GetSecurityPolicyForURL(const network::ResourceRequest& request,
 }
 
 bool IsPathEqualTo(const GURL& url, std::string_view test) {
-  std::string_view path_piece = url.path();
+  std::string_view path_piece = url.path_piece();
   return path_piece.size() > 1 && path_piece.substr(1) == test;
 }
 
@@ -361,7 +367,8 @@ bool IsBackgroundServiceWorker(const Extension& extension,
              network::mojom::RequestDestination::kServiceWorker &&
          BackgroundInfo::IsServiceWorkerBased(&extension) &&
          request.url ==
-             BackgroundInfo::GetBackgroundServiceWorkerScriptURL(&extension);
+             extension.GetResourceURL(
+                 BackgroundInfo::GetBackgroundServiceWorkerScript(&extension));
 }
 
 bool IsExtensionDocument(const Extension& extension,
@@ -438,9 +445,11 @@ void AddCacheHeaders(net::HttpResponseHeaders& headers,
   // On Fuchsia, some resources are served from read-only filesystems which
   // don't manage creation timestamps. Cache-control headers should still
   // be generated for those resources.
+#if !BUILDFLAG(IS_FUCHSIA)
   if (last_modified_time.is_null()) {
     return;
   }
+#endif  // !BUILDFLAG(IS_FUCHSIA)
 
   // Hash the time and make an etag to avoid exposing the exact
   // user installation time of the extension.
@@ -518,35 +527,6 @@ class FileLoaderObserver : public content::FileURLLoaderObserver {
 
 class ExtensionURLLoaderFactory;
 
-class ExtensionProtocolShutdownNotifierFactory
-    : public BrowserContextKeyedServiceShutdownNotifierFactory {
- public:
-  static ExtensionProtocolShutdownNotifierFactory* GetInstance() {
-    static base::NoDestructor<ExtensionProtocolShutdownNotifierFactory>
-        s_factory;
-    return s_factory.get();
-  }
-
-  ExtensionProtocolShutdownNotifierFactory(
-      const ExtensionProtocolShutdownNotifierFactory&) = delete;
-  ExtensionProtocolShutdownNotifierFactory& operator=(
-      const ExtensionProtocolShutdownNotifierFactory&) = delete;
-
- private:
-  friend class base::NoDestructor<ExtensionProtocolShutdownNotifierFactory>;
-  ExtensionProtocolShutdownNotifierFactory()
-      : BrowserContextKeyedServiceShutdownNotifierFactory(
-            "ExtensionProtocolShutdownNotifierFactory") {
-    DependsOn(ExtensionRegistryFactory::GetInstance());
-    DependsOn(ProcessMapFactory::GetInstance());
-  }
-
-  content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const override {
-    return ExtensionsBrowserClient::Get()->GetContextOwnInstance(context);
-  }
-};
-
 class ExtensionURLLoader : public network::mojom::URLLoader {
  public:
   static void CreateAndStart(
@@ -582,9 +562,6 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
 
     Start();
   }
-
-  void OnBrowserContextDestroyed() { browser_context_ = nullptr; }
-
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override {}
 
@@ -605,12 +582,6 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
     loader_.Bind(std::move(loader));
     loader_.set_disconnect_handler(base::BindOnce(
         &ExtensionURLLoader::OnMojoDisconnect, weak_ptr_factory_.GetWeakPtr()));
-    shutdown_subscription_ =
-        ExtensionProtocolShutdownNotifierFactory::GetInstance()
-            ->Get(browser_context)
-            ->Subscribe(base::BindRepeating(
-                &ExtensionURLLoader::OnBrowserContextDestroyed,
-                base::Unretained(this)));
   }
 
   // `this` instance should only be `delete`ed after completing handling of the
@@ -626,16 +597,19 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
   void Start() {
     // Owner of BrowserContext should ensure that all WebContents are closed
     // before starting BrowserContext destruction, but this doesn't stop
-    // incoming IPCs which may still be in-flight. Both
-    // ExtensionURLLoaderFactory and ExtensionURLLoader implement
-    // OnBrowserContextDestroyed to get notified of the BrowserContext
-    // destruction and stop the execution of in-flight calls.
-    if (!browser_context_) {
+    // incoming URLLoaderFactory IPCs which may still be in-flight until (as
+    // part of BrowserContext destruction sequence) OnBrowserContextDestroyed
+    // below is called (which will prevent future IPCs by calling
+    // DisconnectReceiversAndDestroy).  Note that DisconnectReceiversAndDestroy
+    // will only stop future ExtensionURLLoaderFactory IPCs, but it won't stop
+    // future ExtensionURLLoader IPCs - this is okay, because the loader doesn't
+    // directly interact with the BrowserContext.
+    if (browser_context_->ShutdownStarted()) {
       CompleteRequestAndDeleteThis(net::ERR_FAILED);
       return;
     }
 
-    const ExtensionId extension_id = request_.url.GetHost();
+    const ExtensionId extension_id = request_.url.host();
     ExtensionRegistry* registry = ExtensionRegistry::Get(browser_context_);
     scoped_refptr<const Extension> extension =
         registry->GenerateInstalledExtensionsSet().GetByIDorGUID(extension_id);
@@ -645,7 +619,7 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
         extensions::util::IsIncognitoEnabled(extension_id, browser_context_);
 
     // Redirect guid to id.
-    if (extension && request_.url.GetHost() == extension->guid()) {
+    if (extension && request_.url.host() == extension->guid()) {
       GURL::Replacements replace_host;
       replace_host.SetHostStr(extension->id());
       upstream_url_ = request_.url;
@@ -683,41 +657,50 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
   }
 
   void OnResourceInfoRead(const extensions::ExtensionResource& resource,
-                          const base::Version& extension_version,
                           scoped_refptr<net::HttpResponseHeaders> headers,
                           scoped_refptr<ContentVerifier> content_verifier,
                           const ResourceInfo& resource_info) {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-
-    // If the BrowserContext is shutting down, keyed services (like
-    // ExtensionRegistry)  may already be destroyed. Abort the request to avoid
-    // crashing.
-    if (!browser_context_) {
-      CompleteRequestAndDeleteThis(net::ERR_FAILED);
-      return;
-    }
-
     const auto& read_file_path = resource_info.file_path;
     const auto& last_modified_time = resource_info.last_modified_time;
+    const auto& file_size = resource_info.size;
     request_.url = net::FilePathToFileURL(read_file_path);
 
     AddCacheHeaders(*headers, last_modified_time);
-    AddMimeTypeHeaders(*headers, read_file_path);
 
-    // TODO(crbug.com/416484593): If the file is missing, we might want to check
-    // if the extension has moved to a new directory (e.g. _N suffix) with the
-    // same version, and reroute the request there to avoid FILE_NOT_FOUND. For
-    // example, in the case of request for an extension resource coming in
-    // while a corruption repair that starts when an extension goes idle.
+    // TODO(crbug.com/400647848): Remove this if-check and always override mime
+    // type headers in M139.
+    if (base::FeatureList::IsEnabled(kOverrideExtensionFilesMimeTypes)) {
+      AddMimeTypeHeaders(*headers, read_file_path);
+    }
 
-    bool should_verify_content =
-        ShouldVerifyContent(resource, extension_version, resource_info);
-    bool is_shutdown_started = browser_context_->ShutdownStarted();
+    // TODO(crbug.com/405286894, crbug.com/410916670): Properly implement
+    // content verification for range headers which return a subset of the
+    // extension's file. Currently end headers may trigger unintentional
+    // corruptions.
+    bool should_verify_content = true;
+
+    if (std::optional<std::string> range_header =
+            request_.headers.GetHeader(net::HttpRequestHeaders::kRange);
+        range_header) {
+      std::vector<net::HttpByteRange> ranges;
+      if (net::HttpUtil::ParseRangeHeader(*range_header, &ranges) &&
+          ranges.size() == 1) {
+        // For now, skip content verification if the file will be read before
+        // its end.
+        should_verify_content = !ranges[0].HasLastBytePosition() ||
+                                ranges[0].last_byte_position() == file_size - 1;
+      } else {
+        // Malformed range header or multiple ranges detected. The FileURLLoader
+        // will also detect this and return an error.
+        should_verify_content = false;
+      }
+    }
 
     scoped_refptr<ContentVerifyJob> verify_job;
-    if (content_verifier && should_verify_content && !is_shutdown_started) {
+    if (content_verifier && should_verify_content) {
       verify_job = ContentVerifier::CreateAndStartJobFor(
-          resource.extension_id(), resource.extension_root(), extension_version,
+          resource.extension_id(), resource.extension_root(),
           resource.relative_path(), content_verifier);
     }
 
@@ -727,48 +710,6 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
         /*allow_directory_listing=*/false, std::move(headers));
 
     DeleteThis();
-  }
-
-  bool ShouldVerifyContent(const extensions::ExtensionResource& resource,
-                           const base::Version& extension_version,
-                           const ResourceInfo& resource_info) {
-    // TODO(crbug.com/405286894, crbug.com/410916670): Properly implement
-    // content verification for range headers which return a subset of the
-    // extension's file. Currently end headers may trigger unintentional
-    // corruptions.
-    if (std::optional<std::string> range_header =
-            request_.headers.GetHeader(net::HttpRequestHeaders::kRange);
-        range_header) {
-      std::vector<net::HttpByteRange> ranges;
-      if (net::HttpUtil::ParseRangeHeader(*range_header, &ranges) &&
-          ranges.size() == 1) {
-        // For now, skip content verification if the file will be read before
-        // its end.
-        if (ranges[0].HasLastBytePosition() &&
-            ranges[0].last_byte_position() != resource_info.size - 1) {
-          return false;
-        }
-      } else {
-        // Malformed range header or multiple ranges detected. The FileURLLoader
-        // will also detect this and return an error.
-        return false;
-      }
-    }
-
-    ExtensionRegistry* registry = ExtensionRegistry::Get(browser_context_);
-    CHECK(registry);
-    auto* extension =
-        registry->enabled_extensions().GetByID(resource.extension_id());
-    // The extension might have been re-installed since the moment the
-    // resource read was issued. In this case, this task was requested for
-    // an extension that is now either disabled, or installed in a different
-    // folder or with a different version.
-    if (!extension || extension->path() != resource.extension_root() ||
-        extension->version() != extension_version) {
-      return false;
-    }
-
-    return true;
   }
 
   void OnFaviconRetrieved(mojo::StructPtr<network::mojom::URLResponseHead> head,
@@ -892,7 +833,7 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
     // Handle shared resources (extension A loading resources out of extension
     // B).
     ExtensionId extension_id = extension->id();
-    std::string path = request_.url.GetPath();
+    std::string path = request_.url.path();
     if (SharedModuleInfo::IsImportedPath(path)) {
       std::string new_extension_id;
       std::string new_relative_path;
@@ -931,8 +872,7 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
         base::BindOnce(&ReadResourceInfo, resource, directory_path),
         base::BindOnce(&ExtensionURLLoader::OnResourceInfoRead,
                        weak_ptr_factory_.GetWeakPtr(), resource,
-                       extension->version(), std::move(headers),
-                       std::move(content_verifier)));
+                       std::move(headers), std::move(content_verifier)));
   }
 
   void OnMojoDisconnect() { DeleteThis(); }
@@ -940,7 +880,7 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
   mojo::Receiver<network::mojom::URLLoader> loader_{this};
   mojo::Remote<network::mojom::URLLoaderClient> client_;
   network::ResourceRequest request_;
-  raw_ptr<content::BrowserContext, AcrossTasksDanglingUntriaged>
+  const raw_ptr<content::BrowserContext, AcrossTasksDanglingUntriaged>
       browser_context_;
   const bool is_web_view_request_;
 
@@ -954,8 +894,6 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
 
   // Used for determining if `target_url` is allowed to be requested.
   GURL upstream_url_;
-
-  base::CallbackListSubscription shutdown_subscription_;
 
   base::WeakPtrFactory<ExtensionURLLoader> weak_ptr_factory_{this};
 };
@@ -994,7 +932,7 @@ class ExtensionURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
   }
 
   static void EnsureShutdownNotifierFactoryBuilt() {
-    ExtensionProtocolShutdownNotifierFactory::GetInstance();
+    BrowserContextShutdownNotifierFactory::GetInstance();
   }
 
  private:
@@ -1019,7 +957,7 @@ class ExtensionURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
     // |browser_context_shutdown_subscription_| guarantees that
     // OnBrowserContextDestroyed won't be called after |this| is destroyed.
     browser_context_shutdown_subscription_ =
-        ExtensionProtocolShutdownNotifierFactory::GetInstance()
+        BrowserContextShutdownNotifierFactory::GetInstance()
             ->Get(browser_context)
             ->Subscribe(base::BindRepeating(
                 &ExtensionURLLoaderFactory::OnBrowserContextDestroyed,
@@ -1038,7 +976,7 @@ class ExtensionURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
       const net::MutableNetworkTrafficAnnotationTag& traffic_annotation)
       override {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    DCHECK_EQ(kExtensionScheme, request.url.GetScheme());
+    DCHECK_EQ(kExtensionScheme, request.url.scheme());
     ExtensionURLLoader::CreateAndStart(std::move(loader), std::move(client),
                                        request, is_web_view_request_,
                                        render_process_id_, browser_context_);
@@ -1049,6 +987,37 @@ class ExtensionURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
     // serve any more requests.
     DisconnectReceiversAndDestroy();
   }
+
+  class BrowserContextShutdownNotifierFactory
+      : public BrowserContextKeyedServiceShutdownNotifierFactory {
+   public:
+    static BrowserContextShutdownNotifierFactory* GetInstance() {
+      static base::NoDestructor<BrowserContextShutdownNotifierFactory>
+          s_factory;
+      return s_factory.get();
+    }
+
+    // No copying.
+    BrowserContextShutdownNotifierFactory(
+        const BrowserContextShutdownNotifierFactory&) = delete;
+    BrowserContextShutdownNotifierFactory& operator=(
+        const BrowserContextShutdownNotifierFactory&) = delete;
+
+   private:
+    friend class base::NoDestructor<BrowserContextShutdownNotifierFactory>;
+    BrowserContextShutdownNotifierFactory()
+        : BrowserContextKeyedServiceShutdownNotifierFactory(
+              "ExtensionURLLoaderFactory::"
+              "BrowserContextShutdownNotifierFactory") {
+      DependsOn(ExtensionRegistryFactory::GetInstance());
+      DependsOn(ProcessMapFactory::GetInstance());
+    }
+
+    content::BrowserContext* GetBrowserContextToUse(
+        content::BrowserContext* context) const override {
+      return ExtensionsBrowserClient::Get()->GetContextOwnInstance(context);
+    }
+  };
 
   raw_ptr<content::BrowserContext> browser_context_;
   bool is_web_view_request_;

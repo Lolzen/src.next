@@ -35,9 +35,13 @@ HttpStreamRequest::~HttpStreamRequest() {
   helper_.ExtractAsDangling()->OnRequestComplete();  // May delete `*helper_`;
 }
 
-void HttpStreamRequest::Complete(CompletionDetails details) {
-  DCHECK(!completion_details_.has_value());
-  completion_details_ = std::move(details);
+void HttpStreamRequest::Complete(
+    NextProto negotiated_protocol,
+    AlternateProtocolUsage alternate_protocol_usage) {
+  DCHECK(!completed_);
+  completed_ = true;
+  negotiated_protocol_ = negotiated_protocol;
+  alternate_protocol_usage_ = alternate_protocol_usage;
 }
 
 int HttpStreamRequest::RestartTunnelWithProxyAuth() {
@@ -53,13 +57,13 @@ LoadState HttpStreamRequest::GetLoadState() const {
 }
 
 NextProto HttpStreamRequest::negotiated_protocol() const {
-  DCHECK(completion_details_.has_value());
-  return completion_details_->negotiated_protocol;
+  DCHECK(completed_);
+  return negotiated_protocol_;
 }
 
 AlternateProtocolUsage HttpStreamRequest::alternate_protocol_usage() const {
-  DCHECK(completion_details_.has_value());
-  return completion_details_->alternate_protocol_usage;
+  DCHECK(completed_);
+  return alternate_protocol_usage_;
 }
 
 const ConnectionAttempts& HttpStreamRequest::connection_attempts() const {
@@ -92,10 +96,6 @@ void HttpStreamRequest::SetDnsResolutionTimeOverrides(
       (dns_resolution_end_time_override < dns_resolution_end_time_override_)) {
     dns_resolution_end_time_override_ = dns_resolution_end_time_override;
   }
-}
-
-void HttpStreamRequest::SetHelperForSwitchingToPool(Helper* helper) {
-  helper_ = helper;
 }
 
 }  // namespace net

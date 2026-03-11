@@ -36,8 +36,6 @@ class Origin;
 
 namespace net {
 
-class SSLInfo;
-
 // NOTE: Layering violations!
 // We decided to accept these violations (depending
 // on other net/ submodules from net/base/), because otherwise NetworkDelegate
@@ -77,8 +75,7 @@ class NET_EXPORT NetworkDelegate {
       const HttpResponseHeaders* original_response_headers,
       scoped_refptr<HttpResponseHeaders>* override_response_headers,
       const IPEndPoint& remote_endpoint,
-      std::optional<GURL>* preserve_fragment_on_redirect_url,
-      const std::optional<net::SSLInfo>& ssl_info);
+      std::optional<GURL>* preserve_fragment_on_redirect_url);
   void NotifyBeforeRedirect(URLRequest* request,
                             const GURL& new_location);
   void NotifyBeforeRetry(URLRequest* request);
@@ -232,8 +229,7 @@ class NET_EXPORT NetworkDelegate {
       const HttpResponseHeaders* original_response_headers,
       scoped_refptr<HttpResponseHeaders>* override_response_headers,
       const IPEndPoint& remote_endpoint,
-      std::optional<GURL>* preserve_fragment_on_redirect_url,
-      const std::optional<net::SSLInfo>& ssl_info) = 0;
+      std::optional<GURL>* preserve_fragment_on_redirect_url) = 0;
 
   // Called right after a redirect response code was received. |new_location| is
   // only valid for the duration of the call.

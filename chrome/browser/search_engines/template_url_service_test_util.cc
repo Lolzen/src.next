@@ -16,7 +16,6 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/enterprise/browser_management/management_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/regional_capabilities/regional_capabilities_service_factory.h"
 #include "chrome/browser/search_engine_choice/search_engine_choice_service_factory.h"
@@ -24,11 +23,10 @@
 #include "chrome/browser/search_engines/template_url_prepopulate_data_resolver_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
-#include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/webdata_services/web_data_service_factory.h"
+#include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/prefs/testing_pref_service.h"
 #include "components/regional_capabilities/regional_capabilities_service.h"
 #include "components/regional_capabilities/regional_capabilities_test_utils.h"
 #include "components/search_engines/keyword_table.h"
@@ -72,7 +70,7 @@ class TestingTemplateURLServiceClient : public ChromeTemplateURLServiceClient {
 void SetManagedDefaultSearchPreferences(const TemplateURLData& managed_data,
                                         bool enabled,
                                         TestingProfile* profile) {
-  base::DictValue dict = TemplateURLDataToDictionary(managed_data);
+  base::Value::Dict dict = TemplateURLDataToDictionary(managed_data);
   dict.Set(DefaultSearchManager::kDisabledByPolicy, !enabled);
 
   profile->GetTestingPrefService()->SetManagedPref(
@@ -88,7 +86,7 @@ void RemoveManagedDefaultSearchPreferences(TestingProfile* profile) {
 void SetRecommendedDefaultSearchPreferences(const TemplateURLData& data,
                                             bool enabled,
                                             TestingProfile* profile) {
-  base::DictValue dict = TemplateURLDataToDictionary(data);
+  base::Value::Dict dict = TemplateURLDataToDictionary(data);
   dict.Set(DefaultSearchManager::kDisabledByPolicy, !enabled);
 
   profile->GetTestingPrefService()->SetRecommendedPref(
@@ -100,7 +98,7 @@ void SetManagedSearchSettingsPreference(
     const EnterpriseSearchManager::OwnedTemplateURLDataVector&
         enterprise_search_engines,
     TestingProfile* profile) {
-  base::ListValue pref_value;
+  base::Value::List pref_value;
   for (auto& enterprise_search_engine : enterprise_search_engines) {
     pref_value.Append(
         base::Value(TemplateURLDataToDictionary(*enterprise_search_engine)));
@@ -155,7 +153,14 @@ TemplateURLServiceTestUtil::TemplateURLServiceTestUtil(
     PrefService* local_state)
     : local_state_(local_state) {
   if (!local_state_) {
-    local_state_ = TestingBrowserProcess::GetGlobal()->local_state();
+    if (g_browser_process->local_state()) {
+      local_state_ = g_browser_process->local_state();
+    } else {
+      // `g_browser_process->local_state()` might be null in unit tests.
+      owned_local_state_ = std::make_unique<ScopedTestingLocalState>(
+          TestingBrowserProcess::GetGlobal());
+      local_state_ = owned_local_state_->Get();
+    }
   }
   CHECK(local_state_);
 
@@ -209,10 +214,9 @@ TemplateURLServiceTestUtil::SetUpRequiredServicesWithCustomLocalState(
                     regional_capabilities::RegionalCapabilitiesServiceFactory::
                         GetInstance()
                             ->GetForProfile(profile);
-            PrefService* local_state =
-                local_state_override
-                    ? local_state_override
-                    : TestingBrowserProcess::GetGlobal()->local_state();
+            PrefService* local_state = local_state_override
+                                           ? local_state_override
+                                           : g_browser_process->local_state();
             CHECK(local_state);
 
             return std::make_unique<search_engines::SearchEngineChoiceService>(
@@ -220,10 +224,7 @@ TemplateURLServiceTestUtil::SetUpRequiredServicesWithCustomLocalState(
                 *profile->GetPrefs(), local_state, *regional_capabilities,
                 CHECK_DEREF(
                     TemplateURLPrepopulateData::ResolverFactory::GetInstance()
-                        ->GetForProfile(profile)),
-                CHECK_DEREF(IdentityManagerFactory::GetForProfile(profile)),
-                CHECK_DEREF(
-                    policy::ManagementServiceFactory::GetForProfile(profile)));
+                        ->GetForProfile(profile)));
           }),
   });
 

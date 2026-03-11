@@ -13,12 +13,10 @@
 #include "base/rand_util.h"
 #include "base/time/default_tick_clock.h"
 #include "cc/metrics/begin_main_frame_metrics.h"
-#include "cc/metrics/frame_sequence_tracker_collection.h"
 #include "services/metrics/public/cpp/metrics_utils.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "third_party/blink/public/common/metrics/document_update_reason.h"
-#include "third_party/blink/renderer/platform/instrumentation/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -34,6 +32,7 @@ inline int64_t ApplyBucket(int64_t value) {
 }
 
 BASE_FEATURE(kAvoidUnnecessaryForcedLayoutMeasurements,
+             "AvoidUnnecessaryForcedLayoutMeasurements",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace
@@ -274,8 +273,8 @@ LocalFrameUkmAggregator::GetScopedForcedLayoutTimer(
   // avoid overflowing the counters.
   bool should_report_uma_this_frame = !calls_to_next_forced_style_layout_uma_;
   if (should_report_uma_this_frame) {
-    calls_to_next_forced_style_layout_uma_ = base::RandIntInclusive(
-        0, mean_calls_between_forced_style_layout_uma_ * 2);
+    calls_to_next_forced_style_layout_uma_ =
+        base::RandInt(0, mean_calls_between_forced_style_layout_uma_ * 2);
   } else {
     DCHECK_GT(calls_to_next_forced_style_layout_uma_, 0u);
     --calls_to_next_forced_style_layout_uma_;
@@ -702,7 +701,7 @@ void LocalFrameUkmAggregator::EndForcedLayout(
       break;
 
     case DocumentUpdateReason::kCanvas:
-    case DocumentUpdateReason::kCanvasDrawElementImage:
+    case DocumentUpdateReason::kCanvasPlaceElement:
     case DocumentUpdateReason::kPlugin:
     case DocumentUpdateReason::kSVGImage:
       sub_metric = kContentDocumentUpdate;

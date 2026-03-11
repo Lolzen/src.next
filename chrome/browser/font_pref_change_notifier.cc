@@ -41,10 +41,7 @@ FontPrefChangeNotifier::FontPrefChangeNotifier(PrefService* pref_service)
 }
 
 FontPrefChangeNotifier::~FontPrefChangeNotifier() {
-  if (pref_service_) {
-    pref_service_->RemovePrefObserverAllPrefs(this);
-    pref_service_ = nullptr;
-  }
+  pref_service_->RemovePrefObserverAllPrefs(this);
 
   // There could be a shutdown race between this class and the objects
   // registered with it. We don't want the registrars to call back into us
@@ -59,11 +56,6 @@ void FontPrefChangeNotifier::AddRegistrar(Registrar* registrar) {
 
 void FontPrefChangeNotifier::RemoveRegistrar(Registrar* registrar) {
   registrars_.RemoveObserver(registrar);
-}
-
-void FontPrefChangeNotifier::OnServiceDestroyed(PrefService* service) {
-  pref_service_->RemovePrefObserverAllPrefs(this);
-  pref_service_ = nullptr;
 }
 
 void FontPrefChangeNotifier::OnPreferenceChanged(PrefService* pref_service,

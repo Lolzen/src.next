@@ -286,15 +286,35 @@ void HitTestResult::SetToShadowHostIfInUAShadowRoot() {
 }
 
 CompositorElementId HitTestResult::GetScrollableContainer() const {
-  ScrollableAreaTraversal scrollers(InnerNode());
-  auto iter = scrollers.begin();
-  if (iter != scrollers.end()) {
-    return iter->GetScrollElementId();
-  }
-
   // If no node was found, return an invalid element ID, which we check for in
   // InputHandlerProxy::ContinueScrollBeginAfterMainThreadHitTest.
-  return CompositorElementId();
+  if (!InnerNode())
+    return CompositorElementId();
+
+  LayoutBox* cur_box = InnerNode()->GetLayoutObject()->EnclosingBox();
+
+  // Scrolling propagates along the containing block chain and ends at the
+  // RootScroller node. The RootScroller node will have a custom applyScroll
+  // callback that performs scrolling as well as associated "root" actions like
+  // browser control movement and overscroll glow.
+  while (cur_box) {
+    if (cur_box->IsGlobalRootScroller() ||
+        (cur_box->IsScrollContainer() &&
+         cur_box->GetScrollableArea()->ScrollsOverflow())) {
+      return cur_box->GetScrollableArea()->GetScrollElementId();
+    }
+
+    if (IsA<LayoutView>(cur_box))
+      cur_box = cur_box->GetFrame()->OwnerLayoutObject();
+    else
+      cur_box = cur_box->ContainingBlock();
+  }
+
+  return InnerNode()
+      ->GetDocument()
+      .GetPage()
+      ->GetVisualViewport()
+      .GetScrollElementId();
 }
 
 HTMLAreaElement* HitTestResult::ImageAreaForImage() const {
@@ -371,15 +391,7 @@ String HitTestResult::Title(TextDirection& dir) const {
   // using it.
   for (Node* title_node = inner_node_.Get(); title_node;
        title_node = FlatTreeTraversal::Parent(*title_node)) {
-    if (auto* html_element = DynamicTo<HTMLElement>(title_node)) {
-      TextDirection title_dir;
-      const AtomicString& title = html_element->GetDirectionalAttribute(
-          html_names::kTitleAttr, title_dir);
-      if (!title.IsNull()) {
-        dir = title_dir;
-        return title;
-      }
-    } else if (auto* element = DynamicTo<Element>(title_node)) {
+    if (auto* element = DynamicTo<Element>(title_node)) {
       String title = element->title();
       if (!title.IsNull()) {
         if (LayoutObject* layout_object = title_node->GetLayoutObject())
@@ -450,7 +462,7 @@ KURL HitTestResult::AbsoluteImageURL(const Node* node) {
     return KURL();
   }
   return node->GetDocument().CompleteURL(
-      StripLeadingAndTrailingHtmlSpaces(url_string));
+      StripLeadingAndTrailingHTMLSpaces(url_string));
 }
 
 KURL HitTestResult::AbsoluteImageURL() const {

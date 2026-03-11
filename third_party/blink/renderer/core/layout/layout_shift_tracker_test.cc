@@ -955,7 +955,7 @@ TEST_F(LayoutShiftTrackerTest, ContentVisibilityAutoFirstPaint) {
   // 100x100 on the first frame, via a synchronous second layout, and there is
   // no CLS impact.
   EXPECT_FLOAT_EQ(0, GetLayoutShiftTracker().Score());
-  EXPECT_EQ(PhysicalSize(100, 100), target->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 100), target->Size());
 }
 
 TEST_F(LayoutShiftTrackerTest,
@@ -975,15 +975,15 @@ TEST_F(LayoutShiftTrackerTest,
   auto* target = To<LayoutBox>(GetLayoutObjectByElementId("target"));
   // #target starts offsceen, which doesn't count for CLS.
   EXPECT_FLOAT_EQ(0, GetLayoutShiftTracker().Score());
-  EXPECT_EQ(PhysicalSize(100, 1), target->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 1), target->Size());
 
   // In the next frame, we scroll it onto the screen, but it still doesn't
   // count for CLS, and its subtree is not yet unskipped, because the
   // intersection observation takes effect on the subsequent frame.
-  GetDocument().domWindow()->scrollToForTesting(0, 100000);
+  GetDocument().domWindow()->scrollTo(0, 100000);
   UpdateAllLifecyclePhasesForTest();
   EXPECT_FLOAT_EQ(0, GetLayoutShiftTracker().Score());
-  EXPECT_EQ(PhysicalSize(100, 1), target->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 1), target->Size());
 
   // Now the subtree is unskipped, and #target renders at size 100x100.
   // Nevertheless, there is no impact on CLS.
@@ -991,7 +991,7 @@ TEST_F(LayoutShiftTrackerTest,
   // Target's LayoutObject gets re-attached.
   target = To<LayoutBox>(GetLayoutObjectByElementId("target"));
   EXPECT_FLOAT_EQ(0, GetLayoutShiftTracker().Score());
-  EXPECT_EQ(PhysicalSize(100, 100), target->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 100), target->Size());
 }
 
 TEST_F(LayoutShiftTrackerTest, ContentVisibilityHiddenFirstPaint) {
@@ -1011,7 +1011,7 @@ TEST_F(LayoutShiftTrackerTest, ContentVisibilityHiddenFirstPaint) {
 
   // Skipped subtrees don't cause CLS impact.
   EXPECT_FLOAT_EQ(0, GetLayoutShiftTracker().Score());
-  EXPECT_EQ(PhysicalSize(100, 1), target->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 1), target->Size());
 }
 
 TEST_F(LayoutShiftTrackerTest, ContentVisibilityAutoResize) {
@@ -1035,7 +1035,7 @@ TEST_F(LayoutShiftTrackerTest, ContentVisibilityAutoResize) {
   UpdateAllLifecyclePhasesForTest();
   auto* target = To<LayoutBox>(GetLayoutObjectByElementId("target"));
   EXPECT_FLOAT_EQ(0, GetLayoutShiftTracker().Score());
-  EXPECT_EQ(PhysicalSize(100, 100), target->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 100), target->Size());
 }
 
 TEST_F(LayoutShiftTrackerTest,
@@ -1060,17 +1060,17 @@ TEST_F(LayoutShiftTrackerTest,
 
   // #offscreen starts offsceen, which doesn't count for CLS.
   EXPECT_FLOAT_EQ(0, GetLayoutShiftTracker().Score());
-  EXPECT_EQ(PhysicalSize(100, 1), offscreen->StitchedSize());
-  EXPECT_EQ(PhysicalSize(100, 100), onscreen->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 1), offscreen->Size());
+  EXPECT_EQ(PhysicalSize(100, 100), onscreen->Size());
 
   // In the next frame, we scroll it onto the screen, but it still doesn't
   // count for CLS, and its subtree is not yet unskipped, because the
   // intersection observation takes effect on the subsequent frame.
-  GetDocument().domWindow()->scrollToForTesting(0, 100000 + 100);
+  GetDocument().domWindow()->scrollTo(0, 100000 + 100);
   UpdateAllLifecyclePhasesForTest();
   EXPECT_FLOAT_EQ(0, GetLayoutShiftTracker().Score());
-  EXPECT_EQ(PhysicalSize(100, 1), offscreen->StitchedSize());
-  EXPECT_EQ(PhysicalSize(100, 100), onscreen->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 1), offscreen->Size());
+  EXPECT_EQ(PhysicalSize(100, 100), onscreen->Size());
 
   // Now the subtree is unskipped, and #offscreen renders at size 100x100.
   // Nevertheless, there is no impact on CLS.
@@ -1081,10 +1081,10 @@ TEST_F(LayoutShiftTrackerTest,
   // Target's LayoutObject gets re-attached.
   offscreen = To<LayoutBox>(GetLayoutObjectByElementId("offscreen"));
   EXPECT_FLOAT_EQ(0, GetLayoutShiftTracker().Score());
-  EXPECT_EQ(PhysicalSize(100, 100), offscreen->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 100), offscreen->Size());
   // Because content-visibility: auto implies contain-intrinsic-size auto, the
   // size stays at 100x100.
-  EXPECT_EQ(PhysicalSize(100, 100), onscreen->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 100), onscreen->Size());
 
   // Move |offscreen| (which is visible and unlocked now), for which we should
   // report layout shift.
@@ -1096,11 +1096,11 @@ TEST_F(LayoutShiftTrackerTest,
   EXPECT_GT(score, 0);
 
   // Now scroll the element back off-screen.
-  GetDocument().domWindow()->scrollToForTesting(0, 0);
+  GetDocument().domWindow()->scrollTo(0, 0);
   UpdateAllLifecyclePhasesForTest();
   EXPECT_FLOAT_EQ(score, GetLayoutShiftTracker().Score());
-  EXPECT_EQ(PhysicalSize(100, 100), offscreen->StitchedSize());
-  EXPECT_EQ(PhysicalSize(100, 100), onscreen->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 100), offscreen->Size());
+  EXPECT_EQ(PhysicalSize(100, 100), onscreen->Size());
 
   // In the subsequent frame, #offscreen becomes locked and changes its
   // layout size (and vice-versa for #onscreen).
@@ -1109,8 +1109,8 @@ TEST_F(LayoutShiftTrackerTest,
   onscreen = To<LayoutBox>(GetLayoutObjectByElementId("onscreen"));
 
   EXPECT_FLOAT_EQ(score, GetLayoutShiftTracker().Score());
-  EXPECT_EQ(PhysicalSize(100, 100), offscreen->StitchedSize());
-  EXPECT_EQ(PhysicalSize(100, 100), onscreen->StitchedSize());
+  EXPECT_EQ(PhysicalSize(100, 100), offscreen->Size());
+  EXPECT_EQ(PhysicalSize(100, 100), onscreen->Size());
 }
 
 TEST_F(LayoutShiftTrackerTest, NestedFixedPos) {
@@ -1195,7 +1195,7 @@ TEST_F(LayoutShiftTrackerTest, ScrollThenCauseScrollAnchoring) {
   auto* target_element = GetElementById("target");
 
   // Scroll the window which accumulates a scroll in the layout shift tracker.
-  GetDocument().domWindow()->scrollByForTesting(0, 1000);
+  GetDocument().domWindow()->scrollBy(0, 1000);
   UpdateAllLifecyclePhasesForTest();
 
   EXPECT_FLOAT_EQ(0, GetLayoutShiftTracker().Score());

@@ -21,6 +21,8 @@ void ExpandCascade(const MatchedProperties& matched_properties,
                    wtf_size_t matched_properties_index,
                    CustomPropertyCallback&& custom_property_callback,
                    RegularPropertyCallback&& regular_property_callback) {
+  CascadeFilter filter = CreateExpansionFilter(matched_properties);
+
   // We can't handle a MatchResult with more than 0xFFFF MatchedProperties,
   // or a MatchedProperties object with more than 0xFFFF declarations. If this
   // happens, we skip right to the end, and emit nothing.
@@ -31,8 +33,7 @@ void ExpandCascade(const MatchedProperties& matched_properties,
     return;
   }
 
-  CascadeFilter filter = CreateExpansionFilter(matched_properties);
-  const bool expand_visited = !filter.Requires(CSSProperty::kNotVisited);
+  const bool expand_visited = !filter.Rejects(CSSProperty::kVisited, true);
 
   unsigned property_idx = 0;
   for (const CSSPropertyValue& reference : properties) {
@@ -48,7 +49,7 @@ void ExpandCascade(const MatchedProperties& matched_properties,
 
     if (id == CSSPropertyID::kVariable) {
       CustomProperty custom(reference.CustomPropertyName(), document);
-      if (filter.Accepts(custom)) {
+      if (!filter.Rejects(custom)) {
         custom_property_callback(priority, reference.CustomPropertyName());
       }
       // Custom properties never have visited counterparts,
@@ -60,18 +61,18 @@ void ExpandCascade(const MatchedProperties& matched_properties,
           continue;
         }
         const CSSProperty& property = CSSProperty::Get(expanded_id);
-        if (filter.Accepts(property)) {
+        if (!filter.Rejects(property)) {
           regular_property_callback(priority, expanded_id);
         }
       }
     } else {
       const CSSProperty& property = CSSProperty::Get(id);
-      if (filter.Accepts(property)) {
+      if (!filter.Rejects(property)) {
         regular_property_callback(priority, id);
       }
       if (expand_visited) {
         const CSSProperty* visited_property = property.GetVisitedProperty();
-        if (visited_property && filter.Accepts(*visited_property)) {
+        if (visited_property && !filter.Rejects(*visited_property)) {
           regular_property_callback(priority, visited_property->PropertyID());
         }
       }

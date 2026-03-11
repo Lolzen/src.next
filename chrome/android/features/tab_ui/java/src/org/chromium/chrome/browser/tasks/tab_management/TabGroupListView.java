@@ -14,7 +14,8 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import androidx.annotation.DrawableRes;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.Px;
 import androidx.appcompat.content.res.AppCompatResources;
 import androidx.core.util.Consumer;
@@ -22,17 +23,12 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.RecyclerView.OnScrollListener;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.tab_ui.R;
 import org.chromium.components.browser_ui.widget.displaystyle.UiConfig;
 import org.chromium.components.browser_ui.widget.selectable_list.SelectableListLayout;
-import org.chromium.ui.base.DeviceFormFactor;
 
 /** Conditionally displays empty state for the tab group pane. */
-@NullMarked
 public class TabGroupListView extends FrameLayout {
-
     private RecyclerView mRecyclerView;
     private View mEmptyStateContainer;
     private TextView mEmptyStateSubheading;
@@ -50,21 +46,15 @@ public class TabGroupListView extends FrameLayout {
         super.onFinishInflate();
 
         Context context = getContext();
-
         mRecyclerView = findViewById(R.id.tab_group_list_recycler_view);
         mRecyclerView.setLayoutManager(new LinearLayoutManager(context));
 
         mEmptyStateContainer = findViewById(R.id.empty_state_container);
 
         ImageView emptyStateIllustration = findViewById(R.id.empty_state_icon);
-
-        @DrawableRes
-        int emptyImageResId =
-                DeviceFormFactor.isNonMultiDisplayContextOnTablet(context)
-                        ? R.drawable.tablet_tab_group_list_empty_state_illustration
-                        : R.drawable.tab_group_list_empty_state_illustration;
-
-        Drawable illustration = AppCompatResources.getDrawable(context, emptyImageResId);
+        Drawable illustration =
+                AppCompatResources.getDrawable(
+                        context, R.drawable.tab_group_list_empty_state_illustration);
         emptyStateIllustration.setImageDrawable(illustration);
 
         TextView emptyStateHeading = findViewById(R.id.empty_state_text_title);
@@ -73,8 +63,6 @@ public class TabGroupListView extends FrameLayout {
 
         mUiConfig = new UiConfig(this);
         mUiConfig.addObserver(this::onDisplayStyleChanged);
-
-        TabUiUtils.applyXrEmptyStateBackplate(this);
     }
 
     void setRecyclerViewAdapter(RecyclerView.Adapter adapter) {
@@ -90,7 +78,7 @@ public class TabGroupListView extends FrameLayout {
         mRecyclerView.addOnScrollListener(
                 new OnScrollListener() {
                     @Override
-                    public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
+                    public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                         onIsScrolledMaybeChanged.accept(
                                 mRecyclerView.computeVerticalScrollOffset() != 0);
                     }
@@ -120,15 +108,6 @@ public class TabGroupListView extends FrameLayout {
 
     View getRecyclerView() {
         return mRecyclerView;
-    }
-
-    void maybeMakeSpaceForSearchBar(boolean isTabletOrLandscape) {
-        if (isTabletOrLandscape) {
-            setPadding(getPaddingLeft(), 0, getPaddingRight(), getPaddingBottom());
-        } else {
-            int searchBoxGap = getResources().getDimensionPixelSize(R.dimen.hub_search_box_gap);
-            setPadding(getPaddingLeft(), searchBoxGap, getPaddingRight(), getPaddingBottom());
-        }
     }
 
     private void onDisplayStyleChanged(UiConfig.DisplayStyle newDisplayStyle) {

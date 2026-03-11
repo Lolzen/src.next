@@ -6,7 +6,6 @@
 
 #include "third_party/blink/renderer/core/css/resolver/match_result.h"
 #include "third_party/blink/renderer/core/css/rule_set.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -20,21 +19,21 @@ CascadeFilter AddValidPropertiesFilter(
     case ValidPropertyFilter::kNoFilter:
       return filter;
     case ValidPropertyFilter::kCue:
-      return filter.Add(CSSProperty::kValidForCue);
+      return filter.Add(CSSProperty::kValidForCue, false);
     case ValidPropertyFilter::kFirstLetter:
-      return filter.Add(CSSProperty::kValidForFirstLetter);
+      return filter.Add(CSSProperty::kValidForFirstLetter, false);
     case ValidPropertyFilter::kFirstLine:
-      return filter.Add(CSSProperty::kValidForFirstLine);
+      return filter.Add(CSSProperty::kValidForFirstLine, false);
     case ValidPropertyFilter::kMarker:
-      return filter.Add(CSSProperty::kValidForMarker);
+      return filter.Add(CSSProperty::kValidForMarker, false);
     case ValidPropertyFilter::kHighlightLegacy:
-      return filter.Add(CSSProperty::kValidForHighlightLegacy);
+      return filter.Add(CSSProperty::kValidForHighlightLegacy, false);
     case ValidPropertyFilter::kHighlight:
-      return filter.Add(CSSProperty::kValidForHighlight);
+      return filter.Add(CSSProperty::kValidForHighlight, false);
     case ValidPropertyFilter::kPositionTry:
-      return filter.Add(CSSProperty::kValidForPositionTry);
+      return filter.Add(CSSProperty::kValidForPositionTry, false);
     case ValidPropertyFilter::kPageContext:
-      return filter.Add(CSSProperty::kValidForPageContext);
+      return filter.Add(CSSProperty::kValidForPageContext, false);
   }
 }
 
@@ -42,13 +41,13 @@ CascadeFilter AddLinkFilter(CascadeFilter filter,
                             const MatchedProperties& matched_properties) {
   switch (matched_properties.data_.link_match_type) {
     case CSSSelector::kMatchVisited:
-      return filter.Add(CSSProperty::kVisited);
+      return filter.Add(CSSProperty::kVisited, false);
     case CSSSelector::kMatchLink:
-      return filter.Add(CSSProperty::kNotVisited);
+      return filter.Add(CSSProperty::kVisited, true);
     case CSSSelector::kMatchAll:
       return filter;
     default:
-      return filter.Add(CSSProperty::kVisited).Add(CSSProperty::kNotVisited);
+      return filter.Add(CSSProperty::kProperty, true);
   }
 }
 

@@ -5,7 +5,6 @@
 package org.chromium.chrome.browser.gesturenav;
 
 import static org.chromium.chrome.browser.gesturenav.NavigationSheetCoordinator.NAVIGATION_LIST_ITEM_TYPE_ID;
-import static org.chromium.chrome.browser.url_constants.UrlConstantResolver.getOriginalNativeHistoryUrl;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -14,14 +13,12 @@ import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.view.View;
 
-import org.chromium.build.annotations.MonotonicNonNull;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.RequiresNonNull;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.ui.favicon.FaviconHelper;
 import org.chromium.chrome.browser.ui.favicon.FaviconUtils;
 import org.chromium.components.browser_ui.widget.RoundedIconGenerator;
+import org.chromium.components.embedder_support.util.UrlConstants;
 import org.chromium.components.embedder_support.util.UrlUtilities;
 import org.chromium.content_public.browser.NavigationEntry;
 import org.chromium.content_public.browser.NavigationHistory;
@@ -38,7 +35,6 @@ import java.util.HashSet;
 import java.util.Set;
 
 /** Mediator class for navigation sheet. */
-@NullMarked
 class NavigationSheetMediator {
     private final ClickListener mClickListener;
     private final FaviconHelper mFaviconHelper;
@@ -52,7 +48,7 @@ class NavigationSheetMediator {
     private final String mNewIncognitoTabText;
     private final Profile mProfile;
 
-    private @MonotonicNonNull NavigationHistory mHistory;
+    private NavigationHistory mHistory;
 
     /** Performs an action when a navigation item is clicked. */
     interface ClickListener {
@@ -89,7 +85,9 @@ class NavigationSheetMediator {
         mFaviconSize = context.getResources().getDimensionPixelSize(R.dimen.default_favicon_size);
         mHistoryIcon =
                 UiUtils.getTintedDrawable(
-                        context, R.drawable.ic_history_24dp, R.color.default_icon_color_tint_list);
+                        context,
+                        R.drawable.ic_history_googblue_24dp,
+                        R.color.default_icon_color_tint_list);
         mDefaultIcon =
                 UiUtils.getTintedDrawable(
                         context, R.drawable.ic_chrome, R.color.default_icon_color_tint_list);
@@ -128,7 +126,7 @@ class NavigationSheetMediator {
             if (!requestedUrls.contains(pageUrl)) {
                 FaviconHelper.FaviconImageCallback imageCallback =
                         (bitmap, iconUrl) -> onFaviconAvailable(pageUrl, bitmap);
-                if (!pageUrl.getSpec().equals(getOriginalNativeHistoryUrl())) {
+                if (!pageUrl.getSpec().equals(UrlConstants.HISTORY_URL)) {
                     mFaviconHelper.getLocalFaviconImageForURL(
                             mProfile, pageUrl, mFaviconSize, imageCallback);
                     requestedUrls.add(pageUrl);
@@ -146,11 +144,9 @@ class NavigationSheetMediator {
 
     /**
      * Called when favicon data requested by {@link #initializeFavicons()} is retrieved.
-     *
      * @param pageUrl the page for which the favicon was retrieved.
      * @param favicon the favicon data.
      */
-    @RequiresNonNull("mHistory")
     private void onFaviconAvailable(GURL pageUrl, Bitmap favicon) {
         // This callback can come after the sheet is hidden (which clears modelList).
         // Do nothing if that happens.

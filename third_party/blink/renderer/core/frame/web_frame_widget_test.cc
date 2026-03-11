@@ -4,7 +4,6 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/run_loop.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -14,21 +13,17 @@
 #include "cc/base/features.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/test/property_tree_test_utils.h"
-#include "cc/trees/scroll_source_type.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/input/synthetic_web_input_event_builders.h"
 #include "third_party/blink/public/mojom/page/widget.mojom-shared.h"
-#include "third_party/blink/public/web/web_script_source.h"
 #include "third_party/blink/renderer/core/css/properties/css_property_ref.h"
 #include "third_party/blink/renderer/core/css/properties/longhands.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/events/add_event_listener_options_resolved.h"
 #include "third_party/blink/renderer/core/dom/events/native_event_listener.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
-#include "third_party/blink/renderer/core/execution_context/agent.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
-#include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/frame/web_frame_widget_impl.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect.h"
@@ -37,9 +32,7 @@
 #include "third_party/blink/renderer/core/html/html_div_element.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
-#include "third_party/blink/renderer/core/layout/layout_image.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
-#include "third_party/blink/renderer/core/scroll/scrollbar.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 #include "third_party/blink/renderer/platform/scheduler/test/fake_task_runner.h"
@@ -48,9 +41,7 @@
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
 #include "third_party/blink/renderer/platform/widget/input/widget_input_handler_manager.h"
 #include "third_party/blink/renderer/platform/widget/widget_base.h"
-#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "ui/base/mojom/window_show_state.mojom-blink.h"
-#include "ui/display/screen_info.h"
 
 #if BUILDFLAG(IS_WIN)
 #include "components/stylus_handwriting/win/features.h"
@@ -130,55 +121,6 @@ TEST_F(WebFrameWidgetSimTest, AutoResizeAllocatedLocalSurfaceId) {
                   ->new_local_surface_id_request_for_testing());
 }
 
-TEST_F(WebFrameWidgetSimTest, ColorGamutChangeTriggersMediaQuery) {
-  SimRequest request("https://example.com/test.html", "text/html");
-  LoadURL("https://example.com/test.html");
-  request.Complete(R"HTML(
-    <script>
-      window.__changed = false;
-      const mq = window.matchMedia("(color-gamut: p3)");
-      mq.addEventListener("change", () => { window.__changed = true; });
-    </script>
-  )HTML");
-
-  viz::ParentLocalSurfaceIdAllocator allocator;
-  allocator.GenerateId();
-
-  VisualProperties visual_properties;
-  visual_properties.local_surface_id = allocator.GetCurrentLocalSurfaceId();
-
-  display::ScreenInfo screen_info;
-  screen_info.display_color_spaces =
-      gfx::DisplayColorSpaces(gfx::ColorSpace::CreateSRGB());
-  visual_properties.screen_infos = display::ScreenInfos(screen_info);
-
-  WebView().MainFrameWidget()->ApplyVisualProperties(visual_properties);
-  WebView().MainFrameViewWidget()->UpdateSurfaceAndScreenInfo(
-      visual_properties.local_surface_id.value(),
-      visual_properties.compositor_viewport_pixel_rect,
-      visual_properties.screen_infos);
-
-  Compositor().BeginFrame();
-  test::RunPendingTasks();
-
-  screen_info.display_color_spaces =
-      gfx::DisplayColorSpaces(gfx::ColorSpace::CreateDisplayP3D65());
-  visual_properties.screen_infos = display::ScreenInfos(screen_info);
-
-  WebView().MainFrameViewWidget()->UpdateSurfaceAndScreenInfo(
-      visual_properties.local_surface_id.value(),
-      visual_properties.compositor_viewport_pixel_rect,
-      visual_properties.screen_infos);
-
-  Compositor().BeginFrame();
-  test::RunPendingTasks();
-
-  v8::HandleScope handle_scope(Window().GetIsolate());
-  v8::Local<v8::Value> changed = MainFrame().ExecuteScriptAndReturnValue(
-      WebScriptSource("window.__changed"));
-  EXPECT_TRUE(changed->BooleanValue(Window().GetIsolate()));
-}
-
 TEST_F(WebFrameWidgetSimTest, FrameSinkIdHitTestAPI) {
   SimRequest request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
@@ -231,106 +173,6 @@ TEST_F(WebFrameWidgetSimTest, ForceSendMetadataOnInput) {
       layer_tree_host->pending_commit_state()->force_send_metadata_request);
 }
 #endif  // BUILDFLAG(IS_ANDROID)
-
-class WebFrameWidgetScrollContainerHitTest : public WebFrameWidgetSimTest {
- public:
-  void SetUp() override {
-    WebFrameWidgetSimTest::SetUp();
-
-    WebView().Resize(gfx::Size(1000, 1000));
-    WebView().MainFrameViewWidget()->SetPageScaleStateAndLimits(1.0f, true,
-                                                                1.0f, 3.0f);
-    GetVisualViewport().SetSize(gfx::Size(500, 500));
-
-    SimRequest request("https://example.com/test.html", "text/html");
-    LoadURL("https://example.com/test.html");
-    request.Complete(
-        R"HTML(
-      <style>
-      html, body {
-        margin :0px;
-        padding: 0px;
-      }
-      .box {
-        width: 100px;
-        height: 100px;
-        overflow: scroll;
-      }
-      .space {
-        height: 200vh;
-        width: 200vw;
-      }
-      </style>
-
-      <div id='box1' class='box'>
-        <div class='space'></div>
-      </div>
-      <div id='box2' class='box'>
-        <div class='space'></div>
-      </div>
-
-      )HTML");
-    WebView().MainFrameViewWidget()->UpdateAllLifecyclePhases(
-        DocumentUpdateReason::kTest);
-  }
-
-  VisualViewport& GetVisualViewport() {
-    return WebView().MainFrameViewWidget()->GetPage()->GetVisualViewport();
-  }
-
-  void TestScrollContainerHitTest(gfx::PointF box1_target_offset,
-                                  gfx::PointF box2_target_offset) {
-    Element* box1 = GetDocument().getElementById(AtomicString("box1"));
-    Element* box2 = GetDocument().getElementById(AtomicString("box2"));
-
-    const cc::ElementId box1_dom_node_id =
-        box1->GetLayoutBox()->GetScrollableArea()->GetScrollElementId();
-    const cc::ElementId box2_dom_node_id =
-        box2->GetLayoutBox()->GetScrollableArea()->GetScrollElementId();
-
-    WebFrameWidgetImpl& widget = *WebView().MainFrameViewWidget();
-    VisualViewport& visual_viewport = GetVisualViewport();
-    EXPECT_EQ(visual_viewport.GetScrollOffset(), ScrollOffset(0, 0));
-
-    cc::ElementId scrollable_id =
-        widget.GetScrollableContainerIdAt(box1_target_offset);
-    EXPECT_EQ(scrollable_id, box1_dom_node_id);
-
-    visual_viewport.SetScrollOffset(
-        ScrollOffset(0, 50), mojom::blink::ScrollType::kProgrammatic,
-        cc::ScrollSourceType::kNone, mojom::blink::ScrollBehavior::kInstant);
-    EXPECT_EQ(visual_viewport.GetScrollOffset(), ScrollOffset(0, 50));
-    scrollable_id = widget.GetScrollableContainerIdAt(box2_target_offset);
-    EXPECT_EQ(scrollable_id, box2_dom_node_id);
-  }
-};
-
-TEST_F(WebFrameWidgetScrollContainerHitTest, PageScaleOne) {
-  GetVisualViewport().SetScale(1);
-
-  // Here is a note about the selection of numbers for hitting box2:
-  // The hit test offset should account for the visual viewport scroll
-  // offset (50). The hit test offset should be the following:
-  //   50 (scroll offset) + 1 (page scale) * 75 = 125 > 100
-  // which should hit box2.
-  // If the scroll offset is (incorrectly) not taken into account, we should hit
-  // the wrong box: 75 < 100
-  TestScrollContainerHitTest(gfx::PointF(50, 50), gfx::PointF(50, 75));
-}
-
-TEST_F(WebFrameWidgetScrollContainerHitTest, PageScaleHalf) {
-  GetVisualViewport().SetScale(2.0f);
-
-  // Here is a note about the selection of numbers for hitting box2:
-  // The page scale should be applied only once to get the hit test offset. The
-  // hit test offset should be the following:
-  //   50 (scroll offset) + 0.5 (page scale) * 150 = 125 > 100
-  // which should hit box2.
-  // If the page scale is (incorrectly) applied more than once, e.g.:
-  //   50 + 0.5 * 0.5 * 150 = 87.5 < 100
-  // we'll hit the wrong box.
-  TestScrollContainerHitTest(gfx::PointF(50, 50), gfx::PointF(50, 150));
-}
 
 // A test that forces a RemoteMainFrame to be created.
 class WebFrameWidgetImplRemoteFrameSimTest : public SimTest {
@@ -403,8 +245,8 @@ class MockHandledEventCallback {
                       std::optional<cc::TouchAction>));
 
   WidgetBaseInputHandler::HandledEventCallback GetCallback() {
-    return BindOnce(&MockHandledEventCallback::HandleCallback,
-                    Unretained(this));
+    return WTF::BindOnce(&MockHandledEventCallback::HandleCallback,
+                         WTF::Unretained(this));
   }
 
  private:
@@ -431,10 +273,8 @@ class MockWebFrameWidgetImpl : public frame_test_helpers::TestWebFrameWidget {
                     const cc::OverscrollBehavior& overscroll_behavior,
                     bool event_processed));
 
-  MOCK_METHOD3(RequestDecode,
-               void(const cc::DrawImage&,
-                    base::OnceCallback<void(bool)>,
-                    bool));
+  MOCK_METHOD2(RequestDecode,
+               void(const cc::DrawImage&, base::OnceCallback<void(bool)>));
 };
 
 class WebFrameWidgetImplSimTest : public SimTest {
@@ -728,16 +568,16 @@ TEST_F(WebFrameWidgetImplSimTest, SpeculativeDecodeSimple) {
   WebView().MainFrameViewWidget()->Resize(gfx::Size(800, 600));
   SimRequest doc_request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
-  EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _, _)).Times(1);
+  EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _)).Times(1);
   doc_request.Complete(
       R"HTML(
 <!DOCTYPE html>
-<img id="img" width=400 height=300 src="image.png">
+<img id="img" width=300 height=300 src="image.png">
       )HTML");
   url_test_helpers::ServeAsynchronousRequests();
 }
 
-TEST_F(WebFrameWidgetImplSimTest, SpeculativeDecodeOutsideViewport) {
+TEST_F(WebFrameWidgetImplSimTest, NoSpeculativeDecodeOutsideViewport) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatures(
       /*enabled_features=*/
@@ -750,7 +590,7 @@ TEST_F(WebFrameWidgetImplSimTest, SpeculativeDecodeOutsideViewport) {
   WebView().MainFrameViewWidget()->Resize(gfx::Size(800, 600));
   SimRequest doc_request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
-  EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _, _)).Times(0);
+  EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _)).Times(0);
   doc_request.Complete(
       R"HTML(
 <!DOCTYPE html>
@@ -761,7 +601,7 @@ TEST_F(WebFrameWidgetImplSimTest, SpeculativeDecodeOutsideViewport) {
   Compositor().BeginFrame();
 }
 
-TEST_F(WebFrameWidgetImplSimTest, SpeculativeDecodeBackgroundImage) {
+TEST_F(WebFrameWidgetImplSimTest, SpeculativeDecodeIgnoresBackgroundImage) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatures(
       /*enabled_features=*/
@@ -774,7 +614,7 @@ TEST_F(WebFrameWidgetImplSimTest, SpeculativeDecodeBackgroundImage) {
   WebView().MainFrameViewWidget()->Resize(gfx::Size(800, 600));
   SimRequest doc_request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
-  EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _, _)).Times(0);
+  EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _)).Times(0);
   doc_request.Complete(
       R"HTML(
 <!DOCTYPE html>
@@ -783,64 +623,40 @@ TEST_F(WebFrameWidgetImplSimTest, SpeculativeDecodeBackgroundImage) {
   url_test_helpers::ServeAsynchronousRequests();
 }
 
-// An img element may get a small layout size when layout runs prior to
-// intrinsic sizing info being available. In that case, we skip the expensive
-// visibility computation for performance reasons. When the image resource loads
-// and it turns out to be above the speculative decode size threshold, we may
-// still speculatively decode it, but not until a subsequent layout runs during
-// which the img element's visibility will be computed.
-TEST_F(WebFrameWidgetImplSimTest, SpeculativeDecodeSmallLayoutSizeBeforeLoad) {
+// Without extrinsic sizing (e.g., css width & height), an image's final decode
+// size can depend on both the image's intrinsic size and layout. Using only the
+// image's intrinsic size can result in a speculative decode that is too small
+// (will not be used), or too big (can cause small rendering differences as the
+// larger decode will be re-used and scaled). To avoid these issues, we should
+// wait for layout if the decoded size depends on it.
+TEST_F(WebFrameWidgetImplSimTest, SpeculativeDecodeNoSizeWaitsForLayout) {
   base::test::ScopedFeatureList scoped_feature_list;
   scoped_feature_list.InitWithFeatures(
       /*enabled_features=*/
       {features::kSpeculativeImageDecodes,
        ::features::kSendExplicitDecodeRequestsImmediately},
       /*disabled_features=*/{});
-  SimRequest image_1_request("https://example.com/image1.png", "image/png");
-  SimRequest image_2_request("https://example.com/image2.png", "image/png");
+  SimRequest image_request("https://example.com/image.png", "image/png");
   auto* widget = WebView().MainFrameViewWidget();
   widget->Resize(gfx::Size(800, 600));
   SimRequest doc_request("https://example.com/test.html", "text/html");
   LoadURL("https://example.com/test.html");
 
   {
-    EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _, _)).Times(0);
+    EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _)).Times(0);
     doc_request.Complete(
         R"HTML(<!DOCTYPE html>
-        <img id="img1">
-        <img id="img2" style="min-width:10px;min-height:10px">
+        <img id="i1" src="image.png">
+        <img id="i2" style="height: auto; max-height: 50px;" src="image.png">
       )HTML");
     Compositor().BeginFrame();
     test::RunPendingTasks();
+    image_request.Complete(
+        *test::ReadFromFile(test::CoreTestDataPath("background_image.png")));
   }
 
   {
-    // Set the src attribute and load the image without doing layout. Priority
-    // has not been calculated, so speculative decode cannot start.
-    EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _, _)).Times(0);
-    HTMLImageElement* image1 = To<HTMLImageElement>(
-        GetDocument().QuerySelector(AtomicString("#img1")));
-    image1->setAttribute(html_names::kSrcAttr, AtomicString("image1.png"));
-    HTMLImageElement* image2 = To<HTMLImageElement>(
-        GetDocument().QuerySelector(AtomicString("#img2")));
-    image2->setAttribute(html_names::kSrcAttr, AtomicString("image2.png"));
-    // The fetch is initiated synchronously from a microtask after src is set.
-    GetDocument().GetAgent().PerformMicrotaskCheckpoint();
-    image_1_request.Complete(*test::ReadFromFile(
-        test::CoreTestDataPath("notifications/120x120.png")));
-    image_2_request.Complete(*test::ReadFromFile(
-        test::CoreTestDataPath("notifications/500x500.png")));
-    EXPECT_FALSE(To<LayoutImage>(image1->GetLayoutObject())
-                     ->CachedResourcePriority()
-                     .has_value());
-    EXPECT_FALSE(To<LayoutImage>(image2->GetLayoutObject())
-                     ->CachedResourcePriority()
-                     .has_value());
-  }
-
-  {
-    // Speculative decode should start after the next layout.
-    EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _, _)).Times(2);
+    EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _)).Times(1);
     widget->UpdateAllLifecyclePhases(DocumentUpdateReason::kTest);
   }
 }
@@ -861,105 +677,17 @@ TEST_F(WebFrameWidgetImplSimTest, SpeculativeDecodeWithExtrinsicSize) {
   LoadURL("https://example.com/test.html");
 
   {
-    EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _, _)).Times(1);
+    EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _)).Times(1);
     doc_request.Complete(
         R"HTML(<!DOCTYPE html>
-        <img style="width:240px;height:240px" src="image.png">
+        <img style="width: 100px" src="image.png">
       )HTML");
     Compositor().BeginFrame();
     test::RunPendingTasks();
-    image_request.Complete(*test::ReadFromFile(
-        test::CoreTestDataPath("notifications/120x120.png")));
+    image_request.Complete(
+        *test::ReadFromFile(test::CoreTestDataPath("background_image.png")));
     test::RunPendingTasks();
   }
-}
-
-TEST_F(WebFrameWidgetImplSimTest, SpeculativeImageDecodeBeforeLayout) {
-  // Check that a speculative decode can start as soon as an img element gets a
-  // src based on prior layout information, without waiting for a subsequent
-  // layout to happen.
-  base::test::ScopedFeatureList feature_list(
-      features::kSpeculativeImageDecodes);
-  SimRequest request("https://example.com/test.html", "text/html");
-  SimRequest image_request("https://example.com/image.png", "image/png");
-  LoadURL("https://example.com/test.html");
-  request.Complete(R"HTML(
-      <!DOCTYPE html>
-      <html><body><img width=340 height=380/></body></html>
-  )HTML");
-  Compositor().BeginFrame();
-  HTMLImageElement* image =
-      To<HTMLImageElement>(GetDocument().QuerySelector(AtomicString("img")));
-  LayoutImage* layout_image = To<LayoutImage>(image->GetLayoutObject());
-  EXPECT_TRUE(layout_image->CachedResourcePriority().has_value());
-  EXPECT_EQ(layout_image->CachedResourcePriority()
-                .value_or(ResourcePriority())
-                .visibility,
-            ResourcePriority::kVisible);
-  // Decode size should be based on layout size; note that this does not
-  // actually match the intrinsic size of the data URL below.
-  EXPECT_EQ(layout_image->CachedSpeculativeDecodeSize(), gfx::Size(340, 380));
-
-  image->setAttribute(html_names::kSrcAttr, AtomicString("image.png"));
-  // The fetch is initiated synchronously from a microtask after src is set.
-  GetDocument().GetAgent().PerformMicrotaskCheckpoint();
-  EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _, true)).Times(1);
-  image_request.Complete(*test::ReadFromFile(
-      test::CoreTestDataPath("notifications/3000x2000.png")));
-}
-
-TEST_F(WebFrameWidgetImplSimTest, SpeculativeImageDecodeMinimumSize) {
-  // Tests that an image with large layout size but small intrinsic image size
-  // will not be speculatively decoded.
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeatures(
-      /*enabled_features=*/
-      {features::kSpeculativeImageDecodes,
-       ::features::kSendExplicitDecodeRequestsImmediately},
-      /*disabled_features=*/{});
-  url_test_helpers::RegisterMockedURLLoad(
-      url_test_helpers::ToKURL("https://example.com/image.png"),
-      test::CoreTestDataPath("notifications/48x48.png"));
-  WebView().MainFrameViewWidget()->Resize(gfx::Size(800, 600));
-  SimRequest doc_request("https://example.com/test.html", "text/html");
-  LoadURL("https://example.com/test.html");
-  EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _, _)).Times(0);
-  doc_request.Complete(
-      R"HTML(
-<!DOCTYPE html>
-<img id="img" width=400 height=300 src="image.png">
-      )HTML");
-  url_test_helpers::ServeAsynchronousRequests();
-}
-
-TEST_F(WebFrameWidgetImplSimTest, SpeculativeImageDecodeMultiple) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeatures(
-      /*enabled_features=*/
-      {features::kSpeculativeImageDecodes,
-       ::features::kSendExplicitDecodeRequestsImmediately},
-      /*disabled_features=*/{});
-  WebView().MainFrameViewWidget()->Resize(gfx::Size(800, 600));
-  SimRequest doc_request("https://example.com/test.html", "text/html");
-  SimRequest image_a_request("https://example.com/a.png", "image/png");
-  SimRequest image_b_request("https://example.com/b.png", "image/png");
-  LoadURL("https://example.com/test.html");
-  {
-    EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _, _)).Times(0);
-    doc_request.Complete(
-        R"HTML(
-<!DOCTYPE html>
-<img id="img_a" width=500 height=500 src="a.png">
-<img id="img_b" width=3000 height=1000 src="b.png">
-      )HTML");
-    Compositor().BeginFrame();
-    test::RunPendingTasks();
-  }
-  EXPECT_CALL(*MockMainFrameWidget(), RequestDecode(_, _, true)).Times(2);
-  image_a_request.Complete(
-      *test::ReadFromFile(test::CoreTestDataPath("notifications/500x500.png")));
-  image_b_request.Complete(*test::ReadFromFile(
-      test::CoreTestDataPath("notifications/3000x1000.png")));
 }
 
 #if BUILDFLAG(IS_WIN)
@@ -1104,9 +832,9 @@ class WebFrameWidgetProximateBoundsCollectionSimTestBase
   void OnStartStylusWriting(const gfx::Rect& focus_widget_rect_in_dips) {
     MockMainFrameWidget()->OnStartStylusWriting(
         focus_widget_rect_in_dips,
-        blink::BindOnce(&WebFrameWidgetProximateBoundsCollectionSimTestBase::
-                            OnStartStylusWritingComplete,
-                        weak_factory_.GetWeakPtr()));
+        base::BindOnce(&WebFrameWidgetProximateBoundsCollectionSimTestBase::
+                           OnStartStylusWritingComplete,
+                       weak_factory_.GetWeakPtr()));
   }
 
   Element* GetElementById(const char* id) {
@@ -1461,15 +1189,15 @@ class NotifySwapTimesWebFrameWidgetTest : public SimTest {
     base::TimeTicks swap_time;
     static_cast<WebFrameWidgetImpl*>(MainFrame().FrameWidget())
         ->NotifySwapAndPresentationTimeForTesting(
-            {blink::BindOnce(
+            {WTF::BindOnce(
                  [](base::OnceClosure swap_quit_closure,
                     base::TimeTicks* swap_time, base::TimeTicks timestamp) {
                    CHECK(!timestamp.is_null());
                    *swap_time = timestamp;
                    std::move(swap_quit_closure).Run();
                  },
-                 swap_run_loop.QuitClosure(), blink::Unretained(&swap_time)),
-             blink::BindOnce(
+                 swap_run_loop.QuitClosure(), WTF::Unretained(&swap_time)),
+             WTF::BindOnce(
                  [](base::OnceClosure presentation_quit_closure,
                     const viz::FrameTimingDetails& presentation_details) {
                    base::TimeTicks timestamp =
@@ -1935,13 +1663,13 @@ TEST_F(WebFrameWidgetSimTest, DisplayStateMatchesWindowShowState) {
             GetDocument().body()->GetComputedStyle()->VisitedDependentColor(
                 GetCSSPropertyBackgroundColor()));
 
-  Vector<std::pair<ui::mojom::blink::WindowShowState, Color>> test_cases = {
-      {ui::mojom::blink::WindowShowState::kMinimized,
-       Color::FromRGB(/*cyan*/ 0, 255, 255)},
-      {ui::mojom::blink::WindowShowState::kMaximized,
-       Color::FromRGB(/*red*/ 255, 0, 0)},
-      {ui::mojom::blink::WindowShowState::kFullscreen,
-       Color::FromRGB(/*blue*/ 0, 0, 255)}};
+  WTF::Vector<std::pair<ui::mojom::blink::WindowShowState, Color>> test_cases =
+      {{ui::mojom::blink::WindowShowState::kMinimized,
+        Color::FromRGB(/*cyan*/ 0, 255, 255)},
+       {ui::mojom::blink::WindowShowState::kMaximized,
+        Color::FromRGB(/*red*/ 255, 0, 0)},
+       {ui::mojom::blink::WindowShowState::kFullscreen,
+        Color::FromRGB(/*blue*/ 0, 0, 255)}};
 
   for (const auto& [show_state, color] : test_cases) {
     visual_properties.window_show_state = show_state;
@@ -2189,7 +1917,7 @@ TEST_F(WebFrameWidgetSimTest, TestLineBoundsAreCorrectAfterElementScroll) {
   }
 
   // Scroll element by 50 pixels down.
-  GetDocument().FocusedElement()->scrollByForTesting(0, 50);
+  GetDocument().FocusedElement()->scrollBy(0, 50);
   widget->UpdateAllLifecyclePhases(DocumentUpdateReason::kTest);
 
   Vector<gfx::Rect> actual =
@@ -2690,15 +2418,15 @@ class EventHandlingWebFrameWidgetSimTest : public SimTest {
       // Register callbacks for swap and presentation times.
       base::TimeTicks swap_time;
       NotifySwapAndPresentationTimeForTesting(
-          {blink::BindOnce(
+          {WTF::BindOnce(
                [](base::OnceClosure swap_quit_closure,
                   base::TimeTicks* swap_time, base::TimeTicks timestamp) {
                  DCHECK(!timestamp.is_null());
                  *swap_time = timestamp;
                  std::move(swap_quit_closure).Run();
                },
-               swap_run_loop.QuitClosure(), blink::Unretained(&swap_time)),
-           blink::BindOnce(
+               swap_run_loop.QuitClosure(), WTF::Unretained(&swap_time)),
+           WTF::BindOnce(
                [](base::OnceClosure presentation_quit_closure,
                   const viz::FrameTimingDetails& presentation_details) {
                  base::TimeTicks timestamp =

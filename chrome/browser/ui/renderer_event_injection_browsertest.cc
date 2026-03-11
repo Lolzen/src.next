@@ -86,8 +86,7 @@ class TouchEventObserver
  private:
   // content::RenderWidgetHost::InputEventObserver:
   void OnInputEvent(const content::RenderWidgetHost& widget,
-                    const blink::WebInputEvent& event,
-                    input::InputEventSource source) override {
+                    const blink::WebInputEvent& event) override {
     if (blink::WebInputEvent::IsTouchEventType(event.GetType())) {
       const blink::WebTouchEvent& web_touch =
           static_cast<const blink::WebTouchEvent&>(event);

@@ -16,7 +16,6 @@
 #include "content/public/test/browser_task_environment.h"
 #include "extensions/browser/component_extension_resource_manager.h"
 #include "extensions/browser/extensions_browser_client.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
@@ -29,8 +28,6 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ui/file_manager/grit/file_manager_resources.h"
 #endif
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -53,7 +50,7 @@ TEST_F(ChromeComponentExtensionResourceManagerTest,
 
   // Load the manifest data.
   std::string error;
-  std::optional<base::DictValue> manifest(file_util::LoadManifest(
+  std::optional<base::Value::Dict> manifest(file_util::LoadManifest(
       test_path, FILE_PATH_LITERAL("app.json"), &error));
   ASSERT_TRUE(manifest) << error;
 
@@ -64,10 +61,9 @@ TEST_F(ChromeComponentExtensionResourceManagerTest,
   resources_path = resources_path.AppendASCII("file_manager");
 
   // Create a simulated component extension.
-  std::u16string utf16_error;
   scoped_refptr<Extension> extension =
       Extension::Create(resources_path, mojom::ManifestLocation::kComponent,
-                        *manifest, Extension::NO_FLAGS, &utf16_error);
+                        *manifest, Extension::NO_FLAGS, &error);
   ASSERT_TRUE(extension.get());
 
   // Load one of the icons.

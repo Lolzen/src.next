@@ -5,6 +5,7 @@
 #include "chrome/browser/chrome_resource_bundle_helper.h"
 
 #include "base/command_line.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
@@ -28,6 +29,7 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ash/constants/ash_switches.h"
 #include "chrome/common/pref_names.h"
+#include "ui/lottie/resource.h"  // nogncheck
 #endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -64,10 +66,15 @@ extern void InitializeLocalState(
 std::string InitResourceBundleAndDetermineLocale(PrefService* local_state,
                                                  bool is_running_tests) {
 #if BUILDFLAG(IS_ANDROID)
-  // In order for DetectAndSetLoadNonWebViewLocalePaks() to work ResourceBundle
-  // must not have been created yet.
+  // In order for SetLoadSecondaryLocalePaks() to work ResourceBundle must
+  // not have been created yet.
   DCHECK(!ui::ResourceBundle::HasSharedInstance());
-  ui::DetectAndSetLoadNonWebViewLocalePaks();
+  // Auto-detect based on en-US whether secondary locale .pak files exist.
+  bool in_split = false;
+  bool log_error = false;
+  ui::SetLoadSecondaryLocalePaks(
+      !ui::GetPathForAndroidLocalePakWithinApk("en-US", in_split, log_error)
+           .empty());
 #endif
 
   std::string preferred_locale;
@@ -79,6 +86,11 @@ std::string InitResourceBundleAndDetermineLocale(PrefService* local_state,
 #else
   preferred_locale =
       local_state->GetString(language::prefs::kApplicationLocale);
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS)
+  ui::ResourceBundle::SetLottieParsingFunctions(
+      &lottie::ParseLottieAsStillImage, &lottie::ParseLottieAsThemedStillImage);
 #endif
 
   TRACE_EVENT0("startup",

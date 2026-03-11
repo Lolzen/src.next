@@ -8,46 +8,42 @@
 
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/blink/renderer/core/dom/dom_token_list.h"
-#include "third_party/blink/renderer/core/layout/anchor_map.h"
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
-#include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
-#include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 namespace {
 
 class AnchorEvaluatorImplTest : public RenderingTest {
  public:
-  AnchorEvaluatorImplTest()
-      // Make SetChildFrameHTML() work:
-      : RenderingTest(MakeGarbageCollected<SingleChildLocalFrameClient>()) {}
+  AnchorEvaluatorImplTest() = default;
 
-  const AnchorMap* GetAnchorMap(const Element& element) const {
+  const PhysicalAnchorQuery* AnchorQuery(const Element& element) const {
     const LayoutBlockFlow* container =
         To<LayoutBlockFlow>(element.GetLayoutObject());
     if (!container->PhysicalFragmentCount())
       return nullptr;
     const PhysicalBoxFragment* fragment = container->GetPhysicalFragment(0);
     DCHECK(fragment);
-    return fragment->GetAnchorMap();
+    return fragment->AnchorQuery();
   }
 
-  const AnchorMap* AnchorMapByElementId(const char* id) const {
+  const PhysicalAnchorQuery* AnchorQueryByElementId(const char* id) const {
     if (const Element* element = GetElementById(id))
-      return GetAnchorMap(*element);
+      return AnchorQuery(*element);
     return nullptr;
   }
 };
 
 struct AnchorTestData {
-  static Vector<AnchorTestData> ToList(const AnchorMap& anchor_map) {
+  static Vector<AnchorTestData> ToList(
+      const PhysicalAnchorQuery& anchor_query) {
     Vector<AnchorTestData> items;
-    for (auto entry : anchor_map) {
+    for (auto entry : anchor_query) {
       if (auto** name = std::get_if<const AnchorScopedName*>(&entry.key)) {
-        items.push_back(AnchorTestData{(*name)->GetName(),
-                                       entry.value->RectWithoutTransforms()});
+        items.push_back(AnchorTestData{(*name)->GetName(), entry.value->rect});
       }
     }
     std::sort(items.begin(), items.end(),
@@ -88,15 +84,15 @@ TEST_F(AnchorEvaluatorImplTest, AnchorNameAdd) {
     </div>
   )HTML");
   Element* container = GetElementById("container");
-  const AnchorMap* anchor_map = GetAnchorMap(*container);
-  EXPECT_FALSE(anchor_map);
+  const PhysicalAnchorQuery* anchor_query = AnchorQuery(*container);
+  EXPECT_FALSE(anchor_query);
 
   // Add the "after" class and test anchors are updated accordingly.
   container->classList().Add(AtomicString("after"));
   UpdateAllLifecyclePhasesForTest();
-  anchor_map = GetAnchorMap(*container);
-  ASSERT_NE(anchor_map, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*anchor_map),
+  anchor_query = AnchorQuery(*container);
+  ASSERT_NE(anchor_query, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*anchor_query),
               testing::ElementsAre(AnchorTestData{AtomicString("--div1a"),
                                                   PhysicalRect(0, 0, 50, 20)}));
 }
@@ -122,18 +118,18 @@ TEST_F(AnchorEvaluatorImplTest, AnchorNameChange) {
     </div>
   )HTML");
   Element* container = GetElementById("container");
-  const AnchorMap* anchor_map = GetAnchorMap(*container);
-  ASSERT_NE(anchor_map, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*anchor_map),
+  const PhysicalAnchorQuery* anchor_query = AnchorQuery(*container);
+  ASSERT_NE(anchor_query, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*anchor_query),
               testing::ElementsAre(AnchorTestData{AtomicString("--div1"),
                                                   PhysicalRect(0, 0, 50, 20)}));
 
   // Add the "after" class and test anchors are updated accordingly.
   container->classList().Add(AtomicString("after"));
   UpdateAllLifecyclePhasesForTest();
-  anchor_map = GetAnchorMap(*container);
-  ASSERT_NE(anchor_map, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*anchor_map),
+  anchor_query = AnchorQuery(*container);
+  ASSERT_NE(anchor_query, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*anchor_query),
               testing::ElementsAre(AnchorTestData{AtomicString("--div1a"),
                                                   PhysicalRect(0, 0, 50, 20)}));
 }
@@ -159,17 +155,17 @@ TEST_F(AnchorEvaluatorImplTest, AnchorNameRemove) {
     </div>
   )HTML");
   Element* container = GetElementById("container");
-  const AnchorMap* anchor_map = GetAnchorMap(*container);
-  ASSERT_NE(anchor_map, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*anchor_map),
+  const PhysicalAnchorQuery* anchor_query = AnchorQuery(*container);
+  ASSERT_NE(anchor_query, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*anchor_query),
               testing::ElementsAre(AnchorTestData{AtomicString("--div1"),
                                                   PhysicalRect(0, 0, 50, 20)}));
 
   // Add the "after" class and test anchors are updated accordingly.
   container->classList().Add(AtomicString("after"));
   UpdateAllLifecyclePhasesForTest();
-  anchor_map = GetAnchorMap(*container);
-  EXPECT_FALSE(anchor_map);
+  anchor_query = AnchorQuery(*container);
+  EXPECT_FALSE(anchor_query);
 }
 
 TEST_F(AnchorEvaluatorImplTest, BlockFlow) {
@@ -196,10 +192,10 @@ TEST_F(AnchorEvaluatorImplTest, BlockFlow) {
     </div>
   )HTML");
   Element* container = GetElementById("container");
-  const AnchorMap* anchor_map = GetAnchorMap(*container);
-  ASSERT_NE(anchor_map, nullptr);
+  const PhysicalAnchorQuery* anchor_query = AnchorQuery(*container);
+  ASSERT_NE(anchor_query, nullptr);
   EXPECT_THAT(
-      AnchorTestData::ToList(*anchor_map),
+      AnchorTestData::ToList(*anchor_query),
       testing::UnorderedElementsAre(
           AnchorTestData{AtomicString("--div1"), PhysicalRect(0, 0, 400, 20)},
           AnchorTestData{AtomicString("--div2"), PhysicalRect(0, 20, 800, 0)},
@@ -208,10 +204,10 @@ TEST_F(AnchorEvaluatorImplTest, BlockFlow) {
   // Add the "after" class and test anchors are updated accordingly.
   container->classList().Add(AtomicString("after"));
   UpdateAllLifecyclePhasesForTest();
-  anchor_map = GetAnchorMap(*container);
-  ASSERT_NE(anchor_map, nullptr);
+  anchor_query = AnchorQuery(*container);
+  ASSERT_NE(anchor_query, nullptr);
   EXPECT_THAT(
-      AnchorTestData::ToList(*anchor_map),
+      AnchorTestData::ToList(*anchor_query),
       testing::UnorderedElementsAre(
           AnchorTestData{AtomicString("--div1"), PhysicalRect(0, 0, 400, 40)},
           AnchorTestData{AtomicString("--div2"), PhysicalRect(0, 40, 800, 0)},
@@ -252,10 +248,10 @@ TEST_F(AnchorEvaluatorImplTest, Inline) {
     </div>
   )HTML");
   Element* container = GetElementById("container");
-  const AnchorMap* anchor_map = GetAnchorMap(*container);
-  ASSERT_NE(anchor_map, nullptr);
+  const PhysicalAnchorQuery* anchor_query = AnchorQuery(*container);
+  ASSERT_NE(anchor_query, nullptr);
   EXPECT_THAT(
-      AnchorTestData::ToList(*anchor_map),
+      AnchorTestData::ToList(*anchor_query),
       testing::UnorderedElementsAre(
           AnchorTestData{AtomicString("--culled"), PhysicalRect(20, 0, 20, 10)},
           AnchorTestData{AtomicString("--img"), PhysicalRect(110, 0, 10, 8)},
@@ -267,10 +263,10 @@ TEST_F(AnchorEvaluatorImplTest, Inline) {
   // Add the "after" class and test anchors are updated accordingly.
   container->classList().Add(AtomicString("after"));
   UpdateAllLifecyclePhasesForTest();
-  anchor_map = GetAnchorMap(*container);
-  ASSERT_NE(anchor_map, nullptr);
+  anchor_query = AnchorQuery(*container);
+  ASSERT_NE(anchor_query, nullptr);
   EXPECT_THAT(
-      AnchorTestData::ToList(*anchor_map),
+      AnchorTestData::ToList(*anchor_query),
       testing::UnorderedElementsAre(
           AnchorTestData{AtomicString("--add"), PhysicalRect(80, 0, 20, 10)},
           AnchorTestData{AtomicString("--culled"), PhysicalRect(20, 0, 20, 10)},
@@ -295,15 +291,15 @@ TEST_F(AnchorEvaluatorImplTest, OutOfFlow) {
       </div>
     </div>
   )HTML");
-  const AnchorMap* anchor_map = AnchorMapByElementId("container");
-  ASSERT_NE(anchor_map, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*anchor_map),
+  const PhysicalAnchorQuery* anchor_query = AnchorQueryByElementId("container");
+  ASSERT_NE(anchor_query, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*anchor_query),
               testing::ElementsAre(AnchorTestData{
                   AtomicString("--abs1"), PhysicalRect(100, 50, 400, 20)}));
 
   // Anchor names of out-of-flow positioned objects are propagated to their
   // containing blocks.
-  EXPECT_EQ(AnchorMapByElementId("middle"), nullptr);
+  EXPECT_EQ(AnchorQueryByElementId("middle"), nullptr);
 }
 
 // Relative-positioning should shift the rectangles.
@@ -319,9 +315,9 @@ TEST_F(AnchorEvaluatorImplTest, Relative) {
       <div style="anchor-name: --relpos; position: relative; left: 20px; top: 10px"></div>
     </div>
   )HTML");
-  const AnchorMap* anchor_map = AnchorMapByElementId("container");
-  ASSERT_NE(anchor_map, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*anchor_map),
+  const PhysicalAnchorQuery* anchor_query = AnchorQueryByElementId("container");
+  ASSERT_NE(anchor_query, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*anchor_query),
               testing::ElementsAre(AnchorTestData{
                   AtomicString("--relpos"), PhysicalRect(20, 10, 800, 0)}));
 }
@@ -339,9 +335,9 @@ TEST_F(AnchorEvaluatorImplTest, Transform) {
       <div style="anchor-name: --transform; transform: translate(100px, 100px)"></div>
     </div>
   )HTML");
-  const AnchorMap* anchor_map = AnchorMapByElementId("container");
-  ASSERT_NE(anchor_map, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*anchor_map),
+  const PhysicalAnchorQuery* anchor_query = AnchorQueryByElementId("container");
+  ASSERT_NE(anchor_query, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*anchor_query),
               testing::ElementsAre(AnchorTestData{AtomicString("--transform"),
                                                   PhysicalRect(0, 0, 800, 0)}));
 }
@@ -361,12 +357,12 @@ TEST_F(AnchorEvaluatorImplTest, Scroll) {
   )HTML");
   Element* container = GetElementById("container");
   ASSERT_NE(container, nullptr);
-  container->scrollToForTesting(30, 20);
+  container->scrollTo(30, 20);
   UpdateAllLifecyclePhasesForTest();
 
-  const AnchorMap* anchor_map = GetAnchorMap(*container);
-  ASSERT_NE(anchor_map, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*anchor_map),
+  const PhysicalAnchorQuery* anchor_query = AnchorQuery(*container);
+  ASSERT_NE(anchor_query, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*anchor_query),
               testing::ElementsAre(AnchorTestData{
                   AtomicString("--inner"), PhysicalRect(0, 0, 400, 500)}));
 }
@@ -405,49 +401,31 @@ TEST_F(AnchorEvaluatorImplTest, FragmentedContainingBlock) {
   auto* cb = To<LayoutBox>(GetLayoutObjectByElementId("cb"));
   ASSERT_EQ(cb->PhysicalFragmentCount(), 3u);
   const PhysicalBoxFragment* cb_fragment1 = cb->GetPhysicalFragment(1);
-  const AnchorMap* cb_anchor_map1 = cb_fragment1->GetAnchorMap();
-  ASSERT_NE(cb_anchor_map1, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*cb_anchor_map1),
+  const PhysicalAnchorQuery* cb_anchor_query1 = cb_fragment1->AnchorQuery();
+  ASSERT_NE(cb_anchor_query1, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*cb_anchor_query1),
               testing::ElementsAre(AnchorTestData{
                   AtomicString("--a1"), PhysicalRect(0, 50, 100, 50)}));
   const PhysicalBoxFragment* cb_fragment2 = cb->GetPhysicalFragment(2);
-  const AnchorMap* cb_anchor_map2 = cb_fragment2->GetAnchorMap();
-  ASSERT_NE(cb_anchor_map2, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*cb_anchor_map2),
+  const PhysicalAnchorQuery* cb_anchor_query2 = cb_fragment2->AnchorQuery();
+  ASSERT_NE(cb_anchor_query2, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*cb_anchor_query2),
               testing::ElementsAre(AnchorTestData{
                   AtomicString("--a1"), PhysicalRect(0, 0, 100, 50)}));
 
-  const AnchorMap* columns_anchor_map = AnchorMapByElementId("columns");
-  ASSERT_NE(columns_anchor_map, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*columns_anchor_map),
+  const PhysicalAnchorQuery* columns_anchor_query =
+      AnchorQueryByElementId("columns");
+  ASSERT_NE(columns_anchor_query, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*columns_anchor_query),
               testing::ElementsAre(AnchorTestData{
                   AtomicString("--a1"), PhysicalRect(110, 0, 210, 100)}));
 
-  const AnchorMap* container_anchor_map = AnchorMapByElementId("container");
-  ASSERT_NE(container_anchor_map, nullptr);
-  EXPECT_THAT(AnchorTestData::ToList(*container_anchor_map),
+  const PhysicalAnchorQuery* container_anchor_query =
+      AnchorQueryByElementId("container");
+  ASSERT_NE(container_anchor_query, nullptr);
+  EXPECT_THAT(AnchorTestData::ToList(*container_anchor_query),
               testing::ElementsAre(AnchorTestData{
                   AtomicString("--a1"), PhysicalRect(110, 10, 210, 100)}));
-}
-
-// As long as no anchor transform animation is actually running,
-// HasRunningAnchorTransformAnimation() will return false. Testing for positives
-// in a unit test has proven tricky, so there are web tests for that instead.
-TEST_F(AnchorEvaluatorImplTest, FragmentHasRunningAnchorTransformAnimation) {
-  SetBodyInnerHTML(R"HTML(
-    <div style="anchor-name:--transformed; transform:rotate(45deg);"></div>
-    <div style="position:absolute; position-anchor:--transformed; position-area:right; width:100%;"></div>
-  )HTML");
-  const PhysicalBoxFragment& root = *GetLayoutView().GetPhysicalFragment(0);
-  EXPECT_FALSE(root.HasRunningAnchorTransformAnimation());
-}
-
-TEST_F(AnchorEvaluatorImplTest, FrameViewHasRunningAnchorTransformAnimation) {
-  SetBodyInnerHTML(R"HTML(
-    <div style="anchor-name:--transformed; transform:rotate(45deg);"></div>
-    <div style="position:absolute; position-anchor:--transformed; position-area:right; width:100%;"></div>
-  )HTML");
-  EXPECT_FALSE(GetFrameView().HasRunningAnchorTransformAnimation());
 }
 
 }  // namespace

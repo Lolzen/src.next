@@ -3,51 +3,27 @@
 // found in the LICENSE file.
 package org.chromium.chrome.browser.toolbar.top;
 
-import static android.view.View.MeasureSpec.EXACTLY;
-import static android.view.View.MeasureSpec.UNSPECIFIED;
-
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.AdditionalMatchers.geq;
-import static org.mockito.AdditionalMatchers.lt;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.ADAPTIVE_BUTTON;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.BACK;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.FORWARD;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.HOME;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.INCOGNITO_INDICATOR;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.MENU;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.OMNIBOX_BOOKMARK;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.OMNIBOX_INSTALL;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.OMNIBOX_LENS;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.OMNIBOX_MIC;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.OMNIBOX_ZOOM;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.PADDING;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.RELOAD;
-import static org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId.TAB_SWITCHER;
-
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
-import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
-import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.Looper;
 import android.view.View;
-import android.view.View.MeasureSpec;
-import android.view.ViewGroup.LayoutParams;
-import android.view.ViewGroup.MarginLayoutParams;
+import android.view.View.OnClickListener;
+import android.view.View.OnLongClickListener;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 
@@ -63,67 +39,44 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
-import org.mockito.stubbing.Answer;
 import org.robolectric.Robolectric;
 import org.robolectric.Shadows;
 import org.robolectric.annotation.LooperMode;
 import org.robolectric.shadows.ShadowLooper;
 
-import org.chromium.base.supplier.ObservableSuppliers;
-import org.chromium.base.supplier.SettableNonNullObservableSupplier;
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.base.test.util.Features.DisableFeatures;
 import org.chromium.base.test.util.Features.EnableFeatures;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
-import org.chromium.chrome.browser.incognito.IncognitoUtils;
-import org.chromium.chrome.browser.layouts.toolbar.ToolbarWidthConsumer;
-import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
 import org.chromium.chrome.browser.omnibox.LocationBarCoordinator;
 import org.chromium.chrome.browser.omnibox.LocationBarCoordinatorTablet;
 import org.chromium.chrome.browser.omnibox.LocationBarLayout;
 import org.chromium.chrome.browser.omnibox.NewTabPageDelegate;
-import org.chromium.chrome.browser.omnibox.fusebox.FuseboxCoordinator.FuseboxState;
 import org.chromium.chrome.browser.omnibox.status.StatusCoordinator;
-import org.chromium.chrome.browser.tab.Tab;
-import org.chromium.chrome.browser.tabmodel.IncognitoStateProvider;
-import org.chromium.chrome.browser.tabmodel.IncognitoStateProvider.IncognitoStateObserver;
-import org.chromium.chrome.browser.theme.ThemeColorProvider;
-import org.chromium.chrome.browser.theme.ThemeColorProvider.TintObserver;
 import org.chromium.chrome.browser.theme.ThemeUtils;
 import org.chromium.chrome.browser.toolbar.R;
 import org.chromium.chrome.browser.toolbar.ToolbarDataProvider;
 import org.chromium.chrome.browser.toolbar.ToolbarProgressBar;
 import org.chromium.chrome.browser.toolbar.ToolbarProgressBarAnimatingView;
-import org.chromium.chrome.browser.toolbar.ToolbarTabController;
 import org.chromium.chrome.browser.toolbar.adaptive.AdaptiveToolbarButtonVariant;
 import org.chromium.chrome.browser.toolbar.back_button.BackButtonCoordinator;
-import org.chromium.chrome.browser.toolbar.forward_button.ForwardButtonCoordinator;
-import org.chromium.chrome.browser.toolbar.home_button.HomeButtonCoordinator;
-import org.chromium.chrome.browser.toolbar.incognito.IncognitoIndicatorCoordinator;
 import org.chromium.chrome.browser.toolbar.menu_button.MenuButtonCoordinator;
 import org.chromium.chrome.browser.toolbar.optional_button.ButtonData.ButtonSpec;
 import org.chromium.chrome.browser.toolbar.optional_button.ButtonDataImpl;
 import org.chromium.chrome.browser.toolbar.reload_button.ReloadButtonCoordinator;
 import org.chromium.chrome.browser.toolbar.top.CaptureReadinessResult.TopToolbarAllowCaptureReason;
 import org.chromium.chrome.browser.toolbar.top.CaptureReadinessResult.TopToolbarBlockCaptureReason;
-import org.chromium.chrome.browser.toolbar.top.ToolbarUtils.ToolbarComponentId;
 import org.chromium.chrome.browser.toolbar.top.TopToolbarCoordinator.ToolbarColorObserver;
 import org.chromium.chrome.browser.toolbar.top.tab_strip.TabStripTransitionCoordinator;
 import org.chromium.chrome.browser.ui.theme.BrandedColorScheme;
-import org.chromium.components.browser_ui.styles.SemanticColorUtils;
-import org.chromium.components.omnibox.OmniboxFeatureList;
-import org.chromium.ui.widget.ChromeImageButton;
 import org.chromium.ui.widget.ToastManager;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /** Unit tests for @{@link ToolbarTablet} */
 @LooperMode(LooperMode.Mode.PAUSED)
 @RunWith(BaseRobolectricTestRunner.class)
-@EnableFeatures(ChromeFeatureList.TOOLBAR_TABLET_RESIZE_REFACTOR)
 public final class ToolbarTabletUnitTest {
     @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
     @Mock private LocationBarCoordinator mLocationBar;
@@ -134,106 +87,49 @@ public final class ToolbarTabletUnitTest {
     @Mock private TabStripTransitionCoordinator mTabStripTransitionCoordinator;
     @Mock private ToolbarColorObserver mToolbarColorObserver;
     @Mock private ToolbarDataProvider mToolbarDataProvider;
-    @Mock private ToolbarTabController mToolbarTabController;
-    @Mock private ActivityLifecycleDispatcher mActivityLifecycleDispatcher;
     @Mock private NewTabPageDelegate mNewTabPageDelegate;
     @Mock private ReloadButtonCoordinator mReloadButtonCoordinator;
     @Mock private BackButtonCoordinator mBackButtonCoordinator;
-    @Mock private HomeButtonCoordinator mHomeButtonCoordinator;
-    @Mock private IncognitoIndicatorCoordinator mIncognitoIndicatorCoordinator;
-    @Mock private ForwardButtonCoordinator mForwardButtonCoordinator;
-    @Mock private ThemeColorProvider mThemeColorProvider;
-    @Mock private IncognitoStateProvider mIncognitoStateProvider;
-    @Mock private NavigationPopup.HistoryDelegate mHistoryDelegate;
-    @Mock private ToolbarWidthConsumer mLocationBarBookmarkButtonWidthConsumer;
-    @Mock private ToolbarWidthConsumer mLocationBarInstallButtonWidthConsumer;
-    @Mock private ToolbarWidthConsumer mLocationBarMicButtonWidthConsumer;
-    @Mock private ToolbarWidthConsumer mLocationBarLensButtonWidthConsumer;
-    @Mock private ToolbarWidthConsumer mLocationBarZoomButtonWidthConsumer;
-
     private Activity mActivity;
     private ToolbarTablet mToolbarTablet;
     private LinearLayout mToolbarTabletLayout;
     private ImageButton mHomeButton;
     private ImageButton mReloadingButton;
     private ImageButton mBackButton;
-    private ChromeImageButton mForwardButton;
+    private ImageButton mForwardButton;
+    private ToggleTabStackButton mTabSwitcherButton;
     private ImageButton mBookmarkButton;
+    private ImageButton mSaveOfflineButton;
     private ToolbarProgressBar mProgressBar;
-    private Set<TintObserver> mTintObservers;
-    private Set<IncognitoStateObserver> mIncognitoStateObservers;
-    private final SettableNonNullObservableSupplier<Integer> mFuseboxStateSupplier =
-            ObservableSuppliers.createNonNull(FuseboxState.DISABLED);
-    private final MarginLayoutParams mLayoutParams = new MarginLayoutParams(100, 100);
-
-    private final Answer<Object> mAddIncognitoObserverInIncognitoMode =
-            (invocation) -> {
-                IncognitoStateProvider.IncognitoStateObserver observer = invocation.getArgument(0);
-                observer.onIncognitoStateChanged(/* isIncognito= */ true);
-                return null;
-            };
 
     @Before
     public void setUp() {
         mActivity = Robolectric.buildActivity(Activity.class).setup().get();
         mActivity.setTheme(R.style.Theme_BrowserUI_DayNight);
-
-        mTintObservers = new HashSet<>();
-        doAnswer(
-                        invocation -> {
-                            mTintObservers.add((TintObserver) invocation.getArguments()[0]);
-                            return null;
-                        })
-                .when(mThemeColorProvider)
-                .addTintObserver(any());
-
-        mIncognitoStateObservers = new HashSet<>();
-        doAnswer(
-                        invocation -> {
-                            mIncognitoStateObservers.add(
-                                    (IncognitoStateObserver) invocation.getArguments()[0]);
-                            return null;
-                        })
-                .when(mIncognitoStateProvider)
-                .addIncognitoStateObserverAndTrigger(any());
-
         ToolbarTablet realView =
                 (ToolbarTablet)
                         mActivity.getLayoutInflater().inflate(R.layout.toolbar_tablet, null);
-        realView.setLayoutParams(mLayoutParams);
         mToolbarTablet = Mockito.spy(realView);
         when(mLocationBar.getTabletCoordinator()).thenReturn(mLocationBarTablet);
-        when(mLocationBar.getBookmarkButtonToolbarWidthConsumer())
-                .thenReturn(mLocationBarBookmarkButtonWidthConsumer);
-        when(mLocationBar.getInstallButtonToolbarWidthConsumer())
-                .thenReturn(mLocationBarInstallButtonWidthConsumer);
-        when(mLocationBar.getMicButtonToolbarWidthConsumer())
-                .thenReturn(mLocationBarMicButtonWidthConsumer);
-        when(mLocationBar.getLensButtonToolbarWidthConsumer())
-                .thenReturn(mLocationBarLensButtonWidthConsumer);
-        when(mLocationBar.getZoomButtonToolbarWidthConsumer())
-                .thenReturn(mLocationBarZoomButtonWidthConsumer);
-        when(mLocationBar.getFuseboxStateSupplier()).thenReturn(mFuseboxStateSupplier);
         mToolbarTablet.setLocationBarCoordinator(mLocationBar);
         LocationBarLayout locationBarLayout = mToolbarTablet.findViewById(R.id.location_bar);
         locationBarLayout.setStatusCoordinatorForTesting(mStatusCoordinator);
         mToolbarTablet.setMenuButtonCoordinatorForTesting(mMenuButtonCoordinator);
+        mToolbarTablet.setTabSwitcherButtonCoordinatorForTesting(mTabSwitcherButtonCoordinator);
         mToolbarTablet.setTabStripTransitionCoordinator(mTabStripTransitionCoordinator);
         mToolbarTablet.setToolbarColorObserver(mToolbarColorObserver);
         mToolbarTablet.setReloadButtonCoordinator(mReloadButtonCoordinator);
         mToolbarTablet.setBackButtonCoordinator(mBackButtonCoordinator);
-        mToolbarTablet.setHomeButtonWidthConsumerForTesting(mHomeButtonCoordinator);
-        mToolbarTablet.setTabStackButtonCoordinatorForTesting(mTabSwitcherButtonCoordinator);
-        mToolbarTablet.setIncognitoIndicatorCoordinatorForTesting(mIncognitoIndicatorCoordinator);
-        mToolbarTablet.ensureOptionalButtonWidthConsumerForTesting();
-        mToolbarTablet.ensurePaddingWidthConsumer();
-        mToolbarTablet.ensureLocationBarMidWidthConsumer();
-        mToolbarTabletLayout = mToolbarTablet.findViewById(R.id.toolbar_tablet_layout);
+        mToolbarTabletLayout =
+                (LinearLayout) mToolbarTablet.findViewById(R.id.toolbar_tablet_layout);
         mHomeButton = mToolbarTablet.findViewById(R.id.home_button);
         mBackButton = mToolbarTablet.findViewById(R.id.back_button);
         mForwardButton = mToolbarTablet.findViewById(R.id.forward_button);
         mReloadingButton = mToolbarTablet.findViewById(R.id.refresh_button);
+        mTabSwitcherButton = mToolbarTablet.findViewById(R.id.tab_switcher_button);
+        when(mTabSwitcherButtonCoordinator.getContainerView()).thenReturn(mTabSwitcherButton);
         mBookmarkButton = mToolbarTablet.findViewById(R.id.bookmark_button);
+        mSaveOfflineButton = mToolbarTablet.findViewById(R.id.save_offline_button);
         mProgressBar = new ToolbarProgressBar(mActivity, null);
         mProgressBar.setAnimatingView(new ToolbarProgressBarAnimatingView(mActivity, null));
         when(mReloadButtonCoordinator.getFadeAnimator(false))
@@ -244,76 +140,6 @@ public final class ToolbarTabletUnitTest {
                 .thenReturn(ObjectAnimator.ofFloat(mReloadingButton, View.ALPHA, 0.f));
         when(mBackButtonCoordinator.getFadeAnimator(true))
                 .thenReturn(ObjectAnimator.ofFloat(mReloadingButton, View.ALPHA, 1.f));
-
-        int buttonWidth =
-                mToolbarTablet
-                        .getContext()
-                        .getResources()
-                        .getDimensionPixelSize(R.dimen.toolbar_button_width);
-
-        doReturn(buttonWidth)
-                .when(mHomeButtonCoordinator)
-                .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        doReturn(0)
-                .when(mHomeButtonCoordinator)
-                .updateVisibility(lt(buttonWidth), anyInt(), anyInt());
-
-        doReturn(buttonWidth)
-                .when(mReloadButtonCoordinator)
-                .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        doReturn(0)
-                .when(mReloadButtonCoordinator)
-                .updateVisibility(lt(buttonWidth), anyInt(), anyInt());
-
-        doReturn(buttonWidth)
-                .when(mBackButtonCoordinator)
-                .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        doReturn(0)
-                .when(mBackButtonCoordinator)
-                .updateVisibility(lt(buttonWidth), anyInt(), anyInt());
-
-        doReturn(buttonWidth)
-                .when(mTabSwitcherButtonCoordinator)
-                .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        doReturn(0)
-                .when(mTabSwitcherButtonCoordinator)
-                .updateVisibility(lt(buttonWidth), anyInt(), anyInt());
-
-        doReturn(buttonWidth)
-                .when(mMenuButtonCoordinator)
-                .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        doReturn(0)
-                .when(mMenuButtonCoordinator)
-                .updateVisibility(lt(buttonWidth), anyInt(), anyInt());
-
-        doReturn(buttonWidth * 3)
-                .when(mIncognitoIndicatorCoordinator)
-                .updateVisibility(anyInt(), anyInt(), anyInt());
-        doReturn(false).when(mIncognitoIndicatorCoordinator).needsUpdateBeforeShowing();
-
-        mockToolbarWidthConsumer(mLocationBarBookmarkButtonWidthConsumer, buttonWidth);
-        mockToolbarWidthConsumer(mLocationBarInstallButtonWidthConsumer, buttonWidth);
-        mockToolbarWidthConsumer(mLocationBarMicButtonWidthConsumer, buttonWidth);
-        mockToolbarWidthConsumer(mLocationBarLensButtonWidthConsumer, buttonWidth);
-        mockToolbarWidthConsumer(mLocationBarZoomButtonWidthConsumer, buttonWidth);
-
-        mForwardButtonCoordinator =
-                new ForwardButtonCoordinator(
-                        mActivity,
-                        mToolbarDataProvider,
-                        mToolbarTabController,
-                        () -> mLocationBar,
-                        mActivityLifecycleDispatcher,
-                        mForwardButton,
-                        mHistoryDelegate,
-                        mThemeColorProvider,
-                        mIncognitoStateProvider);
-        mToolbarTablet.setForwardButtonCoordinatorForTesting(mForwardButtonCoordinator);
-    }
-
-    private static void mockToolbarWidthConsumer(ToolbarWidthConsumer consumer, int width) {
-        doReturn(width).when(consumer).updateVisibility(geq(width), anyInt(), anyInt());
-        doReturn(0).when(consumer).updateVisibility(lt(width), anyInt(), anyInt());
     }
 
     @After
@@ -342,14 +168,9 @@ public final class ToolbarTabletUnitTest {
                 mToolbarTabletLayout.getChildAt(3));
     }
 
-    @EnableFeatures(ChromeFeatureList.ANDROID_OPEN_INCOGNITO_AS_WINDOW)
+    @EnableFeatures(ChromeFeatureList.TAB_STRIP_INCOGNITO_MIGRATION)
     @Test
     public void testButtonPositionIncognito() {
-        IncognitoUtils.setShouldOpenIncognitoAsWindowForTesting(true);
-        doAnswer(mAddIncognitoObserverInIncognitoMode)
-                .when(mIncognitoStateProvider)
-                .addIncognitoStateObserverAndTrigger(any());
-
         mToolbarTablet.onFinishInflate();
         mToolbarTablet.initialize(
                 mToolbarDataProvider,
@@ -361,12 +182,7 @@ public final class ToolbarTabletUnitTest {
                 null,
                 mProgressBar,
                 mReloadButtonCoordinator,
-                mBackButtonCoordinator,
-                mForwardButtonCoordinator,
-                /* homeButtonDisplay= */ null,
-                mThemeColorProvider,
-                mIncognitoStateProvider,
-                /* incognitoWindowCountSupplier= */ () -> 1);
+                mBackButtonCoordinator);
         when(mToolbarDataProvider.getNewTabPageDelegate()).thenReturn(mNewTabPageDelegate);
         when(mToolbarDataProvider.isIncognitoBranded()).thenReturn(true);
         mToolbarTablet.onTabOrModelChanged();
@@ -418,8 +234,7 @@ public final class ToolbarTabletUnitTest {
     }
 
     @Test
-    @DisableFeatures(ChromeFeatureList.TOOLBAR_TABLET_RESIZE_REFACTOR)
-    public void onMeasureSmallWidth_hidesToolbarButtons_Legacy() {
+    public void onMeasureShortWidth_hidesToolbarButtons() {
         mToolbarTablet.measure(300, 300);
 
         assertEquals(
@@ -432,8 +247,7 @@ public final class ToolbarTabletUnitTest {
     }
 
     @Test
-    @DisableFeatures(ChromeFeatureList.TOOLBAR_TABLET_RESIZE_REFACTOR)
-    public void onMeasureLargeWidth_showsToolbarButtons_Legacy() {
+    public void onMeasureLargeWidth_showsToolbarButtons() {
         mToolbarTablet.setToolbarButtonsVisibleForTesting(false);
         mToolbarTablet.measure(700, 300);
 
@@ -447,13 +261,8 @@ public final class ToolbarTabletUnitTest {
     }
 
     @Test
-    @EnableFeatures(ChromeFeatureList.ANDROID_OPEN_INCOGNITO_AS_WINDOW)
+    @EnableFeatures(ChromeFeatureList.TAB_STRIP_INCOGNITO_MIGRATION)
     public void onMeasureIncognito_flipIncognitoVisibility() {
-        IncognitoUtils.setShouldOpenIncognitoAsWindowForTesting(true);
-        doAnswer(mAddIncognitoObserverInIncognitoMode)
-                .when(mIncognitoStateProvider)
-                .addIncognitoStateObserverAndTrigger(any());
-
         mToolbarTablet.onFinishInflate();
         mToolbarTablet.initialize(
                 mToolbarDataProvider,
@@ -465,12 +274,7 @@ public final class ToolbarTabletUnitTest {
                 null,
                 mProgressBar,
                 mReloadButtonCoordinator,
-                mBackButtonCoordinator,
-                mForwardButtonCoordinator,
-                /* homeButtonDisplay= */ null,
-                mThemeColorProvider,
-                mIncognitoStateProvider,
-                /* incognitoWindowCountSupplier= */ () -> 1);
+                mBackButtonCoordinator);
         when(mToolbarDataProvider.getNewTabPageDelegate()).thenReturn(mNewTabPageDelegate);
         when(mToolbarDataProvider.isIncognitoBranded()).thenReturn(true);
         mToolbarTablet.onTabOrModelChanged();
@@ -492,8 +296,7 @@ public final class ToolbarTabletUnitTest {
     }
 
     @Test
-    @DisableFeatures(ChromeFeatureList.TOOLBAR_TABLET_RESIZE_REFACTOR)
-    public void onMeasureSmallWidthWithAnimation_hidesToolbarButtons_Legacy() {
+    public void onMeasureSmallWidthWithAnimation_hidesToolbarButtons() {
         doReturn(true).when(mToolbarTablet).isShown();
 
         when(mLocationBar.createHideButtonAnimatorForTablet(mForwardButton))
@@ -516,8 +319,7 @@ public final class ToolbarTabletUnitTest {
     }
 
     @Test
-    @DisableFeatures(ChromeFeatureList.TOOLBAR_TABLET_RESIZE_REFACTOR)
-    public void onMeasureLargeWidthWithAnimation_showsToolbarButtons_Legacy() {
+    public void onMeasureLargeWidthWithAnimation_showsToolbarButtons() {
         doReturn(true).when(mToolbarTablet).isShown();
         mToolbarTablet.setToolbarButtonsVisibleForTesting(false);
         mToolbarTablet.enableButtonVisibilityChangeAnimationForTesting();
@@ -571,41 +373,13 @@ public final class ToolbarTabletUnitTest {
 
     @Test
     public void testUpdateForwardButtonVisibility() {
-        mToolbarTablet.onFinishInflate();
-        mToolbarTablet.initialize(
-                mToolbarDataProvider,
-                null,
-                mMenuButtonCoordinator,
-                mTabSwitcherButtonCoordinator,
-                null,
-                null,
-                null,
-                mProgressBar,
-                mReloadButtonCoordinator,
-                mBackButtonCoordinator,
-                mForwardButtonCoordinator,
-                /* homeButtonDisplay= */ null,
-                mThemeColorProvider,
-                mIncognitoStateProvider,
-                /* incognitoWindowCountSupplier= */ () -> 1);
         ImageButton btn = mToolbarTablet.findViewById(R.id.forward_button);
-
-        doReturn(null).when(mToolbarDataProvider).getTab();
-        mToolbarTablet.updateButtonVisibility();
-        assertFalse("Button should not be enabled", btn.isEnabled());
-        assertFalse("Button should not be focused", btn.isFocusable());
-
-        Tab tab = Mockito.mock(Tab.class);
-        doReturn(false).when(tab).canGoForward();
-        doReturn(tab).when(mToolbarDataProvider).getTab();
-        mToolbarTablet.updateButtonVisibility();
-        assertFalse("Button should not be enabled", btn.isEnabled());
-        assertFalse("Button should not be focused", btn.isFocusable());
-
-        doReturn(true).when(tab).canGoForward();
-        mToolbarTablet.updateButtonVisibility();
+        mToolbarTablet.updateForwardButtonVisibility(true);
         assertTrue("Button should be enabled", btn.isEnabled());
         assertTrue("Button should be focused", btn.isFocusable());
+        mToolbarTablet.updateForwardButtonVisibility(false);
+        assertFalse("Button should not be enabled", btn.isEnabled());
+        assertFalse("Button should not be focused", btn.isFocusable());
     }
 
     @Test
@@ -617,25 +391,48 @@ public final class ToolbarTabletUnitTest {
     }
 
     @Test
-    public void testIsReadyForTextureCapture_inLayout() {
-        mToolbarTablet.requestLayout();
-        CaptureReadinessResult result = mToolbarTablet.isReadyForTextureCapture();
-        Assert.assertFalse(result.isReady);
-        Assert.assertEquals(TopToolbarBlockCaptureReason.LAYOUT_REQUESTED, result.blockReason);
-    }
-
-    @Test
     public void testOptionalButtonTooltipText() {
-        updateOptionalButton(
-                /* buttonVariant= */ AdaptiveToolbarButtonVariant.READER_MODE,
-                /* tooltipTextResId= */ 0);
+        Drawable iconDrawable = AppCompatResources.getDrawable(mActivity, R.drawable.new_tab_icon);
+        OnClickListener clickListener = mock(OnClickListener.class);
+        OnLongClickListener longClickListener = mock(OnLongClickListener.class);
+        String contentDescription = mActivity.getString(R.string.actionbar_share);
+        ButtonDataImpl buttonData = new ButtonDataImpl();
+
+        // Verify reader mode tooltip text is null.
+        ButtonSpec buttonSpec =
+                new ButtonSpec(
+                        iconDrawable,
+                        clickListener,
+                        longClickListener,
+                        contentDescription,
+                        true,
+                        null,
+                        /* buttonVariant= */ AdaptiveToolbarButtonVariant.READER_MODE,
+                        0,
+                        0,
+                        false,
+                        /* hasErrorBadge= */ false);
+        buttonData.setButtonSpec(buttonSpec);
+        mToolbarTablet.updateOptionalButton(buttonData);
         Assert.assertEquals(
                 null, mToolbarTablet.getOptionalButtonViewForTesting().getTooltipText());
 
         // Test whether share button tooltip Text is set correctly.
-        updateOptionalButton(
-                /* buttonVariant= */ AdaptiveToolbarButtonVariant.SHARE,
-                R.string.adaptive_toolbar_button_preference_share);
+        buttonSpec =
+                new ButtonSpec(
+                        iconDrawable,
+                        clickListener,
+                        longClickListener,
+                        contentDescription,
+                        true,
+                        null,
+                        /* buttonVariant= */ AdaptiveToolbarButtonVariant.SHARE,
+                        0,
+                        R.string.adaptive_toolbar_button_preference_share,
+                        true,
+                        /* hasErrorBadge= */ false);
+        buttonData.setButtonSpec(buttonSpec);
+        mToolbarTablet.updateOptionalButton(buttonData);
         Assert.assertEquals(
                 mActivity
                         .getResources()
@@ -643,9 +440,21 @@ public final class ToolbarTabletUnitTest {
                 mToolbarTablet.getOptionalButtonViewForTesting().getTooltipText());
 
         // Test whether voice search button tooltip Text is set correctly.
-        updateOptionalButton(
-                /* buttonVariant= */ AdaptiveToolbarButtonVariant.VOICE,
-                R.string.adaptive_toolbar_button_preference_voice_search);
+        buttonSpec =
+                new ButtonSpec(
+                        iconDrawable,
+                        clickListener,
+                        longClickListener,
+                        contentDescription,
+                        true,
+                        null,
+                        /* buttonVariant= */ AdaptiveToolbarButtonVariant.VOICE,
+                        0,
+                        R.string.adaptive_toolbar_button_preference_voice_search,
+                        true,
+                        /* hasErrorBadge= */ false);
+        buttonData.setButtonSpec(buttonSpec);
+        mToolbarTablet.updateOptionalButton(buttonData);
         Assert.assertEquals(
                 mActivity
                         .getResources()
@@ -653,8 +462,21 @@ public final class ToolbarTabletUnitTest {
                 mToolbarTablet.getOptionalButtonViewForTesting().getTooltipText());
 
         // Test whether new tab button tooltip Text is set correctly.
-        updateOptionalButton(
-                /* buttonVariant= */ AdaptiveToolbarButtonVariant.NEW_TAB, R.string.new_tab_title);
+        buttonSpec =
+                new ButtonSpec(
+                        iconDrawable,
+                        clickListener,
+                        longClickListener,
+                        contentDescription,
+                        true,
+                        null,
+                        /* buttonVariant= */ AdaptiveToolbarButtonVariant.NEW_TAB,
+                        0,
+                        R.string.new_tab_title,
+                        true,
+                        /* hasErrorBadge= */ false);
+        buttonData.setButtonSpec(buttonSpec);
+        mToolbarTablet.updateOptionalButton(buttonData);
         Assert.assertEquals(
                 mActivity.getResources().getString(R.string.new_tab_title),
                 mToolbarTablet.getOptionalButtonViewForTesting().getTooltipText());
@@ -662,9 +484,28 @@ public final class ToolbarTabletUnitTest {
 
     @Test
     public void testOptionalButtonWithErrorBadge() {
-        updateOptionalButton(
-                /* buttonVariant= */ AdaptiveToolbarButtonVariant.READER_MODE,
-                /* tooltipTextResId= */ 0);
+        Drawable iconDrawable = AppCompatResources.getDrawable(mActivity, R.drawable.new_tab_icon);
+        OnClickListener clickListener = mock(OnClickListener.class);
+        OnLongClickListener longClickListener = mock(OnLongClickListener.class);
+        String contentDescription = mActivity.getString(R.string.actionbar_share);
+        ButtonDataImpl buttonData = new ButtonDataImpl();
+
+        ButtonSpec buttonSpec =
+                new ButtonSpec(
+                        iconDrawable,
+                        clickListener,
+                        longClickListener,
+                        contentDescription,
+                        true,
+                        null,
+                        /* buttonVariant= */ AdaptiveToolbarButtonVariant.READER_MODE,
+                        0,
+                        0,
+                        false,
+                        /* hasErrorBadge= */ false);
+        buttonData.setButtonSpec(buttonSpec);
+        mToolbarTablet.updateOptionalButton(buttonData);
+
         Assert.assertEquals(
                 mActivity
                         .getResources()
@@ -678,10 +519,22 @@ public final class ToolbarTabletUnitTest {
                 mToolbarTablet.getOptionalButtonViewForTesting().getPaddingTop());
 
         // Test whether the paddings are set correctly.
-        updateOptionalButton(
-                /* buttonVariant= */ AdaptiveToolbarButtonVariant.SHARE,
-                /* tooltipTextResId= */ 0,
-                /* hasErrorBadge= */ true);
+        buttonSpec =
+                new ButtonSpec(
+                        iconDrawable,
+                        clickListener,
+                        longClickListener,
+                        contentDescription,
+                        true,
+                        null,
+                        /* buttonVariant= */ AdaptiveToolbarButtonVariant.SHARE,
+                        0,
+                        0,
+                        false,
+                        /* hasErrorBadge= */ true);
+        buttonData.setButtonSpec(buttonSpec);
+        mToolbarTablet.updateOptionalButton(buttonData);
+
         Assert.assertEquals(
                 mActivity
                         .getResources()
@@ -707,10 +560,7 @@ public final class ToolbarTabletUnitTest {
     }
 
     @Test
-    @DisableFeatures(ChromeFeatureList.TOOLBAR_TABLET_RESIZE_REFACTOR)
-    public void testIsReadyForTextureCapture_ButtonShowAnimationInProgress_Legacy() {
-        mToolbarTablet.measure(300, 300);
-        mToolbarTablet.layout(0, 0, 0, 0);
+    public void testIsReadyForTextureCapture_ButtonShowAnimationInProgress() {
         mToolbarTablet.setToolbarButtonsVisibleForTesting(false);
         mToolbarTablet.enableButtonVisibilityChangeAnimationForTesting();
 
@@ -734,10 +584,7 @@ public final class ToolbarTabletUnitTest {
     }
 
     @Test
-    @DisableFeatures(ChromeFeatureList.TOOLBAR_TABLET_RESIZE_REFACTOR)
-    public void testIsReadyForTextureCapture_ButtonHideAnimationInProgress_Legacy() {
-        mToolbarTablet.measure(300, 300);
-        mToolbarTablet.layout(0, 0, 0, 0);
+    public void testIsReadyForTextureCapture_ButtonHideAnimationInProgress() {
         mToolbarTablet.setToolbarButtonsVisibleForTesting(true);
         mToolbarTablet.enableButtonVisibilityChangeAnimationForTesting();
 
@@ -747,8 +594,7 @@ public final class ToolbarTabletUnitTest {
                 .thenReturn(List.of(animator));
 
         // Run animation.
-        mToolbarTablet.measure(310, 310);
-        mToolbarTablet.layout(0, 1, 0, 1);
+        mToolbarTablet.measure(300, 300);
         CaptureReadinessResult result = mToolbarTablet.isReadyForTextureCapture();
         Assert.assertFalse(result.isReady);
         Assert.assertEquals(
@@ -763,8 +609,6 @@ public final class ToolbarTabletUnitTest {
 
     @Test
     public void testIsReadyForTextureCapture_Snapshot() {
-        mToolbarTablet.measure(300, 300);
-        mToolbarTablet.layout(0, 0, 0, 0);
         {
             CaptureReadinessResult result = mToolbarTablet.isReadyForTextureCapture();
             Assert.assertTrue(result.isReady);
@@ -799,6 +643,7 @@ public final class ToolbarTabletUnitTest {
     }
 
     @Test
+    @DisableFeatures(ChromeFeatureList.TAB_STRIP_LAYOUT_OPTIMIZATION)
     public void testThemeColorChange() {
         int color = Color.BLACK;
         mToolbarTablet.onThemeColorChanged(color, false);
@@ -816,544 +661,36 @@ public final class ToolbarTabletUnitTest {
                         mToolbarTablet.getContext(),
                         BrandedColorScheme.APP_DEFAULT,
                         /* isActivityFocused= */ false);
-        doReturn(tint).when(mThemeColorProvider).getTint();
-        doReturn(tint).when(mThemeColorProvider).getActivityFocusTint();
-
         // Setup.
-        updateOptionalButton(
-                /* buttonVariant= */ AdaptiveToolbarButtonVariant.NEW_TAB,
-                R.string.adaptive_toolbar_button_preference_new_tab);
-        for (TintObserver observer : mTintObservers) {
-            observer.onTintChanged(tint, tint, BrandedColorScheme.APP_DEFAULT);
-        }
+        ButtonDataImpl buttonData = new ButtonDataImpl();
+        var buttonSpec =
+                new ButtonSpec(
+                        AppCompatResources.getDrawable(mActivity, R.drawable.new_tab_icon),
+                        v -> {},
+                        v -> false,
+                        "",
+                        true,
+                        null,
+                        /* buttonVariant= */ AdaptiveToolbarButtonVariant.NEW_TAB,
+                        0,
+                        R.string.adaptive_toolbar_button_preference_new_tab,
+                        true,
+                        /* hasErrorBadge= */ false);
+        buttonData.setButtonSpec(buttonSpec);
+        mToolbarTablet.updateOptionalButton(buttonData);
 
         // Verify the toolbar icon tints, assuming that the activity is initially focused.
         verifyToolbarIconTints(tint, tint);
 
         // Simulate a tint change triggered when the activity loses focus.
-        for (TintObserver observer : mTintObservers) {
-            observer.onTintChanged(tint, unfocusedTint, BrandedColorScheme.APP_DEFAULT);
-        }
         mToolbarTablet.onTintChanged(tint, unfocusedTint, BrandedColorScheme.APP_DEFAULT);
 
         // Verify the icon tints for the unfocused activity.
         verifyToolbarIconTints(tint, unfocusedTint);
-    }
-
-    @SuppressLint("WrongCall")
-    @Test
-    @EnableFeatures(ChromeFeatureList.TOOLBAR_TABLET_RESIZE_REFACTOR)
-    public void testResizeTabletToolbar_buttonsShowInRankedOrder() {
-        int locationBarMidWidth = 200;
-        int padding =
-                mToolbarTablet
-                                .getContext()
-                                .getResources()
-                                .getDimensionPixelSize(R.dimen.tablet_toolbar_start_padding)
-                        * 2;
-
-        int buttonWidth =
-                mToolbarTablet
-                        .getContext()
-                        .getResources()
-                        .getDimensionPixelSize(R.dimen.toolbar_button_width);
-        updateOptionalButton(
-                /* buttonVariant= */ AdaptiveToolbarButtonVariant.SHARE,
-                R.string.adaptive_toolbar_button_preference_share);
-
-        mToolbarTablet.onMeasure(MeasureSpec.makeMeasureSpec(0, EXACTLY), UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of());
-
-        mToolbarTablet.onMeasure(MeasureSpec.makeMeasureSpec(padding, EXACTLY), UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(padding + buttonWidth, EXACTLY), UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING, MENU));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(padding + 2 * buttonWidth, EXACTLY), UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING, MENU, TAB_SWITCHER));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 2 * buttonWidth + (locationBarMidWidth / 2), EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING, MENU, TAB_SWITCHER));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(padding + 2 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING, MENU, TAB_SWITCHER));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 3 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING, MENU, TAB_SWITCHER, BACK));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 6 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(PADDING, MENU, TAB_SWITCHER, BACK, INCOGNITO_INDICATOR));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 7 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(PADDING, MENU, TAB_SWITCHER, BACK, INCOGNITO_INDICATOR, ADAPTIVE_BUTTON));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 8 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        MENU,
-                        TAB_SWITCHER,
-                        BACK,
-                        INCOGNITO_INDICATOR,
-                        ADAPTIVE_BUTTON,
-                        RELOAD));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 9 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        MENU,
-                        TAB_SWITCHER,
-                        BACK,
-                        INCOGNITO_INDICATOR,
-                        ADAPTIVE_BUTTON,
-                        RELOAD,
-                        FORWARD));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 10 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        MENU,
-                        TAB_SWITCHER,
-                        BACK,
-                        INCOGNITO_INDICATOR,
-                        ADAPTIVE_BUTTON,
-                        RELOAD,
-                        FORWARD,
-                        HOME));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 11 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        MENU,
-                        TAB_SWITCHER,
-                        BACK,
-                        INCOGNITO_INDICATOR,
-                        ADAPTIVE_BUTTON,
-                        RELOAD,
-                        FORWARD,
-                        HOME,
-                        OMNIBOX_BOOKMARK));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 12 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        MENU,
-                        TAB_SWITCHER,
-                        BACK,
-                        INCOGNITO_INDICATOR,
-                        ADAPTIVE_BUTTON,
-                        RELOAD,
-                        FORWARD,
-                        HOME,
-                        OMNIBOX_BOOKMARK,
-                        OMNIBOX_ZOOM));
-    }
-
-    @SuppressLint("WrongCall")
-    @Test
-    @EnableFeatures(ChromeFeatureList.TOOLBAR_TABLET_RESIZE_REFACTOR)
-    public void testResizeTabletToolbar_buttonsHideInRankedOrder() {
-        int locationBarMidWidth = 200;
-        int padding =
-                mToolbarTablet
-                                .getContext()
-                                .getResources()
-                                .getDimensionPixelSize(R.dimen.tablet_toolbar_start_padding)
-                        * 2;
-
-        int buttonWidth =
-                mToolbarTablet
-                        .getContext()
-                        .getResources()
-                        .getDimensionPixelSize(R.dimen.toolbar_button_width);
-        updateOptionalButton(
-                /* buttonVariant= */ AdaptiveToolbarButtonVariant.SHARE,
-                R.string.adaptive_toolbar_button_preference_share);
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 12 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        MENU,
-                        TAB_SWITCHER,
-                        BACK,
-                        INCOGNITO_INDICATOR,
-                        ADAPTIVE_BUTTON,
-                        RELOAD,
-                        FORWARD,
-                        HOME,
-                        OMNIBOX_BOOKMARK,
-                        OMNIBOX_ZOOM));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 11 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        MENU,
-                        TAB_SWITCHER,
-                        BACK,
-                        INCOGNITO_INDICATOR,
-                        ADAPTIVE_BUTTON,
-                        RELOAD,
-                        FORWARD,
-                        HOME,
-                        OMNIBOX_BOOKMARK));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 10 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        MENU,
-                        TAB_SWITCHER,
-                        BACK,
-                        INCOGNITO_INDICATOR,
-                        ADAPTIVE_BUTTON,
-                        RELOAD,
-                        FORWARD,
-                        HOME));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 9 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        MENU,
-                        TAB_SWITCHER,
-                        BACK,
-                        INCOGNITO_INDICATOR,
-                        ADAPTIVE_BUTTON,
-                        RELOAD,
-                        FORWARD));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 8 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        MENU,
-                        TAB_SWITCHER,
-                        BACK,
-                        INCOGNITO_INDICATOR,
-                        ADAPTIVE_BUTTON,
-                        RELOAD));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 7 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(PADDING, MENU, TAB_SWITCHER, BACK, INCOGNITO_INDICATOR, ADAPTIVE_BUTTON));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 6 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(PADDING, MENU, TAB_SWITCHER, BACK, INCOGNITO_INDICATOR));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 3 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING, MENU, TAB_SWITCHER, BACK));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(padding + 2 * buttonWidth + locationBarMidWidth, EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING, MENU, TAB_SWITCHER));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(
-                        padding + 2 * buttonWidth + (locationBarMidWidth / 2), EXACTLY),
-                UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING, MENU, TAB_SWITCHER));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(padding + 2 * buttonWidth, EXACTLY), UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING, MENU, TAB_SWITCHER));
-
-        mToolbarTablet.onMeasure(
-                MeasureSpec.makeMeasureSpec(padding + buttonWidth, EXACTLY), UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING, MENU));
-
-        mToolbarTablet.onMeasure(MeasureSpec.makeMeasureSpec(padding, EXACTLY), UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of(PADDING));
-
-        mToolbarTablet.onMeasure(MeasureSpec.makeMeasureSpec(0, EXACTLY), UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(Set.of());
-    }
-
-    @SuppressLint("WrongCall")
-    @Test
-    @EnableFeatures(ChromeFeatureList.TOOLBAR_TABLET_RESIZE_REFACTOR)
-    public void testResizeTabletToolbar_toggleOptionalButtonHidden() {
-        int locationBarMidWidth = 200;
-        int padding =
-                mToolbarTablet
-                                .getContext()
-                                .getResources()
-                                .getDimensionPixelSize(R.dimen.tablet_toolbar_start_padding)
-                        * 2;
-        int buttonWidth =
-                mToolbarTablet
-                        .getContext()
-                        .getResources()
-                        .getDimensionPixelSize(R.dimen.toolbar_button_width);
-        int toolbarWidth = 10 * buttonWidth + locationBarMidWidth + padding;
-        updateOptionalButton(
-                /* buttonVariant= */ AdaptiveToolbarButtonVariant.SHARE,
-                R.string.adaptive_toolbar_button_preference_share);
-
-        doReturn(toolbarWidth).when(mToolbarTablet).getWidth();
-
-        // The optional / adaptive button should be showing.
-        mToolbarTablet.onMeasure(MeasureSpec.makeMeasureSpec(toolbarWidth, EXACTLY), UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        HOME,
-                        BACK,
-                        FORWARD,
-                        RELOAD,
-                        ADAPTIVE_BUTTON,
-                        INCOGNITO_INDICATOR,
-                        TAB_SWITCHER,
-                        MENU));
-
-        // The optional / adaptive button should stop showing.
-        mToolbarTablet.hideOptionalButton();
-        mToolbarTablet.onMeasure(MeasureSpec.makeMeasureSpec(toolbarWidth, EXACTLY), UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        HOME,
-                        BACK,
-                        FORWARD,
-                        RELOAD,
-                        INCOGNITO_INDICATOR,
-                        TAB_SWITCHER,
-                        MENU,
-                        OMNIBOX_BOOKMARK));
-
-        // The optional / adaptive button should start showing again after being updated.
-        updateOptionalButton(
-                /* buttonVariant= */ AdaptiveToolbarButtonVariant.SHARE,
-                R.string.adaptive_toolbar_button_preference_share);
-        mToolbarTablet.onMeasure(MeasureSpec.makeMeasureSpec(toolbarWidth, EXACTLY), UNSPECIFIED);
-        assertToolbarComponentsReceivedWidth(
-                Set.of(
-                        PADDING,
-                        HOME,
-                        BACK,
-                        FORWARD,
-                        RELOAD,
-                        ADAPTIVE_BUTTON,
-                        INCOGNITO_INDICATOR,
-                        TAB_SWITCHER,
-                        MENU));
-    }
-
-    @SuppressLint("WrongCall")
-    @Test
-    @EnableFeatures(ChromeFeatureList.TOOLBAR_TABLET_RESIZE_REFACTOR)
-    public void testAreAnyToolbarComponentsMissingForWidth() {
-        doReturn(true).when(mReloadButtonCoordinator).isVisible();
-        assertFalse(mToolbarTablet.areAnyToolbarComponentsMissingForWidth(new int[] {RELOAD}));
-
-        doReturn(false).when(mReloadButtonCoordinator).isVisible();
-        assertTrue(mToolbarTablet.areAnyToolbarComponentsMissingForWidth(new int[] {RELOAD}));
-
-        doReturn(true).when(mReloadButtonCoordinator).isVisible();
-        assertFalse(mToolbarTablet.areAnyToolbarComponentsMissingForWidth(new int[] {RELOAD}));
-    }
-
-    @Test
-    @EnableFeatures(OmniboxFeatureList.OMNIBOX_MULTIMODAL_INPUT)
-    public void testFuseboxState() {
-        View fixedHeightBg = mToolbarTablet.findViewById(R.id.toolbar_tablet_fixed_height_bg);
-        ColorDrawable backgroundDrawable = (ColorDrawable) mToolbarTablet.getBackground();
-        assertEquals(100, mToolbarTablet.getLayoutParams().height);
-        assertEquals(View.GONE, fixedHeightBg.getVisibility());
-        assertEquals(
-                SemanticColorUtils.getDefaultBgColor(mToolbarTablet.getContext()),
-                backgroundDrawable.getColor());
-
-        mFuseboxStateSupplier.set(FuseboxState.EXPANDED);
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
-        assertEquals(LayoutParams.WRAP_CONTENT, mToolbarTablet.getLayoutParams().height);
-        assertEquals(View.VISIBLE, fixedHeightBg.getVisibility());
-        assertEquals(Color.TRANSPARENT, backgroundDrawable.getColor());
-    }
-
-    @SuppressWarnings("DirectInvocationOnMock")
-    private void assertToolbarComponentsReceivedWidth(
-            @ToolbarComponentId Set<Integer> visibleComponents) {
-        int buttonWidth =
-                mToolbarTablet
-                        .getContext()
-                        .getResources()
-                        .getDimensionPixelSize(R.dimen.toolbar_button_width);
-        int padding =
-                mToolbarTablet
-                        .getContext()
-                        .getResources()
-                        .getDimensionPixelSize(R.dimen.tablet_toolbar_start_padding);
-
-        if (visibleComponents.contains(HOME)) {
-            verify(mHomeButtonCoordinator).updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        } else {
-            verify(mHomeButtonCoordinator, never())
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        }
-
-        if (visibleComponents.contains(BACK)) {
-            verify(mBackButtonCoordinator).updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        } else {
-            verify(mBackButtonCoordinator, never())
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        }
-
-        if (visibleComponents.contains(RELOAD)) {
-            verify(mReloadButtonCoordinator).updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        } else {
-            verify(mReloadButtonCoordinator, never())
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        }
-
-        if (visibleComponents.contains(TAB_SWITCHER)) {
-            verify(mTabSwitcherButtonCoordinator)
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        } else {
-            verify(mTabSwitcherButtonCoordinator, never())
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        }
-
-        if (visibleComponents.contains(MENU)) {
-            verify(mMenuButtonCoordinator).updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        } else {
-            verify(mMenuButtonCoordinator, never())
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        }
-
-        if (visibleComponents.contains(OMNIBOX_BOOKMARK)) {
-            verify(mLocationBarBookmarkButtonWidthConsumer)
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        } else {
-            verify(mLocationBarBookmarkButtonWidthConsumer, never())
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        }
-
-        if (visibleComponents.contains(OMNIBOX_ZOOM)) {
-            verify(mLocationBarZoomButtonWidthConsumer)
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        } else {
-            verify(mLocationBarZoomButtonWidthConsumer, never())
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        }
-
-        if (visibleComponents.contains(OMNIBOX_INSTALL)) {
-            verify(mLocationBarInstallButtonWidthConsumer)
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        } else {
-            verify(mLocationBarInstallButtonWidthConsumer, never())
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        }
-
-        if (visibleComponents.contains(OMNIBOX_MIC)) {
-            verify(mLocationBarMicButtonWidthConsumer)
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        } else {
-            verify(mLocationBarMicButtonWidthConsumer, never())
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        }
-
-        if (visibleComponents.contains(OMNIBOX_LENS)) {
-            verify(mLocationBarLensButtonWidthConsumer)
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        } else {
-            verify(mLocationBarLensButtonWidthConsumer, never())
-                    .updateVisibility(geq(buttonWidth), anyInt(), anyInt());
-        }
-
-        Mockito.clearInvocations(
-                mHomeButtonCoordinator,
-                mBackButtonCoordinator,
-                mReloadButtonCoordinator,
-                mTabSwitcherButtonCoordinator,
-                mMenuButtonCoordinator,
-                mLocationBarBookmarkButtonWidthConsumer,
-                mLocationBarZoomButtonWidthConsumer,
-                mLocationBarInstallButtonWidthConsumer,
-                mLocationBarMicButtonWidthConsumer,
-                mLocationBarLensButtonWidthConsumer);
-
-        // Replace with a mock when the ForwardButtonCoordinator has its own unit tests.
-        assertEquals(
-                visibleComponents.contains(FORWARD) ? View.VISIBLE : View.GONE,
-                mForwardButtonCoordinator.getButton().getVisibility());
-
-        assertEquals(
-                visibleComponents.contains(ADAPTIVE_BUTTON) ? View.VISIBLE : View.GONE,
-                mToolbarTablet.getOptionalButtonViewForTesting().getVisibility());
-
-        if (visibleComponents.contains(PADDING)) {
-            assertEquals(padding, mToolbarTablet.getPaddingStart());
-            assertEquals(padding, mToolbarTablet.getPaddingEnd());
-        } else {
-            assertEquals(0, mToolbarTablet.getPaddingStart());
-            assertEquals(0, mToolbarTablet.getPaddingEnd());
-        }
+        Assert.assertEquals(
+                "Tab switcher button tint is incorrect.",
+                unfocusedTint.getDefaultColor(),
+                mTabSwitcherButton.getImageTintList().getDefaultColor());
     }
 
     private void verifyToolbarIconTints(ColorStateList tint, ColorStateList activityFocusTint) {
@@ -1366,6 +703,10 @@ public final class ToolbarTabletUnitTest {
                 activityFocusTint.getDefaultColor(),
                 mForwardButton.getImageTintList().getDefaultColor());
         Assert.assertEquals(
+                "Save offline button tint is incorrect.",
+                tint.getDefaultColor(),
+                mSaveOfflineButton.getImageTintList().getDefaultColor());
+        Assert.assertEquals(
                 "Bookmark button tint is incorrect.",
                 tint.getDefaultColor(),
                 mBookmarkButton.getImageTintList().getDefaultColor());
@@ -1375,33 +716,5 @@ public final class ToolbarTabletUnitTest {
                 ((ImageButton) mToolbarTablet.getOptionalButtonViewForTesting())
                         .getImageTintList()
                         .getDefaultColor());
-    }
-
-    private void updateOptionalButton(
-            @AdaptiveToolbarButtonVariant int buttonVariant, int tooltipTextResId) {
-        updateOptionalButton(buttonVariant, tooltipTextResId, /* hasErrorBadge= */ false);
-    }
-
-    private void updateOptionalButton(
-            @AdaptiveToolbarButtonVariant int buttonVariant,
-            int tooltipTextResId,
-            boolean hasErrorBadge) {
-        // Verify reader mode tooltip text is null.
-        ButtonSpec buttonSpec =
-                new ButtonSpec(
-                        AppCompatResources.getDrawable(mActivity, R.drawable.new_tab_icon),
-                        v -> {},
-                        v -> false,
-                        mActivity.getString(R.string.actionbar_share),
-                        true,
-                        null,
-                        buttonVariant,
-                        0,
-                        tooltipTextResId,
-                        hasErrorBadge);
-
-        ButtonDataImpl buttonData = new ButtonDataImpl();
-        buttonData.setButtonSpec(buttonSpec);
-        mToolbarTablet.updateOptionalButton(buttonData);
     }
 }

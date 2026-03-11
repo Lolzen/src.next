@@ -7,10 +7,13 @@
 
 #include <stddef.h>
 
+#include <algorithm>
+#include <vector>
+
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
 #include "base/scoped_observation_traits.h"
-#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 
 namespace base {
 
@@ -45,10 +48,6 @@ namespace base {
 template <class Source, class Observer>
 class ScopedMultiSourceObservation {
  public:
-  using SourcesSet = absl::flat_hash_set<raw_ptr<Source>,
-                                         std::hash<raw_ptr<Source>>,
-                                         std::equal_to<>>;
-
   explicit ScopedMultiSourceObservation(Observer* observer)
       : observer_(observer) {}
   ScopedMultiSourceObservation(const ScopedMultiSourceObservation&) = delete;
@@ -59,22 +58,23 @@ class ScopedMultiSourceObservation {
   // Adds the object passed to the constructor as an observer on |source|.
   void AddObservation(Source* source) {
     CHECK(!IsObservingSource(source));
-    sources_.insert(source);
+    sources_.push_back(source);
     Traits::AddObserver(source, observer_);
   }
 
   // Remove the object passed to the constructor as an observer from |source|.
   void RemoveObservation(Source* source) {
-    size_t count = sources_.erase(source);
-    CHECK(count == 1u);
+    auto it = std::ranges::find(sources_, source);
+    CHECK(it != sources_.end());
+    sources_.erase(it);
     Traits::RemoveObserver(source, observer_);
   }
 
   // Remove the object passed to the constructor as an observer from all sources
   // it's observing.
   void RemoveAllObservations() {
-    for (const auto& source : sources_) {
-      Traits::RemoveObserver(source.get(), observer_);
+    for (Source* source : sources_) {
+      Traits::RemoveObserver(source, observer_);
     }
     sources_.clear();
   }
@@ -85,7 +85,7 @@ class ScopedMultiSourceObservation {
   // Returns true if |source| is being observed.
   bool IsObservingSource(Source* source) const {
     DCHECK(source);
-    return sources_.contains(source);
+    return base::Contains(sources_, source);
   }
 
   // Returns the number of sources being observed.
@@ -95,17 +95,16 @@ class ScopedMultiSourceObservation {
   Observer* observer() { return observer_; }
   const Observer* observer() const { return observer_; }
 
-  // Returns the sources being observed (there is no guarantee on the order
-  // of the sources). Note: It is invalid to add or remove sources while
-  // iterating on it.
-  const SourcesSet& sources() const { return sources_; }
+  // Returns the sources being observed. Note: It is invalid to add or remove
+  // sources while iterating on it.
+  const std::vector<raw_ptr<Source>>& sources() const { return sources_; }
 
  private:
   using Traits = ScopedObservationTraits<Source, Observer>;
 
   const raw_ptr<Observer> observer_;
 
-  SourcesSet sources_;
+  std::vector<raw_ptr<Source>> sources_;
 };
 
 }  // namespace base

@@ -11,12 +11,11 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 
 import androidx.annotation.ColorInt;
+import androidx.annotation.Nullable;
 
 import org.chromium.base.Callback;
 import org.chromium.base.Token;
-import org.chromium.base.supplier.NullableObservableSupplier;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
+import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.components.browser_ui.styles.SemanticColorUtils;
@@ -35,20 +34,20 @@ import org.chromium.components.tab_group_sync.LocalTabGroupId;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /** Pushes label updates to UI for tabs. */
-@NullMarked
 public class TabLabeller extends TabObjectLabeller {
     private final Context mContext;
     private final DataSharingUIDelegate mDataSharingUiDelegate;
-    private final NullableObservableSupplier<Token> mTabGroupIdSupplier;
+    private final ObservableSupplier<Token> mTabGroupIdSupplier;
 
     public TabLabeller(
             Profile profile,
             Context context,
             DataSharingUIDelegate dataSharingUiDelegate,
             TabListNotificationHandler tabListNotificationHandler,
-            NullableObservableSupplier<Token> tabGroupIdSupplier) {
+            ObservableSupplier<Token> tabGroupIdSupplier) {
         super(profile, tabListNotificationHandler);
         mContext = context;
         mDataSharingUiDelegate = dataSharingUiDelegate;
@@ -79,12 +78,12 @@ public class TabLabeller extends TabObjectLabeller {
 
     @Override
     protected List<PersistentMessage> getAllMessages() {
-        Token tabGroupId = mTabGroupIdSupplier.get();
+        @Nullable Token tabGroupId = mTabGroupIdSupplier.get();
         if (tabGroupId == null) return Collections.emptyList();
         LocalTabGroupId localTabGroupId = new LocalTabGroupId(tabGroupId);
         EitherGroupId eitherGroupId = EitherGroupId.createLocalId(localTabGroupId);
-        return mMessagingBackendService.getMessagesForGroup(
-                eitherGroupId, PersistentNotificationType.DIRTY_TAB);
+        Optional<Integer> messageType = Optional.of(PersistentNotificationType.DIRTY_TAB);
+        return mMessagingBackendService.getMessagesForGroup(eitherGroupId, messageType);
     }
 
     @Override

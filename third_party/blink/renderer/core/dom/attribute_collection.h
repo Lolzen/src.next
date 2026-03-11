@@ -34,7 +34,6 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_ATTRIBUTE_COLLECTION_H_
 
 #include "base/compiler_specific.h"
-#include "base/containers/span.h"
 #include "third_party/blink/renderer/core/dom/attribute.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string_table.h"
@@ -104,9 +103,9 @@ class AttributeCollectionGeneric {
   //
   // A concrete example of a valid usage pattern is:
   //
-  // AtomicStringTable::WeakResult hint =
-  //     AtomicStringTable::WeakFindLowercased(name);
-  //   .... Mutate |AtomicStringTable| but not |collection| ....
+  // WTF::AtomicStringTable::WeakResult hint =
+  //     WTF::AtomicStringTable::WeakFindLowercased(name);
+  //   .... Mutate |WTF::AtomicStringTable| but not |collection| ....
   // collection.FindHinted(name, hint);
   //
   // Because FindHinted() is an existence check, as long as collection is not
@@ -124,9 +123,9 @@ class AttributeCollectionGeneric {
   //      making the |hint| semantically invalid. However, because the
   //      |collection| is not mutated, |hint| will not match anything.
   iterator FindHinted(const StringView& name,
-                      AtomicStringTable::WeakResult hint) const;
+                      WTF::AtomicStringTable::WeakResult hint) const;
   wtf_size_t FindIndexHinted(const StringView& name,
-                             AtomicStringTable::WeakResult hint) const;
+                             WTF::AtomicStringTable::WeakResult hint) const;
 
  protected:
   iterator FindWithPrefix(const StringView& name) const;
@@ -158,9 +157,9 @@ class AttributeCollection
       : AttributeCollectionGeneric<const AttributeArray>(
             AttributeArray(nullptr, 0)) {}
 
-  explicit AttributeCollection(base::span<const Attribute> attributes)
+  AttributeCollection(const Attribute* array, unsigned size)
       : AttributeCollectionGeneric<const AttributeArray>(
-            AttributeArray(attributes.data(), attributes.size())) {}
+            AttributeArray(array, size)) {}
 };
 
 using AttributeVector = Vector<Attribute, 4>;
@@ -190,14 +189,14 @@ inline typename AttributeCollectionGeneric<Container,
                                            ContainerMemberType>::iterator
 AttributeCollectionGeneric<Container, ContainerMemberType>::Find(
     const AtomicString& name) const {
-  return FindHinted(name, AtomicStringTable::WeakResult(name.Impl()));
+  return FindHinted(name, WTF::AtomicStringTable::WeakResult(name.Impl()));
 }
 
 template <typename Container, typename ContainerMemberType>
 inline wtf_size_t
 AttributeCollectionGeneric<Container, ContainerMemberType>::FindIndexHinted(
     const StringView& name,
-    AtomicStringTable::WeakResult hint) const {
+    WTF::AtomicStringTable::WeakResult hint) const {
   iterator it = FindHinted(name, hint);
   return it ? wtf_size_t(it - begin()) : kNotFound;
 }
@@ -219,7 +218,7 @@ template <typename Container, typename ContainerMemberType>
 inline wtf_size_t
 AttributeCollectionGeneric<Container, ContainerMemberType>::FindIndex(
     const AtomicString& name) const {
-  return FindIndexHinted(name, AtomicStringTable::WeakResult(name.Impl()));
+  return FindIndexHinted(name, WTF::AtomicStringTable::WeakResult(name.Impl()));
 }
 
 template <typename Container, typename ContainerMemberType>
@@ -227,7 +226,7 @@ inline typename AttributeCollectionGeneric<Container,
                                            ContainerMemberType>::iterator
 AttributeCollectionGeneric<Container, ContainerMemberType>::FindHinted(
     const StringView& name,
-    AtomicStringTable::WeakResult hint) const {
+    WTF::AtomicStringTable::WeakResult hint) const {
   // A slow check is required if there are any attributes with prefixes
   // and no unprefixed name matches.
   bool has_attributes_with_prefixes = false;

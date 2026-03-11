@@ -36,7 +36,7 @@ class CORE_EXPORT CSSColorMixValue : public CSSValue {
         color_interpolation_space_(color_interpolation_space),
         hue_interpolation_method_(hue_interpolation_method) {}
 
-  String CustomCSSText() const;
+  WTF::String CustomCSSText() const;
 
   void TraceAfterDispatch(blink::Visitor* visitor) const;
 
@@ -76,8 +76,6 @@ class CORE_EXPORT CSSColorMixValue : public CSSValue {
   static std::pair<const CSSPrimitiveValue*, const CSSPrimitiveValue*>
   PercentageValuesForSerialization(const CSSPrimitiveValue* p1,
                                    const CSSPrimitiveValue* p2);
-
-  bool HasRandomFunctions() const;
 
  private:
   Member<const CSSValue> color1_;

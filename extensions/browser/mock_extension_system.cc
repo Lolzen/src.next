@@ -91,6 +91,6 @@ void MockExtensionSystem::InstallUpdate(
 
 void MockExtensionSystem::PerformActionBasedOnOmahaAttributes(
     const ExtensionId& extension_id,
-    const base::DictValue& attributes) {}
+    const base::Value::Dict& attributes) {}
 
 }  // namespace extensions

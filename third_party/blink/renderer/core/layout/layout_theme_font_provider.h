@@ -45,7 +45,7 @@ class CORE_EXPORT LayoutThemeFontProvider {
                               const Document* document);
 
  protected:
-  static const AtomicString& DefaultGUIFont();
+  static const WTF::AtomicString& DefaultGUIFont();
   static float DefaultFontSize(const Document*);
 };
 

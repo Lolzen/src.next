@@ -37,7 +37,6 @@
 #include "third_party/blink/renderer/core/css/parser/css_selector_parser.h"
 #include "third_party/blink/renderer/core/css/resolver/element_resolve_context.h"
 #include "third_party/blink/renderer/core/css/selector_checker.h"
-#include "third_party/blink/renderer/core/css/selector_filter.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/node.h"
@@ -160,22 +159,10 @@ static void CollectElementsByClassName(
     ContainerNode& root_node,
     const AtomicString& class_name,
     const CSSSelector* selector,
-    Element::TinyBloomFilter subject_filter,
     typename SelectorQueryTrait::OutputType& output) {
   SelectorChecker checker(SelectorChecker::kQueryingRules);
-  for (Element& element :
-       ElementTraversal::DescendantsOfWithFilter(root_node, subject_filter)) {
+  for (Element& element : ElementTraversal::DescendantsOf(root_node)) {
     QUERY_STATS_INCREMENT(fast_class);
-    if (!element.SubtreeMayMatchClassOrAttrFilter(subject_filter)) {
-#if DCHECK_IS_ON()
-      DCHECK(!selector ||
-             !SelectorMatches(*selector, element, root_node, checker))
-          << element << " should have matched selector "
-          << selector->SelectorText() << ", Bloom bits on element are "
-          << element.AttributeOrClassBloomFilter();
-#endif
-      continue;
-    }
     if (!element.HasClassName(class_name)) {
       continue;
     }
@@ -236,18 +223,31 @@ static bool AttributeValueMatchesExact(const Attribute& attribute_item,
          (case_insensitive && EqualIgnoringASCIICase(selector_value, value));
 }
 
-static Element::AttributesToExcludeHashesFor ExclusionPolicy(
-    const ContainerNode& root_node) {
-  return IsA<HTMLDocument>(root_node.GetDocument())
-             ? Element::kExcludeAllLazilySynchronizedAttributes
-             : Element::kExcludeLowercaseLazilySynchronizedAttributes;
+// SynchronizeAttribute() is rather expensive to call. We can determine ahead of
+// time if it's needed. The exact set needed for svg is rather large, so this
+// errors on the side of caution.
+static bool NeedsSynchronizeAttribute(const QualifiedName& qname,
+                                      bool is_html_doc) {
+  // Assume any known name needs synchronization.
+  if (qname.IsDefinedName()) {
+    return true;
+  }
+  const QualifiedName local_qname(qname.LocalName());
+  if (local_qname.IsDefinedName()) {
+    return true;
+  }
+  // HTML elements in an html doc use the lower case name.
+  if (!is_html_doc || qname.LocalName().IsLowerASCII()) {
+    return false;
+  }
+  const QualifiedName lower_local_qname(qname.LocalName().LowerASCII());
+  return lower_local_qname.IsDefinedName();
 }
 
 template <typename SelectorQueryTrait>
 static void CollectElementsByAttributeExact(
     ContainerNode& root_node,
     const CSSSelector& selector,
-    Element::TinyBloomFilter subject_filter,
     typename SelectorQueryTrait::OutputType& output) {
   const QualifiedName& selector_attr = selector.Attribute();
   const AtomicString& selector_value = selector.Value();
@@ -260,14 +260,12 @@ static void CollectElementsByAttributeExact(
       selector.AttributeMatch() ==
           CSSSelector::AttributeMatchType::kCaseInsensitive ||
       (selector.LegacyCaseInsensitiveMatch() && is_html_doc);
-
-  // SynchronizeAttribute() is rather expensive to call. We can determine ahead
-  // of time if it's needed.
   const bool needs_synchronize_attribute =
-      Element::IsExcludedAttribute(selector_attr, ExclusionPolicy(root_node));
+      NeedsSynchronizeAttribute(selector_attr, is_html_doc);
 
-  for (Element& element :
-       ElementTraversal::DescendantsOfWithFilter(root_node, subject_filter)) {
+  const uint32_t filter = Element::FilterForAttribute(selector_attr);
+
+  for (Element& element : ElementTraversal::DescendantsOf(root_node)) {
     QUERY_STATS_INCREMENT(fast_scan);
 
     if (needs_synchronize_attribute) {
@@ -281,7 +279,7 @@ static void CollectElementsByAttributeExact(
     // if the attribute could not exist on the element. For non-debug builds,
     // we go through the entire normal operation but verify that the Bloom
     // filter would not erroneously reject a match.
-    if (!element.SubtreeMayMatchClassOrAttrFilter(subject_filter)) {
+    if (!element.CouldHaveAttributeWithPrecomputedFilter(filter)) {
       continue;
     }
 #endif
@@ -307,10 +305,10 @@ static void CollectElementsByAttributeExact(
 #if DCHECK_IS_ON()
       // NOTE: Even if the value doesn't match, we want to check that the
       // attribute name was properly found.
-      DCHECK(element.SubtreeMayMatchClassOrAttrFilter(subject_filter))
+      DCHECK(element.CouldHaveAttributeWithPrecomputedFilter(filter))
           << element << " should have contained attribute " << selector_attr
           << ", Bloom bits on element are "
-          << element.AttributeOrClassBloomFilter();
+          << element.AttributeBloomFilterForDebug();
 #endif
 
       if (AttributeValueMatchesExact(attribute_item, selector_value,
@@ -348,32 +346,24 @@ inline bool AncestorHasClassName(ContainerNode& root_node,
 template <typename SelectorQueryTrait>
 void SelectorQuery::FindTraverseRootsAndExecute(
     ContainerNode& root_node,
-    Element::TinyBloomFilter subject_filter,
     typename SelectorQueryTrait::OutputType& output) const {
   // We need to return the matches in document order. To use id lookup while
   // there is possiblity of multiple matches we would need to sort the
   // results. For now, just traverse the document in that case.
   DCHECK_EQ(selector_start_offsets_.size(), 1u);
 
-  bool is_subject = true;
+  bool is_rightmost_selector = true;
   bool is_affected_by_sibling_combinator = false;
-  Element::TinyBloomFilter ancestor_filter = subject_filter;
 
   for (const CSSSelector* selector = StartOfComplexSelector(0); selector;
        selector = selector->NextSimpleSelector()) {
     if (!is_affected_by_sibling_combinator &&
         selector->Match() == CSSSelector::kClass) {
-      if (is_subject) {
-        // Fast path for <anything> <anything>.class
-        // (including the case with no descendant selectors).
+      if (is_rightmost_selector) {
         CollectElementsByClassName<SelectorQueryTrait>(
-            root_node, selector->Value(), StartOfComplexSelector(0),
-            subject_filter, output);
+            root_node, selector->Value(), StartOfComplexSelector(0), output);
         return;
       }
-
-      // Fast path for <anything>.class <not-sibling-combinator> <anything>.
-
       // Since there exists some ancestor element which has the class name, we
       // need to see all children of rootNode.
       if (AncestorHasClassName(root_node, selector->Value())) {
@@ -381,22 +371,20 @@ void SelectorQuery::FindTraverseRootsAndExecute(
       }
 
       const AtomicString& class_name = selector->Value();
-      Element* element =
-          ElementTraversal::FirstWithin(root_node, ancestor_filter);
+      Element* element = ElementTraversal::FirstWithin(root_node);
       while (element) {
         QUERY_STATS_INCREMENT(fast_class);
         if (element->HasClassName(class_name)) {
           ExecuteForTraverseRoot<SelectorQueryTrait>(*element, root_node,
-                                                     subject_filter, output);
+                                                     output);
           if (SelectorQueryTrait::kShouldOnlyMatchFirstElement &&
               !SelectorQueryTrait::IsEmpty(output)) {
             return;
           }
-          element = ElementTraversal::NextSkippingChildren(*element, &root_node,
-                                                           ancestor_filter);
-        } else {
           element =
-              ElementTraversal::Next(*element, &root_node, ancestor_filter);
+              ElementTraversal::NextSkippingChildren(*element, &root_node);
+        } else {
+          element = ElementTraversal::Next(*element, &root_node);
         }
       }
       return;
@@ -405,36 +393,26 @@ void SelectorQuery::FindTraverseRootsAndExecute(
     if (selector->Relation() == CSSSelector::kSubSelector) {
       continue;
     }
-
-    // We couldn't find a class selector in the subject.
-    // Move instead to looking for a class selector in an ancestor.
-    SelectorFilter::CollectSubjectIdentifierHashes(
-        selector, ExclusionPolicy(root_node), ancestor_filter);
-    is_subject = false;
-
+    is_rightmost_selector = false;
     is_affected_by_sibling_combinator =
         selector->Relation() == CSSSelector::kDirectAdjacent ||
         selector->Relation() == CSSSelector::kIndirectAdjacent;
   }
 
-  // Regular path.
-  ExecuteForTraverseRoot<SelectorQueryTrait>(root_node, root_node,
-                                             subject_filter, output);
+  ExecuteForTraverseRoot<SelectorQueryTrait>(root_node, root_node, output);
 }
 
 template <typename SelectorQueryTrait>
 void SelectorQuery::ExecuteForTraverseRoot(
     ContainerNode& traverse_root,
     ContainerNode& root_node,
-    Element::TinyBloomFilter subject_filter,
     typename SelectorQueryTrait::OutputType& output) const {
   DCHECK_EQ(selector_start_offsets_.size(), 1u);
 
   const CSSSelector& selector = *StartOfComplexSelector(0);
   SelectorChecker checker(SelectorChecker::kQueryingRules);
 
-  for (Element& element : ElementTraversal::DescendantsOfWithFilter(
-           traverse_root, subject_filter)) {
+  for (Element& element : ElementTraversal::DescendantsOf(traverse_root)) {
     QUERY_STATS_INCREMENT(fast_scan);
     if (SelectorMatches(selector, element, root_node, checker)) {
       SelectorQueryTrait::AppendElement(output, element);
@@ -485,24 +463,16 @@ void SelectorQuery::ExecuteWithId(
   const TreeScope& scope = root_node.GetTreeScope();
   SelectorChecker checker(SelectorChecker::kQueryingRules);
 
-  Element::TinyBloomFilter subject_filter = 0;
-  SelectorFilter::CollectSubjectIdentifierHashes(
-      &first_selector, ExclusionPolicy(root_node), subject_filter);
-
   if (scope.ContainsMultipleElementsWithId(selector_id_)) {
     // We don't currently handle cases where there's multiple elements with the
     // id and it's not in the rightmost selector.
-    if (!selector_id_in_subject_) {
-      FindTraverseRootsAndExecute<SelectorQueryTrait>(root_node, subject_filter,
-                                                      output);
+    if (!selector_id_is_rightmost_) {
+      FindTraverseRootsAndExecute<SelectorQueryTrait>(root_node, output);
       return;
     }
-
-    // Fast path for <anything> <anything>#id.
     const auto& elements = scope.GetAllElementsById(selector_id_);
     for (const auto& element : elements) {
-      if (!element->IsDescendantOf(&root_node) ||
-          !element->SubtreeMayMatchClassOrAttrFilter(subject_filter)) {
+      if (!element->IsDescendantOf(&root_node)) {
         continue;
       }
       QUERY_STATS_INCREMENT(fast_id);
@@ -520,14 +490,12 @@ void SelectorQuery::ExecuteWithId(
   if (!element) {
     return;
   }
-  if (selector_id_in_subject_) {
-    // Fast path for <anything> <anything>#id.
+  if (selector_id_is_rightmost_) {
     if (!element->IsDescendantOf(&root_node)) {
       return;
     }
     QUERY_STATS_INCREMENT(fast_id);
-    if (element->SubtreeMayMatchClassOrAttrFilter(subject_filter) &&
-        SelectorMatches(first_selector, *element, root_node, checker)) {
+    if (SelectorMatches(first_selector, *element, root_node, checker)) {
       SelectorQueryTrait::AppendElement(output, *element);
     }
     return;
@@ -543,8 +511,7 @@ void SelectorQuery::ExecuteWithId(
     return;
   }
   QUERY_STATS_INCREMENT(fast_id);
-  ExecuteForTraverseRoot<SelectorQueryTrait>(*start, root_node, subject_filter,
-                                             output);
+  ExecuteForTraverseRoot<SelectorQueryTrait>(*start, root_node, output);
 }
 
 template <typename SelectorQueryTrait>
@@ -573,16 +540,12 @@ void SelectorQuery::Execute(
   }
 
   const CSSSelector& first_selector = *StartOfComplexSelector(0);
-  Element::TinyBloomFilter subject_filter = 0;
-  SelectorFilter::CollectSubjectIdentifierHashes(
-      &first_selector, ExclusionPolicy(root_node), subject_filter);
-
   if (!first_selector.NextSimpleSelector()) {
     // Fast path for querySelector*('.foo'), and querySelector*('div').
     switch (first_selector.Match()) {
       case CSSSelector::kClass:
         CollectElementsByClassName<SelectorQueryTrait>(
-            root_node, first_selector.Value(), nullptr, subject_filter, output);
+            root_node, first_selector.Value(), nullptr, output);
         return;
       case CSSSelector::kTag:
       case CSSSelector::kUniversalTag:
@@ -598,19 +561,21 @@ void SelectorQuery::Execute(
         break;
       case CSSSelector::kAttributeExact:
         CollectElementsByAttributeExact<SelectorQueryTrait>(
-            root_node, first_selector, subject_filter, output);
+            root_node, first_selector, output);
         return;
       default:
         break;  // If we need another fast path, add here.
     }
   }
 
-  FindTraverseRootsAndExecute<SelectorQueryTrait>(root_node, subject_filter,
-                                                  output);
+  FindTraverseRootsAndExecute<SelectorQueryTrait>(root_node, output);
 }
 
 SelectorQuery::SelectorQuery(CSSSelectorList* selector_list)
-    : selector_list_(selector_list) {
+    : selector_list_(selector_list),
+      selector_id_is_rightmost_(true),
+      selector_id_affected_by_sibling_combinator_(false),
+      use_slow_scan_(true) {
   const CSSSelector* base = selector_list_->First();
   for (const CSSSelector* selector = base; selector;
        selector = CSSSelectorList::Next(*selector)) {
@@ -640,7 +605,7 @@ SelectorQuery::SelectorQuery(CSSSelectorList* selector_list)
       if (current->Relation() == CSSSelector::kSubSelector) {
         continue;
       }
-      selector_id_in_subject_ = false;
+      selector_id_is_rightmost_ = false;
       selector_id_affected_by_sibling_combinator_ =
           current->Relation() == CSSSelector::kDirectAdjacent ||
           current->Relation() == CSSSelector::kIndirectAdjacent;
@@ -672,7 +637,7 @@ SelectorQuery* SelectorQueryCache::Add(const AtomicString& selectors,
   if (selector_vector.empty()) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
-        StrCat({"'", selectors, "' is not a valid selector."}));
+        "'" + selectors + "' is not a valid selector.");
     return nullptr;
   }
 

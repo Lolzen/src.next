@@ -10,7 +10,6 @@
 #include "extensions/browser/event_router_factory.h"
 #include "extensions/browser/extension_action_manager.h"
 #include "extensions/browser/extension_function.h"
-#include "extensions/browser/extension_navigation_registry.h"
 #include "extensions/browser/extension_prefs_factory.h"
 #include "extensions/browser/extension_prefs_helper_factory.h"
 #include "extensions/browser/extension_protocols.h"
@@ -23,12 +22,15 @@
 #include "extensions/browser/renderer_startup_helper.h"
 #include "extensions/browser/service_worker/service_worker_keepalive.h"
 #include "extensions/browser/service_worker/service_worker_task_queue_factory.h"
-#include "extensions/browser/unpacked_installer.h"
 #include "extensions/browser/updater/update_service_factory.h"
 #include "extensions/browser/user_script_world_configuration_manager.h"
 #include "extensions/buildflags/buildflags.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "extensions/browser/extension_navigation_registry.h"
+#endif
+
+#if BUILDFLAG(ENABLE_GUEST_VIEW)
 #include "extensions/browser/guest_view/mime_handler_view/mime_handler_stream_manager.h"
 #endif
 
@@ -50,12 +52,11 @@ void EnsureCoreBrowserContextKeyedServiceFactoriesBuilt() {
   ExtensionActionManager::GetFactory();
   ExtensionFunction::EnsureShutdownNotifierFactoryBuilt();
   ExtensionPrefsFactory::GetInstance();
-  ExtensionNavigationRegistry::GetFactoryInstance();
   ExtensionPrefsHelperFactory::GetInstance();
   ExtensionRegistrarFactory::GetInstance();
   ImageLoaderFactory::GetInstance();
   MessageTracker::GetFactory();
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_GUEST_VIEW)
   MimeHandlerStreamManager::EnsureFactoryBuilt();
 #endif
   PendingExtensionManagerFactory::GetInstance();
@@ -64,9 +65,11 @@ void EnsureCoreBrowserContextKeyedServiceFactoriesBuilt() {
   RendererStartupHelperFactory::GetInstance();
   ServiceWorkerKeepalive::EnsureShutdownNotifierFactoryBuilt();
   ServiceWorkerTaskQueueFactory::GetInstance();
-  UnpackedInstaller::EnsureShutdownNotifierFactoryBuilt();
   UpdateServiceFactory::GetInstance();
   UserScriptWorldConfigurationManager::GetFactory();
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  ExtensionNavigationRegistry::GetFactoryInstance();
+#endif
   WebRequestEventRouterFactory::GetInstance();
 }
 

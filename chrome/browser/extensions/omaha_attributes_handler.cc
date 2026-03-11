@@ -13,9 +13,6 @@
 #include "extensions/browser/blocklist_state.h"
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/buildflags/buildflags.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -61,7 +58,7 @@ void ReportReenableExtension(ExtensionUpdateCheckDataKey reason) {
 }
 
 // Checks whether the `state` is in the `attributes`.
-bool HasOmahaBlocklistStateInAttributes(const base::DictValue& attributes,
+bool HasOmahaBlocklistStateInAttributes(const base::Value::Dict& attributes,
                                         BitMapBlocklistState state) {
   std::optional<bool> state_value;
   switch (state) {
@@ -94,7 +91,7 @@ OmahaAttributesHandler::OmahaAttributesHandler(
 
 void OmahaAttributesHandler::PerformActionBasedOnOmahaAttributes(
     const ExtensionId& extension_id,
-    const base::DictValue& attributes) {
+    const base::Value::Dict& attributes) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   // It is possible that an extension is uninstalled when the omaha attributes
   // are notified by the update client asynchronously. In this case, we should
@@ -115,7 +112,7 @@ void OmahaAttributesHandler::PerformActionBasedOnOmahaAttributes(
 
 void OmahaAttributesHandler::HandleMalwareOmahaAttribute(
     const ExtensionId& extension_id,
-    const base::DictValue& attributes) {
+    const base::Value::Dict& attributes) {
   bool has_malware_value = HasOmahaBlocklistStateInAttributes(
       attributes, BitMapBlocklistState::BLOCKLISTED_MALWARE);
   if (!has_malware_value) {
@@ -153,7 +150,7 @@ void OmahaAttributesHandler::HandleMalwareOmahaAttribute(
 
 void OmahaAttributesHandler::HandleGreylistOmahaAttribute(
     const ExtensionId& extension_id,
-    const base::DictValue& attributes,
+    const base::Value::Dict& attributes,
     BitMapBlocklistState greylist_state,
     ExtensionUpdateCheckDataKey reason) {
   bool has_attribute_value =

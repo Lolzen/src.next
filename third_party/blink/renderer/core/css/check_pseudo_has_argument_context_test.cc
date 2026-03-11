@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "third_party/blink/renderer/core/css/check_pseudo_has_argument_context.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -102,12 +107,12 @@ class CheckPseudoHasArgumentContextTest : public PageTestBase {
     return context.TraversalType();
   }
 
-  template <size_t length>
+  template <unsigned length>
   void TestTraversalIteratorSteps(
       Document* document,
       const char* has_anchor_element_id,
       const char* selector_text,
-      const std::array<ExpectedTraversalStep, length>& expected_traversal_steps,
+      const ExpectedTraversalStep (&expected_traversal_steps)[length],
       bool match_in_shadow_tree = false) const {
     Element* has_anchor_element =
         document->getElementById(AtomicString(has_anchor_element_id));
@@ -549,36 +554,32 @@ TEST_F(CheckPseudoHasArgumentContextTest, TestTraversalIteratorCase1) {
   )HTML");
 
   TestTraversalIteratorSteps(document, "div1", ":has(.a)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div13", .depth = 1},
-                                  {.element_id = "div123", .depth = 2},
-                                  {.element_id = "div1223", .depth = 3},
-                                  {.element_id = "div1222", .depth = 3},
-                                  {.element_id = "div1221", .depth = 3},
-                                  {.element_id = "div122", .depth = 2},
-                                  {.element_id = "div121", .depth = 2},
-                                  {.element_id = "div12", .depth = 1},
-                                  {.element_id = "div111", .depth = 2},
-                                  {.element_id = "div11", .depth = 1}}));
+                             {{"div13", /* depth */ 1},
+                              {"div123", /* depth */ 2},
+                              {"div1223", /* depth */ 3},
+                              {"div1222", /* depth */ 3},
+                              {"div1221", /* depth */ 3},
+                              {"div122", /* depth */ 2},
+                              {"div121", /* depth */ 2},
+                              {"div12", /* depth */ 1},
+                              {"div111", /* depth */ 2},
+                              {"div11", /* depth */ 1}});
 
   TestTraversalIteratorSteps(document, "div12", ":has(.a)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div123", .depth = 1},
-                                  {.element_id = "div1223", .depth = 2},
-                                  {.element_id = "div1222", .depth = 2},
-                                  {.element_id = "div1221", .depth = 2},
-                                  {.element_id = "div122", .depth = 1},
-                                  {.element_id = "div121", .depth = 1}}));
+                             {{"div123", /* depth */ 1},
+                              {"div1223", /* depth */ 2},
+                              {"div1222", /* depth */ 2},
+                              {"div1221", /* depth */ 2},
+                              {"div122", /* depth */ 1},
+                              {"div121", /* depth */ 1}});
 
   TestTraversalIteratorSteps(document, "div122", ":has(.a)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div1223", .depth = 1},
-                                  {.element_id = "div1222", .depth = 1},
-                                  {.element_id = "div1221", .depth = 1}}));
+                             {{"div1223", /* depth */ 1},
+                              {"div1222", /* depth */ 1},
+                              {"div1221", /* depth */ 1}});
 
   TestTraversalIteratorSteps(document, "div11", ":has(.a)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div111", .depth = 1}}));
+                             {{"div111", /* depth */ 1}});
 
   TestTraversalIteratorForEmptyRange(document, "div111", ":has(.a)");
 }
@@ -608,14 +609,12 @@ TEST_F(CheckPseudoHasArgumentContextTest, TestTraversalIteratorCase2) {
   )HTML");
 
   TestTraversalIteratorSteps(document, "div1", ":has(~ .a)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div4", .depth = 0},
-                                  {.element_id = "div3", .depth = 0},
-                                  {.element_id = "div2", .depth = 0}}));
+                             {{"div4", /* depth */ 0},
+                              {"div3", /* depth */ 0},
+                              {"div2", /* depth */ 0}});
 
   TestTraversalIteratorSteps(document, "div3", ":has(~ .a)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div4", .depth = 0}}));
+                             {{"div4", /* depth */ 0}});
 
   TestTraversalIteratorForEmptyRange(document, "div4", ":has(~ .a)");
 }
@@ -656,39 +655,34 @@ TEST_F(CheckPseudoHasArgumentContextTest, TestTraversalIteratorCase3) {
   )HTML");
 
   TestTraversalIteratorSteps(document, "div1", ":has(+ .a + .b .c)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div3411", .depth = 3},
-                                  {.element_id = "div341", .depth = 2},
-                                  {.element_id = "div34", .depth = 1},
-                                  {.element_id = "div33", .depth = 1},
-                                  {.element_id = "div321", .depth = 2},
-                                  {.element_id = "div32", .depth = 1},
-                                  {.element_id = "div311", .depth = 2},
-                                  {.element_id = "div31", .depth = 1},
-                                  {.element_id = "div3", .depth = 0},
-                                  {.element_id = "div2", .depth = 0}}));
+                             {{"div3411", /* depth */ 3},
+                              {"div341", /* depth */ 2},
+                              {"div34", /* depth */ 1},
+                              {"div33", /* depth */ 1},
+                              {"div321", /* depth */ 2},
+                              {"div32", /* depth */ 1},
+                              {"div311", /* depth */ 2},
+                              {"div31", /* depth */ 1},
+                              {"div3", /* depth */ 0},
+                              {"div2", /* depth */ 0}});
 
   TestTraversalIteratorSteps(document, "div2", ":has(+ .a + .b .c)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div41", .depth = 1},
-                                  {.element_id = "div4", .depth = 0},
-                                  {.element_id = "div3", .depth = 0}}));
+                             {{"div41", /* depth */ 1},
+                              {"div4", /* depth */ 0},
+                              {"div3", /* depth */ 0}});
 
   TestTraversalIteratorSteps(document, "div3", ":has(+ .a + .b .c)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div4", .depth = 0}}));
+                             {{"div4", /* depth */ 0}});
 
-  TestTraversalIteratorSteps(document, "div31", ":has(+ .a + .b .c)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div33", .depth = 0},
-                                  {.element_id = "div32", .depth = 0}}));
+  TestTraversalIteratorSteps(
+      document, "div31", ":has(+ .a + .b .c)",
+      {{"div33", /* depth */ 0}, {"div32", /* depth */ 0}});
 
   TestTraversalIteratorSteps(document, "div32", ":has(+ .a + .b .c)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div3411", .depth = 2},
-                                  {.element_id = "div341", .depth = 1},
-                                  {.element_id = "div34", .depth = 0},
-                                  {.element_id = "div33", .depth = 0}}));
+                             {{"div3411", /* depth */ 2},
+                              {"div341", /* depth */ 1},
+                              {"div34", /* depth */ 0},
+                              {"div33", /* depth */ 0}});
 
   TestTraversalIteratorForEmptyRange(document, "div4", ":has(+ .a + .b .c)");
 }
@@ -730,23 +724,21 @@ TEST_F(CheckPseudoHasArgumentContextTest, TestTraversalIteratorCase4) {
   )HTML");
 
   TestTraversalIteratorSteps(document, "div2", ":has(~ .a .b)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div5", .depth = 0},
-                                  {.element_id = "div41", .depth = 1},
-                                  {.element_id = "div4", .depth = 0},
-                                  {.element_id = "div3411", .depth = 3},
-                                  {.element_id = "div341", .depth = 2},
-                                  {.element_id = "div34", .depth = 1},
-                                  {.element_id = "div33", .depth = 1},
-                                  {.element_id = "div321", .depth = 2},
-                                  {.element_id = "div32", .depth = 1},
-                                  {.element_id = "div311", .depth = 2},
-                                  {.element_id = "div31", .depth = 1},
-                                  {.element_id = "div3", .depth = 0}}));
+                             {{"div5", /* depth */ 0},
+                              {"div41", /* depth */ 1},
+                              {"div4", /* depth */ 0},
+                              {"div3411", /* depth */ 3},
+                              {"div341", /* depth */ 2},
+                              {"div34", /* depth */ 1},
+                              {"div33", /* depth */ 1},
+                              {"div321", /* depth */ 2},
+                              {"div32", /* depth */ 1},
+                              {"div311", /* depth */ 2},
+                              {"div31", /* depth */ 1},
+                              {"div3", /* depth */ 0}});
 
   TestTraversalIteratorSteps(document, "div4", ":has(~ .a .b)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div5", .depth = 0}}));
+                             {{"div5", /* depth */ 0}});
 
   TestTraversalIteratorForEmptyRange(document, "div5", ":has(~ .a .b)");
 }
@@ -775,19 +767,16 @@ TEST_F(CheckPseudoHasArgumentContextTest, TestTraversalIteratorCase5) {
     </main>
   )HTML");
 
-  TestTraversalIteratorSteps(document, "div1", ":has(+ .a + .b)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div3", .depth = 0},
-                                  {.element_id = "div2", .depth = 0}}));
+  TestTraversalIteratorSteps(
+      document, "div1", ":has(+ .a + .b)",
+      {{"div3", /* depth */ 0}, {"div2", /* depth */ 0}});
 
-  TestTraversalIteratorSteps(document, "div2", ":has(+ .a + .b)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div4", .depth = 0},
-                                  {.element_id = "div3", .depth = 0}}));
+  TestTraversalIteratorSteps(
+      document, "div2", ":has(+ .a + .b)",
+      {{"div4", /* depth */ 0}, {"div3", /* depth */ 0}});
 
   TestTraversalIteratorSteps(document, "div3", ":has(~ .a)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div4", .depth = 0}}));
+                             {{"div4", /* depth */ 0}});
 
   TestTraversalIteratorForEmptyRange(document, "div4", ":has(~ .a)");
 }
@@ -820,33 +809,29 @@ TEST_F(CheckPseudoHasArgumentContextTest, TestTraversalIteratorCase6) {
   )HTML");
 
   TestTraversalIteratorSteps(document, "div1", ":has(> .a > .b)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div13", .depth = 1},
-                                  {.element_id = "div123", .depth = 2},
-                                  {.element_id = "div122", .depth = 2},
-                                  {.element_id = "div121", .depth = 2},
-                                  {.element_id = "div12", .depth = 1},
-                                  {.element_id = "div111", .depth = 2},
-                                  {.element_id = "div11", .depth = 1}}));
+                             {{"div13", /* depth */ 1},
+                              {"div123", /* depth */ 2},
+                              {"div122", /* depth */ 2},
+                              {"div121", /* depth */ 2},
+                              {"div12", /* depth */ 1},
+                              {"div111", /* depth */ 2},
+                              {"div11", /* depth */ 1}});
 
   TestTraversalIteratorSteps(document, "div12", ":has(> .a > .b)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div123", .depth = 1},
-                                  {.element_id = "div1223", .depth = 2},
-                                  {.element_id = "div1222", .depth = 2},
-                                  {.element_id = "div1221", .depth = 2},
-                                  {.element_id = "div122", .depth = 1},
-                                  {.element_id = "div121", .depth = 1}}));
+                             {{"div123", /* depth */ 1},
+                              {"div1223", /* depth */ 2},
+                              {"div1222", /* depth */ 2},
+                              {"div1221", /* depth */ 2},
+                              {"div122", /* depth */ 1},
+                              {"div121", /* depth */ 1}});
 
   TestTraversalIteratorSteps(document, "div122", ":has(> .a > .b)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div1223", .depth = 1},
-                                  {.element_id = "div1222", .depth = 1},
-                                  {.element_id = "div1221", .depth = 1}}));
+                             {{"div1223", /* depth */ 1},
+                              {"div1222", /* depth */ 1},
+                              {"div1221", /* depth */ 1}});
 
   TestTraversalIteratorSteps(document, "div11", ":has(> .a > .b)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div111", .depth = 1}}));
+                             {{"div111", /* depth */ 1}});
 
   TestTraversalIteratorForEmptyRange(document, "div111", ":has(> .a > .b)");
 }
@@ -887,38 +872,33 @@ TEST_F(CheckPseudoHasArgumentContextTest, TestTraversalIteratorCase7) {
   )HTML");
 
   TestTraversalIteratorSteps(document, "div1", ":has(+ .a + .b > .c > .d)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div341", .depth = 2},
-                                  {.element_id = "div34", .depth = 1},
-                                  {.element_id = "div33", .depth = 1},
-                                  {.element_id = "div321", .depth = 2},
-                                  {.element_id = "div32", .depth = 1},
-                                  {.element_id = "div311", .depth = 2},
-                                  {.element_id = "div31", .depth = 1},
-                                  {.element_id = "div3", .depth = 0},
-                                  {.element_id = "div2", .depth = 0}}));
+                             {{"div341", /* depth */ 2},
+                              {"div34", /* depth */ 1},
+                              {"div33", /* depth */ 1},
+                              {"div321", /* depth */ 2},
+                              {"div32", /* depth */ 1},
+                              {"div311", /* depth */ 2},
+                              {"div31", /* depth */ 1},
+                              {"div3", /* depth */ 0},
+                              {"div2", /* depth */ 0}});
 
   TestTraversalIteratorSteps(document, "div2", ":has(+ .a + .b > .c > .d)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div41", .depth = 1},
-                                  {.element_id = "div4", .depth = 0},
-                                  {.element_id = "div3", .depth = 0}}));
+                             {{"div41", /* depth */ 1},
+                              {"div4", /* depth */ 0},
+                              {"div3", /* depth */ 0}});
 
   TestTraversalIteratorSteps(document, "div3", ":has(+ .a + .b > .c > .d)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div4", .depth = 0}}));
+                             {{"div4", /* depth */ 0}});
 
-  TestTraversalIteratorSteps(document, "div31", ":has(+ .a + .b > .c > .d)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div33", .depth = 0},
-                                  {.element_id = "div32", .depth = 0}}));
+  TestTraversalIteratorSteps(
+      document, "div31", ":has(+ .a + .b > .c > .d)",
+      {{"div33", /* depth */ 0}, {"div32", /* depth */ 0}});
 
   TestTraversalIteratorSteps(document, "div32", ":has(+ .a + .b > .c > .d)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div3411", .depth = 2},
-                                  {.element_id = "div341", .depth = 1},
-                                  {.element_id = "div34", .depth = 0},
-                                  {.element_id = "div33", .depth = 0}}));
+                             {{"div3411", /* depth */ 2},
+                              {"div341", /* depth */ 1},
+                              {"div34", /* depth */ 0},
+                              {"div33", /* depth */ 0}});
 
   TestTraversalIteratorForEmptyRange(document, "div4",
                                      ":has(+ .a + .b > .c > .d)");
@@ -961,31 +941,28 @@ TEST_F(CheckPseudoHasArgumentContextTest, TestTraversalIteratorCase8) {
   )HTML");
 
   TestTraversalIteratorSteps(document, "div2", ":has(~ .a > .b > .c)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div5", .depth = 0},
-                                  {.element_id = "div41", .depth = 1},
-                                  {.element_id = "div4", .depth = 0},
-                                  {.element_id = "div341", .depth = 2},
-                                  {.element_id = "div34", .depth = 1},
-                                  {.element_id = "div33", .depth = 1},
-                                  {.element_id = "div321", .depth = 2},
-                                  {.element_id = "div32", .depth = 1},
-                                  {.element_id = "div311", .depth = 2},
-                                  {.element_id = "div31", .depth = 1},
-                                  {.element_id = "div3", .depth = 0}}));
+                             {{"div5", /* depth */ 0},
+                              {"div41", /* depth */ 1},
+                              {"div4", /* depth */ 0},
+                              {"div341", /* depth */ 2},
+                              {"div34", /* depth */ 1},
+                              {"div33", /* depth */ 1},
+                              {"div321", /* depth */ 2},
+                              {"div32", /* depth */ 1},
+                              {"div311", /* depth */ 2},
+                              {"div31", /* depth */ 1},
+                              {"div3", /* depth */ 0}});
 
   TestTraversalIteratorSteps(document, "div31", ":has(~ .a > .b > .c)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div3411", .depth = 2},
-                                  {.element_id = "div341", .depth = 1},
-                                  {.element_id = "div34", .depth = 0},
-                                  {.element_id = "div33", .depth = 0},
-                                  {.element_id = "div321", .depth = 1},
-                                  {.element_id = "div32", .depth = 0}}));
+                             {{"div3411", /* depth */ 2},
+                              {"div341", /* depth */ 1},
+                              {"div34", /* depth */ 0},
+                              {"div33", /* depth */ 0},
+                              {"div321", /* depth */ 1},
+                              {"div32", /* depth */ 0}});
 
   TestTraversalIteratorSteps(document, "div4", ":has(~ .a > .b > .c)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div5", .depth = 0}}));
+                             {{"div5", /* depth */ 0}});
 
   TestTraversalIteratorForEmptyRange(document, "div5", ":has(~ .a > .b > .c)");
 }
@@ -1023,17 +1000,16 @@ TEST_F(CheckPseudoHasArgumentContextTest, TestTraversalIteratorCase9) {
   )HTML");
 
   TestTraversalIteratorSteps(document, "div1", ":has(.a)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div13", .depth = 1},
-                                  {.element_id = "div123", .depth = 2},
-                                  {.element_id = "div1223", .depth = 3},
-                                  {.element_id = "div1222", .depth = 3},
-                                  {.element_id = "div1221", .depth = 3},
-                                  {.element_id = "div122", .depth = 2},
-                                  {.element_id = "div121", .depth = 2},
-                                  {.element_id = "div12", .depth = 1},
-                                  {.element_id = "div111", .depth = 2},
-                                  {.element_id = "div11", .depth = 1}}),
+                             {{"div13", /* depth */ 1},
+                              {"div123", /* depth */ 2},
+                              {"div1223", /* depth */ 3},
+                              {"div1222", /* depth */ 3},
+                              {"div1221", /* depth */ 3},
+                              {"div122", /* depth */ 2},
+                              {"div121", /* depth */ 2},
+                              {"div12", /* depth */ 1},
+                              {"div111", /* depth */ 2},
+                              {"div11", /* depth */ 1}},
                              /* match_in_shadow_tree */ true);
 
   TestTraversalIteratorForEmptyRange(document, "div14", ":has(.a)",
@@ -1078,14 +1054,13 @@ TEST_F(CheckPseudoHasArgumentContextTest, TestTraversalIteratorCase10) {
   )HTML");
 
   TestTraversalIteratorSteps(document, "div1", ":has(> .a > .b)",
-                             std::to_array<ExpectedTraversalStep>(
-                                 {{.element_id = "div13", .depth = 1},
-                                  {.element_id = "div123", .depth = 2},
-                                  {.element_id = "div122", .depth = 2},
-                                  {.element_id = "div121", .depth = 2},
-                                  {.element_id = "div12", .depth = 1},
-                                  {.element_id = "div111", .depth = 2},
-                                  {.element_id = "div11", .depth = 1}}),
+                             {{"div13", /* depth */ 1},
+                              {"div123", /* depth */ 2},
+                              {"div122", /* depth */ 2},
+                              {"div121", /* depth */ 2},
+                              {"div12", /* depth */ 1},
+                              {"div111", /* depth */ 2},
+                              {"div11", /* depth */ 1}},
                              /* match_in_shadow_tree */ true);
 
   TestTraversalIteratorForEmptyRange(document, "div14", ":has(> .a)",

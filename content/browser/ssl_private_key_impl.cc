@@ -7,8 +7,6 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
-#include "mojo/public/cpp/bindings/callback_helpers.h"
-#include "net/base/net_errors.h"
 
 namespace content {
 
@@ -22,13 +20,11 @@ void SSLPrivateKeyImpl::Sign(
     uint16_t algorithm,
     const std::vector<uint8_t>& input,
     network::mojom::SSLPrivateKey::SignCallback callback) {
-  // In some cases, `ssl_private_key_` may abandon the callback. See
-  // https://crbug.com/40651689.
-  callback = mojo::WrapCallbackWithDefaultInvokeIfNotRun(
-      std::move(callback), int32_t{net::ERR_FAILED}, std::vector<uint8_t>());
+  base::span<const uint8_t> input_span(input);
   ssl_private_key_->Sign(
-      algorithm, input,
-      base::BindOnce(&SSLPrivateKeyImpl::Callback, std::move(callback)));
+      algorithm, input_span,
+      base::BindOnce(&SSLPrivateKeyImpl::Callback, base::Unretained(this),
+                     std::move(callback)));
 }
 
 void SSLPrivateKeyImpl::Callback(

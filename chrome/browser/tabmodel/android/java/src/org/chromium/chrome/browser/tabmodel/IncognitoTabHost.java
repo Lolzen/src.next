@@ -15,9 +15,6 @@ public interface IncognitoTabHost {
     /** Close all incognito tabs. */
     void closeAllIncognitoTabs();
 
-    /** An async version of {@link #closeAllIncognitoTabs()}, that will wait for init to finish. */
-    void closeAllIncognitoTabsOnInit();
-
-    /** Whether there is any active incognito session at the moment. */
+    /** Whether there is any active incognito session at the moment.*/
     boolean isActiveModel();
 }

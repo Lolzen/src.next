@@ -9,16 +9,14 @@
 #include "base/memory/scoped_refptr.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "extensions/browser/extension_function.h"
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -26,7 +24,7 @@ namespace {
 
 void SuccessCallback(bool* did_respond,
                      ExtensionFunction::ResponseType type,
-                     base::ListValue results,
+                     base::Value::List results,
                      const std::string& error,
                      mojom::ExtraResponseDataPtr) {
   EXPECT_EQ(ExtensionFunction::ResponseType::kSucceeded, type);
@@ -35,7 +33,7 @@ void SuccessCallback(bool* did_respond,
 
 void FailCallback(bool* did_respond,
                   ExtensionFunction::ResponseType type,
-                  base::ListValue results,
+                  base::Value::List results,
                   const std::string& error,
                   mojom::ExtraResponseDataPtr) {
   EXPECT_EQ(ExtensionFunction::ResponseType::kFailed, type);
@@ -97,8 +95,8 @@ TEST_F(ChromeExtensionFunctionUnitTest, DestructionWithoutResponseOnUnload) {
   function->set_extension(extension);
   function->SetBrowserContextForTesting(browser_context());
 
-  registrar()->DisableExtension(extension->id(),
-                                {disable_reason::DISABLE_USER_ACTION});
+  service()->DisableExtension(extension->id(),
+                              disable_reason::DISABLE_USER_ACTION);
   ASSERT_TRUE(registry()->disabled_extensions().Contains(extension->id()));
 
   // Destroying the extension function without responding if the extension has

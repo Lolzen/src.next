@@ -4,8 +4,6 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.text.Editable;
@@ -14,8 +12,6 @@ import android.util.AttributeSet;
 
 import com.google.android.material.textfield.TextInputLayout;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.tab_ui.R;
 import org.chromium.ui.text.EmptyTextWatcher;
 
@@ -23,16 +19,14 @@ import org.chromium.ui.text.EmptyTextWatcher;
  * Wraps around {@link TextInputLayout} to implement a basic empty field error behavior for the tab
  * group title during tab group creation.
  */
-@NullMarked
 public class TabGroupVisualDataTextInputLayout extends TextInputLayout {
-    private @Nullable String mEmptyErrorMessage;
+    private String mEmptyErrorMessage;
 
     public TabGroupVisualDataTextInputLayout(Context context, AttributeSet attrs) {
         super(context, attrs);
 
         final TypedArray a =
-                context.obtainStyledAttributes(
-                        attrs, R.styleable.TabGroupVisualDataTextInputLayout);
+                context.obtainStyledAttributes(attrs, R.styleable.TabGroupVisualDataTextInputLayout);
         final int emptyErrorMessageId =
                 a.getResourceId(R.styleable.TabGroupVisualDataTextInputLayout_emptyErrorMessage, 0);
         if (emptyErrorMessageId != 0) {
@@ -45,7 +39,7 @@ public class TabGroupVisualDataTextInputLayout extends TextInputLayout {
     @Override
     protected void onFinishInflate() {
         super.onFinishInflate();
-        assumeNonNull(getEditText())
+        getEditText()
                 .addTextChangedListener(
                         new EmptyTextWatcher() {
                             @Override
@@ -59,7 +53,7 @@ public class TabGroupVisualDataTextInputLayout extends TextInputLayout {
      * @return Trimmed text for validation.
      */
     public String getTrimmedText() {
-        return assumeNonNull(getEditText()).getText().toString().trim();
+        return getEditText().getText().toString().trim();
     }
 
     /**

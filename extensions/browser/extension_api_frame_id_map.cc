@@ -10,7 +10,6 @@
 
 #include "base/check_op.h"
 #include "base/functional/bind.h"
-#include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/uuid.h"
 #include "content/public/browser/browser_thread.h"
@@ -24,6 +23,15 @@
 #include "extensions/common/constants.h"
 
 namespace extensions {
+
+namespace {
+
+// The map is accessed on the IO and UI thread, so construct it once and never
+// delete it.
+base::LazyInstance<ExtensionApiFrameIdMap>::Leaky g_map_instance =
+    LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
 
 const int ExtensionApiFrameIdMap::kInvalidFrameId = -1;
 const int ExtensionApiFrameIdMap::kTopFrameId = 0;
@@ -67,10 +75,7 @@ ExtensionApiFrameIdMap::~ExtensionApiFrameIdMap() = default;
 
 // static
 ExtensionApiFrameIdMap* ExtensionApiFrameIdMap::Get() {
-  // The map is accessed on the IO and UI thread, so construct it once and never
-  // delete it.
-  static base::NoDestructor<ExtensionApiFrameIdMap> instance;
-  return instance.get();
+  return g_map_instance.Pointer();
 }
 
 // static
@@ -165,7 +170,7 @@ content::RenderFrameHost* ExtensionApiFrameIdMap::GetRenderFrameHostByFrameId(
   CHECK_GE(frame_id, 1);
 
   content::RenderFrameHost* render_frame_host = nullptr;
-  for (const auto& iter : document_id_map_) {
+  for (auto iter : document_id_map_) {
     if (frame_id ==
         ExtensionApiFrameIdMap::GetFrameId(&iter.second->render_frame_host())) {
       render_frame_host = &iter.second->render_frame_host();

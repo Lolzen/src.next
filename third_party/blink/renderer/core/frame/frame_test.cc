@@ -267,17 +267,17 @@ TEST_F(FrameTest, UserActivationTriggerHistograms) {
   histograms.ExpectTotalCount("Event.UserActivation.TriggerForTransient", 4);
 }
 
-TEST_F(FrameTest, NavigateClearsPostLayoutSnapshotClients) {
+TEST_F(FrameTest, NavigateClearsScrollSnapshotClients) {
   ScrollTimeline::Create(&GetDocument(),
                          GetDocument().ScrollingElementNoLayout(),
                          ScrollTimeline::ScrollAxis::kBlock);
 
   EXPECT_EQ(
-      GetDocument().GetFrame()->GetPostLayoutSnapshotClientsForTesting().size(),
+      GetDocument().GetFrame()->GetScrollSnapshotClientsForTesting().size(),
       1U);
   NavigateSameDomain("page1");
   EXPECT_EQ(
-      GetDocument().GetFrame()->GetPostLayoutSnapshotClientsForTesting().size(),
+      GetDocument().GetFrame()->GetScrollSnapshotClientsForTesting().size(),
       0U);
 }
 

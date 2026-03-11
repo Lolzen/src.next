@@ -88,21 +88,13 @@ const FontSizeTableType kStrictFontSizeTable{{
 const std::array<float, kTotalKeywords> kFontSizeFactors{
     0.60f, 0.75f, 0.89f, 1.0f, 1.2f, 1.5f, 2.0f, 3.0f};
 
-int inline RowFromMediumFontSizeInRange(const Document* document,
+int inline RowFromMediumFontSizeInRange(const Settings* settings,
                                         bool quirks_mode,
                                         bool is_monospace,
                                         int& medium_size) {
-  const Settings* settings = document ? document->GetSettings() : nullptr;
   medium_size = settings ? (is_monospace ? settings->GetDefaultFixedFontSize()
                                          : settings->GetDefaultFontSize())
                          : kDefaultMediumFontSize;
-
-  if (document && document->TextScaleMetaTagPresent() && settings) {
-    medium_size =
-        round(medium_size * FontSizeFunctions::SnapToClosestFontScaleBucket(
-                                settings->GetAccessibilityFontScaleFactor()));
-  }
-
   if (medium_size >= kFontSizeTableMin && medium_size <= kFontSizeTableMax) {
     return medium_size - kFontSizeTableMin;
   }
@@ -124,12 +116,9 @@ int FindNearestLegacyFontSize(int pixel_font_size,
 }
 
 float AspectValue(const SimpleFontData& font_data,
-                  FontSizeAdjust::Metric metric) {
-  const float font_size = font_data.PlatformData().size();
-  if (!font_size) {
-    return 0.0f;
-  }
-
+                  FontSizeAdjust::Metric metric,
+                  float computed_size) {
+  DCHECK(computed_size);
   const FontMetrics& font_metrics = font_data.GetFontMetrics();
   // We return fallback values for missing font metrics.
   // https://github.com/w3c/csswg-drafts/issues/6384
@@ -137,31 +126,31 @@ float AspectValue(const SimpleFontData& font_data,
   switch (metric) {
     case FontSizeAdjust::Metric::kCapHeight:
       if (font_metrics.CapHeight() > 0) {
-        aspect_value = font_metrics.CapHeight() / font_size;
+        aspect_value = font_metrics.CapHeight() / computed_size;
       }
       break;
     case FontSizeAdjust::Metric::kChWidth:
       if (font_metrics.HasZeroWidth()) {
-        aspect_value = font_metrics.ZeroWidth() / font_size;
+        aspect_value = font_metrics.ZeroWidth() / computed_size;
       }
       break;
     case FontSizeAdjust::Metric::kIcWidth:
       if (const std::optional<float>& size =
               font_data.IdeographicAdvanceWidth()) {
-        aspect_value = *size / font_size;
+        aspect_value = *size / computed_size;
       }
       break;
     case FontSizeAdjust::Metric::kIcHeight: {
       if (const std::optional<float>& size =
               font_data.IdeographicAdvanceHeight()) {
-        aspect_value = *size / font_size;
+        aspect_value = *size / computed_size;
       }
       break;
     }
     case FontSizeAdjust::Metric::kExHeight:
     default:
       if (font_metrics.HasXHeight()) {
-        aspect_value = font_metrics.XHeight() / font_size;
+        aspect_value = font_metrics.XHeight() / computed_size;
       }
   }
   return aspect_value;
@@ -227,7 +216,7 @@ float FontSizeFunctions::FontSizeForKeyword(const Document* document,
   bool quirks_mode = document && document->InQuirksMode();
 
   int medium_size = 0;
-  int row = RowFromMediumFontSizeInRange(document, quirks_mode, is_monospace,
+  int row = RowFromMediumFontSizeInRange(settings, quirks_mode, is_monospace,
                                          medium_size);
   if (row >= 0) {
     int col = (keyword - 1);
@@ -252,7 +241,7 @@ int FontSizeFunctions::LegacyFontSize(const Document* document,
 
   bool quirks_mode = document->InQuirksMode();
   int medium_size = 0;
-  int row = RowFromMediumFontSizeInRange(document, quirks_mode, is_monospace,
+  int row = RowFromMediumFontSizeInRange(settings, quirks_mode, is_monospace,
                                          medium_size);
   if (row >= 0) {
     return FindNearestLegacyFontSize<int>(
@@ -266,12 +255,13 @@ int FontSizeFunctions::LegacyFontSize(const Document* document,
 
 std::optional<float> FontSizeFunctions::FontAspectValue(
     const SimpleFontData* font_data,
-    FontSizeAdjust::Metric metric) {
-  if (!font_data) {
+    FontSizeAdjust::Metric metric,
+    float computed_size) {
+  if (!font_data || !computed_size) {
     return std::nullopt;
   }
 
-  float aspect_value = AspectValue(*font_data, metric);
+  float aspect_value = AspectValue(*font_data, metric, computed_size);
   if (!aspect_value) {
     return std::nullopt;
   }
@@ -289,36 +279,12 @@ std::optional<float> FontSizeFunctions::MetricsMultiplierAdjustedFontSize(
     return std::nullopt;
   }
 
-  float aspect_value = AspectValue(*font_data, size_adjust.GetMetric());
+  float aspect_value =
+      AspectValue(*font_data, size_adjust.GetMetric(), computed_size);
   if (!aspect_value) {
     return std::nullopt;
   }
   return (size_adjust.Value() / aspect_value) * computed_size;
-}
-
-double FontSizeFunctions::SnapToClosestFontScaleBucket(double raw_font_scale) {
-  static const std::array<double, 7> font_scale_buckets = {0.85, 1,   1.15, 1.3,
-                                                           1.5,  1.8, 2};
-
-  // Handle cases where the input value is outside the range of literals.
-  if (raw_font_scale <= font_scale_buckets.front()) {
-    return font_scale_buckets.front();
-  }
-  if (raw_font_scale >= font_scale_buckets.back()) {
-    return font_scale_buckets.back();
-  }
-
-  // std::lower_bound finds the first element >= raw_font_scale.
-  const auto it = std::lower_bound(font_scale_buckets.begin(),
-                                   font_scale_buckets.end(), raw_font_scale);
-
-  const double higher_candidate = *it;
-  const double lower_candidate = *(it - 1);
-
-  const double diff_to_lower = std::abs(raw_font_scale - lower_candidate);
-  const double diff_to_higher = std::abs(raw_font_scale - higher_candidate);
-
-  return (diff_to_lower <= diff_to_higher) ? lower_candidate : higher_candidate;
 }
 
 }  // namespace blink

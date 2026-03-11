@@ -6,8 +6,7 @@ package org.chromium.chrome.browser.omnibox;
 
 import android.animation.Animator;
 import android.view.View;
-import android.view.ViewGroup;
-import android.view.ViewGroup.MarginLayoutParams;
+import android.widget.FrameLayout;
 
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.chrome.browser.omnibox.status.StatusCoordinator;
@@ -56,14 +55,14 @@ public class LocationBarCoordinatorPhone implements LocationBarCoordinator.SubCo
     }
 
     /**
-     * Returns {@link MarginLayoutParams} of the LocationBar view.
+     * Returns {@link FrameLayout.LayoutParams} of the LocationBar view.
      *
      * <p>TODO(crbug.com/40151029): Hide this View interaction if possible.
      *
      * @see View#getLayoutParams()
      */
-    public MarginLayoutParams getMarginLayoutParams() {
-        return mLocationBarPhone.getMarginLayoutParams();
+    public FrameLayout.LayoutParams getFrameLayoutParams() {
+        return mLocationBarPhone.getFrameLayoutParams();
     }
 
     /**

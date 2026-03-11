@@ -11,9 +11,9 @@
 #include "base/atomic_sequence_num.h"
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/notreached.h"
-#include "base/power_monitor/power_monitor.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
@@ -84,8 +84,12 @@ spdy::SettingsMap AddDefaultHttp2Settings(spdy::SettingsMap http2_settings) {
 
 bool OriginToForceQuicOnInternal(const QuicParams& quic_params,
                                  const url::SchemeHostPort& destination) {
-  return (quic_params.force_quic_everywhere ||
-          quic_params.origins_to_force_quic_on.contains(destination));
+  // TODO(crbug.com/40181080): Consider converting `origins_to_force_quic_on` to
+  // use url::SchemeHostPort.
+  return (
+      base::Contains(quic_params.origins_to_force_quic_on, HostPortPair()) ||
+      base::Contains(quic_params.origins_to_force_quic_on,
+                     HostPortPair::FromSchemeHostPort(destination)));
 }
 
 }  // unnamed namespace
@@ -224,19 +228,19 @@ HttpNetworkSession::HttpNetworkSession(const HttpNetworkSessionParams& params,
           ->initial_delay_for_broken_alternative_service,
       context.quic_context->params()->exponential_backoff_on_initial_delay);
 
+  if (!params_.disable_idle_sockets_close_on_memory_pressure) {
+    memory_pressure_listener_ = std::make_unique<base::MemoryPressureListener>(
+        FROM_HERE, base::BindRepeating(&HttpNetworkSession::OnMemoryPressure,
+                                       base::Unretained(this)));
+  }
+
   http_stream_pool_ = std::make_unique<HttpStreamPool>(
       this,
       /*cleanup_on_ip_address_change=*/!params.ignore_ip_address_changes);
-#if BUILDFLAG(IS_WIN)
-  base::PowerMonitor::GetInstance()->AddPowerSuspendObserver(this);
-#endif
 }
 
 HttpNetworkSession::~HttpNetworkSession() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-#if BUILDFLAG(IS_WIN)
-  base::PowerMonitor::GetInstance()->RemovePowerSuspendObserver(this);
-#endif
   if (http_stream_pool_) {
     http_stream_pool_->OnShuttingDown();
   }
@@ -248,7 +252,7 @@ HttpNetworkSession::~HttpNetworkSession() {
 
 void HttpNetworkSession::StartResponseDrainer(
     std::unique_ptr<HttpResponseBodyDrainer> drainer) {
-  DCHECK(!response_drainers_.contains(drainer.get()));
+  DCHECK(!base::Contains(response_drainers_, drainer.get()));
   HttpResponseBodyDrainer* drainer_ptr = drainer.get();
   response_drainers_.insert(std::move(drainer));
   drainer_ptr->Start(this);
@@ -256,7 +260,7 @@ void HttpNetworkSession::StartResponseDrainer(
 
 void HttpNetworkSession::RemoveResponseDrainer(
     HttpResponseBodyDrainer* drainer) {
-  DCHECK(response_drainers_.contains(drainer));
+  DCHECK(base::Contains(response_drainers_, drainer));
 
   response_drainers_.erase(response_drainers_.find(drainer));
 }
@@ -272,36 +276,33 @@ base::Value HttpNetworkSession::SocketPoolInfoToValue() const {
   return normal_socket_pool_manager_->SocketPoolInfoToValue();
 }
 
-base::Value HttpNetworkSession::SpdySessionPoolInfoToValue() const {
+std::unique_ptr<base::Value> HttpNetworkSession::SpdySessionPoolInfoToValue()
+    const {
   return spdy_session_pool_.SpdySessionPoolInfoToValue();
 }
 
 base::Value HttpNetworkSession::QuicInfoToValue() const {
-  base::DictValue dict;
+  base::Value::Dict dict;
   dict.Set("sessions", quic_session_pool_.QuicSessionPoolInfoToValue());
   dict.Set("quic_enabled", IsQuicEnabled());
 
   const QuicParams* quic_params = context_.quic_context->params();
 
-  base::ListValue connection_options;
+  base::Value::List connection_options;
   for (const auto& option : quic_params->connection_options) {
     connection_options.Append(quic::QuicTagToString(option));
   }
   dict.Set("connection_options", std::move(connection_options));
 
-  base::ListValue supported_versions;
+  base::Value::List supported_versions;
   for (const auto& version : quic_params->supported_versions) {
     supported_versions.Append(ParsedQuicVersionToString(version));
   }
   dict.Set("supported_versions", std::move(supported_versions));
 
-  base::ListValue origins_to_force_quic_on;
-  if (quic_params->force_quic_everywhere) {
-    origins_to_force_quic_on.Append("<everywhere>");
-  } else {
-    for (const auto& origin : quic_params->origins_to_force_quic_on) {
-      origins_to_force_quic_on.Append(origin.Serialize());
-    }
+  base::Value::List origins_to_force_quic_on;
+  for (const auto& origin : quic_params->origins_to_force_quic_on) {
+    origins_to_force_quic_on.Append(origin.ToString());
   }
   dict.Set("origins_to_force_quic_on", std::move(origins_to_force_quic_on));
 
@@ -371,10 +372,6 @@ void HttpNetworkSession::CloseIdleConnections(const char* net_log_reason_utf8) {
     http_stream_pool_->CloseIdleStreams(net_log_reason_utf8);
   }
   spdy_session_pool_.CloseCurrentIdleSessions(net_log_reason_utf8);
-}
-
-void HttpNetworkSession::SetTLS13EarlyDataEnabled(bool enabled) {
-  params_.enable_early_data = enabled;
 }
 
 bool HttpNetworkSession::IsQuicEnabled() const {
@@ -452,13 +449,19 @@ ClientSocketPoolManager* HttpNetworkSession::GetSocketPoolManager(
   }
 }
 
-void HttpNetworkSession::OnSuspend() {
-  power_suspended_ = true;
-  CloseIdleConnections("Entering suspend mode");
-}
+void HttpNetworkSession::OnMemoryPressure(
+    base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
+  DCHECK(!params_.disable_idle_sockets_close_on_memory_pressure);
 
-void HttpNetworkSession::OnResume() {
-  power_suspended_ = false;
+  switch (memory_pressure_level) {
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE:
+      break;
+
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE:
+    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL:
+      CloseIdleConnections("Low memory");
+      break;
+  }
 }
 
 }  // namespace net

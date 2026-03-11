@@ -161,7 +161,7 @@ WebWindowFeatures GetWindowFeaturesFromString(const String& feature_string,
         value_string == "true") {
       value = 1;
     } else {
-      value = CharactersToInt(value_string, NumberParsingOptions::Loose(),
+      value = CharactersToInt(value_string, WTF::NumberParsingOptions::Loose(),
                               /*ok=*/nullptr);
     }
 
@@ -211,6 +211,9 @@ WebWindowFeatures GetWindowFeaturesFromString(const String& feature_string,
       window_features.background = true;
     } else if (key_string == "persistent") {
       window_features.persistent = true;
+    } else if (RuntimeEnabledFeatures::PartitionedPopinsEnabled(dom_window) &&
+               key_string == "popin") {
+      window_features.is_partitioned_popin = true;
     } else if (attribution_reporting_enabled &&
                key_string == "attributionsrc") {
       if (!window_features.attribution_srcs.has_value()) {
@@ -231,12 +234,13 @@ WebWindowFeatures GetWindowFeaturesFromString(const String& feature_string,
         // attributionsrc values are encoded in order to support embedded
         // special characters, such as '='.
         window_features.attribution_srcs->emplace_back(DecodeURLEscapeSequences(
-            original_case_value_string, DecodeURLMode::kUTF8));
+            original_case_value_string.ToString(), DecodeURLMode::kUTF8));
       }
     }
   }
 
-  window_features.is_popup = popup_state == PopupState::kPopup;
+  window_features.is_popup =
+      popup_state == PopupState::kPopup || window_features.is_partitioned_popin;
   if (popup_state == PopupState::kUnknown) {
     window_features.is_popup = !tool_bar || !menu_bar || !scrollbars ||
                                !status_bar || !window_features.resizable;
@@ -259,7 +263,7 @@ static void MaybeLogWindowOpen(LocalFrame& opener_frame) {
 
   bool is_ad_frame = opener_frame.IsAdFrame();
   bool is_ad_script_in_stack =
-      ad_tracker->IsAdScriptInStack(AdTracker::StackType::kTopOnly);
+      ad_tracker->IsAdScriptInStack(AdTracker::StackType::kBottomAndTop);
 
   // Log to UKM.
   ukm::UkmRecorder* ukm_recorder = opener_frame.GetDocument()->UkmRecorder();
@@ -301,7 +305,7 @@ Frame* CreateNewWindow(LocalFrame& opener_frame,
     opener_window.AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kSecurity,
         mojom::blink::ConsoleMessageLevel::kError,
-        StrCat({"Not allowed to load local resource: ", url.ElidedString()})));
+        "Not allowed to load local resource: " + url.ElidedString()));
     return nullptr;
   }
 
@@ -352,9 +356,9 @@ Frame* CreateNewWindow(LocalFrame& opener_frame,
     opener_window.AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kSecurity,
         mojom::blink::ConsoleMessageLevel::kError,
-        StrCat({"Blocked opening '", url.ElidedString(),
-                "' in a new window because the request was made in a sandboxed "
-                "frame whose 'allow-popups' permission is not set."})));
+        "Blocked opening '" + url.ElidedString() +
+            "' in a new window because the request was made in a sandboxed "
+            "frame whose 'allow-popups' permission is not set."));
     return nullptr;
   }
 
@@ -395,6 +399,12 @@ Frame* CreateNewWindow(LocalFrame& opener_frame,
   page->SetWindowFeatures(features);
 
   frame.View()->SetCanHaveScrollbars(!features.is_popup);
+
+  if (!base::FeatureList::IsEnabled(features::kCombineNewWindowIPCs)) {
+    page->GetChromeClient().Show(frame, opener_frame,
+                                 request.GetNavigationPolicy(),
+                                 consumed_user_gesture);
+  }
 
   // GetWebView() may return nullptr in tests
   if (auto* web_view = page->GetChromeClient().GetWebView()) {

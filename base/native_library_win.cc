@@ -116,8 +116,9 @@ std::string NativeLibraryLoadError::ToString() const {
   return StringPrintf("%lu", code);
 }
 
-NativeLibrary LoadNativeLibrary(const FilePath& library_path,
-                                NativeLibraryLoadError* error) {
+NativeLibrary LoadNativeLibraryWithOptions(const FilePath& library_path,
+                                           const NativeLibraryOptions& options,
+                                           NativeLibraryLoadError* error) {
   return LoadNativeLibraryHelper(library_path, error);
 }
 

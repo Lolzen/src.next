@@ -8,7 +8,6 @@
 #include "third_party/blink/renderer/platform/loader/cors/cors.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
 #include "third_party/blink/renderer/platform/network/encoded_form_data.h"
-#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 
 namespace blink {
 
@@ -131,7 +130,8 @@ void BeaconURLSearchParams::Serialize(ResourceRequest& request) const {
 BeaconFormData::BeaconFormData(FormData* data)
     : data_(data),
       entity_body_(data_->EncodeMultiPartFormData()),
-      content_type_(entity_body_->FormatContentTypeWithBoundary()) {}
+      content_type_(String("multipart/form-data; boundary=") +
+                    entity_body_->Boundary().data()) {}
 
 uint64_t BeaconFormData::size() const {
   return entity_body_->SizeInBytes();

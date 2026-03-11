@@ -45,8 +45,18 @@ NSString* GetBundleIdForDefaultAppForUTType(NSString* type) {
   if (!uttype) {
     return nil;
   }
-  NSURL* default_app_url =
-      [NSWorkspace.sharedWorkspace URLForApplicationToOpenContentType:uttype];
+  NSURL* default_app_url = nil;
+  if (@available(macOS 12, *)) {
+    default_app_url =
+        [NSWorkspace.sharedWorkspace URLForApplicationToOpenContentType:uttype];
+  } else {
+    CFURLRef default_app_url_cf = LSCopyDefaultApplicationURLForContentType(
+        base::apple::NSToCFPtrCast(type), kLSRolesAll, nil);
+    if (!default_app_url_cf) {
+      return nil;
+    }
+    default_app_url = base::apple::CFToNSOwnershipCast(default_app_url_cf);
+  }
   if (!default_app_url) {
     return nil;
   }
@@ -56,28 +66,49 @@ NSString* GetBundleIdForDefaultAppForUTType(NSString* type) {
 }  // namespace
 
 bool SetAsDefaultBrowser() {
-  // We really do want the outer bundle here, not the main bundle since
-  // setting a shortcut to Chrome as the default browser doesn't make sense.
-  NSURL* app_bundle = base::apple::OuterBundleURL();
-  if (!app_bundle) {
-    return false;
-  }
+  if (@available(macOS 12, *)) {
+    // We really do want the outer bundle here, not the main bundle since
+    // setting a shortcut to Chrome as the default browser doesn't make sense.
+    NSURL* app_bundle = base::apple::OuterBundleURL();
+    if (!app_bundle) {
+      return false;
+    }
 
-  [NSWorkspace.sharedWorkspace setDefaultApplicationAtURL:app_bundle
-                                     toOpenURLsWithScheme:@"http"
-                                        completionHandler:^(NSError*){
-                                        }];
-  [NSWorkspace.sharedWorkspace setDefaultApplicationAtURL:app_bundle
-                                     toOpenURLsWithScheme:@"https"
-                                        completionHandler:^(NSError*){
-                                        }];
-  [NSWorkspace.sharedWorkspace setDefaultApplicationAtURL:app_bundle
-                                        toOpenContentType:UTTypeHTML
-                                        completionHandler:^(NSError*){
-                                        }];
-  // TODO(https://crbug.com/40248220): Passing empty completion handlers,
-  // above, is kinda broken, but given that this API is synchronous, nothing
-  // better can be done. This entire API should be rebuilt.
+    [NSWorkspace.sharedWorkspace setDefaultApplicationAtURL:app_bundle
+                                       toOpenURLsWithScheme:@"http"
+                                          completionHandler:^(NSError*){
+                                          }];
+    [NSWorkspace.sharedWorkspace setDefaultApplicationAtURL:app_bundle
+                                       toOpenURLsWithScheme:@"https"
+                                          completionHandler:^(NSError*){
+                                          }];
+    [NSWorkspace.sharedWorkspace setDefaultApplicationAtURL:app_bundle
+                                          toOpenContentType:UTTypeHTML
+                                          completionHandler:^(NSError*){
+                                          }];
+    // TODO(crbug.com/40248220): Passing empty completion handlers,
+    // above, is kinda broken, but given that this API is synchronous, nothing
+    // better can be done. This entire API should be rebuilt.
+  } else {
+    // We really do want the outer bundle here, not the main bundle since
+    // setting a shortcut to Chrome as the default browser doesn't make sense.
+    CFStringRef identifier =
+        base::apple::NSToCFPtrCast(base::apple::OuterBundle().bundleIdentifier);
+    if (!identifier) {
+      return false;
+    }
+
+    if (LSSetDefaultHandlerForURLScheme(CFSTR("http"), identifier) != noErr) {
+      return false;
+    }
+    if (LSSetDefaultHandlerForURLScheme(CFSTR("https"), identifier) != noErr) {
+      return false;
+    }
+    if (LSSetDefaultRoleHandlerForContentType(kUTTypeHTML, kLSRolesViewer,
+                                              identifier) != noErr) {
+      return false;
+    }
+  }
 
   // The CoreServicesUIAgent presents a dialog asking the user to confirm their
   // new default browser choice, but the agent sometimes orders the dialog
@@ -108,23 +139,38 @@ bool SetAsDefaultClientForScheme(const std::string& scheme) {
     return false;
   }
 
-  // We really do want the main bundle here since it makes sense to set an
-  // app shortcut as a default scheme handler.
-  NSURL* app_bundle = base::apple::MainBundleURL();
-  if (!app_bundle) {
-    return false;
+  if (@available(macOS 12, *)) {
+    // We really do want the main bundle here since it makes sense to set an
+    // app shortcut as a default scheme handler.
+    NSURL* app_bundle = base::apple::MainBundleURL();
+    if (!app_bundle) {
+      return false;
+    }
+
+    [NSWorkspace.sharedWorkspace
+        setDefaultApplicationAtURL:app_bundle
+              toOpenURLsWithScheme:base::SysUTF8ToNSString(scheme)
+                 completionHandler:^(NSError*){
+                 }];
+
+    // TODO(crbug.com/40248220): Passing empty completion handlers,
+    // above, is kinda broken, but given that this API is synchronous, nothing
+    // better can be done. This entire API should be rebuilt.
+    return true;
+  } else {
+    // We really do want the main bundle here since it makes sense to set an
+    // app shortcut as a default scheme handler.
+    NSString* identifier = base::apple::MainBundle().bundleIdentifier;
+    if (!identifier) {
+      return false;
+    }
+
+    NSString* scheme_ns = base::SysUTF8ToNSString(scheme);
+    OSStatus return_code =
+        LSSetDefaultHandlerForURLScheme(base::apple::NSToCFPtrCast(scheme_ns),
+                                        base::apple::NSToCFPtrCast(identifier));
+    return return_code == noErr;
   }
-
-  [NSWorkspace.sharedWorkspace
-      setDefaultApplicationAtURL:app_bundle
-            toOpenURLsWithScheme:base::SysUTF8ToNSString(scheme)
-               completionHandler:^(NSError*){
-               }];
-
-  // TODO(https://crbug.com/40248220): Passing empty completion handlers,
-  // above, is kinda broken, but given that this API is synchronous, nothing
-  // better can be done. This entire API should be rebuilt.
-  return true;
 }
 
 bool SetAsDefaultHandlerForUTType(const std::string& type) {
@@ -135,15 +181,30 @@ bool SetAsDefaultHandlerForUTType(const std::string& type) {
   if (!uttype) {
     return false;
   }
-  NSURL* app_bundle = base::apple::OuterBundleURL();
-  if (!app_bundle) {
-    return false;
+  if (@available(macOS 12, *)) {
+    NSURL* app_bundle = base::apple::OuterBundleURL();
+    if (!app_bundle) {
+      return false;
+    }
+    [NSWorkspace.sharedWorkspace setDefaultApplicationAtURL:app_bundle
+                                          toOpenContentType:uttype
+                                          completionHandler:^(NSError*){
+                                          }];
+    return true;
+  } else {
+    NSString* identifier = base::apple::OuterBundle().bundleIdentifier;
+    if (!identifier) {
+      return false;
+    }
+    NSString* type_ns = base::SysUTF8ToNSString(type);
+    // Set the default handler for `kLSRolesAll`, as being default
+    // `kLSRolesViewer` alone is not necessarily enough to make double-clicking
+    // in Finder open the file in Chrome for all file types.
+    OSStatus return_code = LSSetDefaultRoleHandlerForContentType(
+        base::apple::NSToCFPtrCast(type_ns), kLSRolesAll,
+        base::apple::NSToCFPtrCast(identifier));
+    return return_code == noErr;
   }
-  [NSWorkspace.sharedWorkspace setDefaultApplicationAtURL:app_bundle
-                                        toOpenContentType:uttype
-                                        completionHandler:^(NSError*){
-                                        }];
-  return true;
 }
 
 std::u16string GetApplicationNameForScheme(const GURL& url) {
@@ -169,8 +230,15 @@ std::vector<base::FilePath> GetAllApplicationPathsForURL(const GURL& url) {
     return {};
   }
 
-  NSArray* app_urls =
-      [NSWorkspace.sharedWorkspace URLsForApplicationsToOpenURL:ns_url];
+  NSArray* app_urls = nil;
+  if (@available(macos 12.0, *)) {
+    app_urls =
+        [NSWorkspace.sharedWorkspace URLsForApplicationsToOpenURL:ns_url];
+  } else {
+    app_urls = base::apple::CFToNSOwnershipCast(LSCopyApplicationURLsForURL(
+        base::apple::NSToCFPtrCast(ns_url), kLSRolesAll));
+  }
+
   if (app_urls.count == 0) {
     return {};
   }
@@ -292,39 +360,13 @@ DefaultWebClientState IsDefaultHandlerForUTType(const std::string& type) {
   return NOT_DEFAULT;
 }
 
-std::string GetDirectLaunchUrlScheme() {
-  // IMPORTANT: This logic is duplicated in build/apple/tweak_info_plist.py
-  // to configure the Info.plist at build time, and in
-  // chrome/installer/mac/signing/modification.py to remove it for non-stable
-  // channels during signing. Ensure all are kept in sync.
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-  if (!chrome::IsSideBySideCapable()) {
-    // If the current Chrome build is not capable of side-by-side installation
-    // (e.g., it's a standard stable release), then its URL scheme should
-    // simply be "google-chrome" without any channel suffix.
-    return "google-chrome";
-  }
-  switch (chrome::GetChannel()) {
-    case version_info::Channel::CANARY:
-    case version_info::Channel::DEV:
-    case version_info::Channel::BETA:
-      return "";
-    case version_info::Channel::STABLE:
-    case version_info::Channel::UNKNOWN:
-      return "google-chrome";
-  }
-#else
-  return "chromium";
-#endif
-}
-
 namespace internal {
 
 DefaultWebClientSetPermission GetPlatformSpecificDefaultWebClientSetPermission(
     WebClientSetMethod method) {
   // This should be `SET_DEFAULT_INTERACTIVE`, but that changes how
   // `DefaultBrowserWorker` and `DefaultSchemeClientWorker` work.
-  // TODO(https://crbug.com/40248220): Migrate all callers to the new API,
+  // TODO(crbug.com/40248220): Migrate all callers to the new API,
   // migrate all the Mac code to integrate with it, and change this to return
   // the correct value.
   return SET_DEFAULT_UNATTENDED;

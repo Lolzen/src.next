@@ -6,21 +6,18 @@ package org.chromium.chrome.browser.tasks.tab_management;
 
 import androidx.recyclerview.widget.RecyclerView;
 
-import org.chromium.base.supplier.NonNullObservableSupplier;
-import org.chromium.base.supplier.ObservableSuppliers;
-import org.chromium.base.supplier.SettableNonNullObservableSupplier;
-import org.chromium.build.annotations.NullMarked;
+import org.chromium.base.supplier.ObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplierImpl;
 
 /**
  * An on scroll listener that reports non-zero y offsets to a callback. Updates are only provided if
  * the state changes.
  */
-@NullMarked
 public class TabListOnScrollListener extends RecyclerView.OnScrollListener {
-    private final SettableNonNullObservableSupplier<Boolean> mYOffsetNonZeroSupplier =
-            ObservableSuppliers.createNonNull(false);
+    private ObservableSupplierImpl<Boolean> mYOffsetNonZeroSupplier =
+            new ObservableSupplierImpl<>();
 
-    public NonNullObservableSupplier<Boolean> getYOffsetNonZeroSupplier() {
+    public ObservableSupplier<Boolean> getYOffsetNonZeroSupplier() {
         return mYOffsetNonZeroSupplier;
     }
 

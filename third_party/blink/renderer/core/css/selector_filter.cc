@@ -44,6 +44,12 @@ namespace {
 // .article won't match <article> elements.
 enum { kTagNameSalt = 1, kIdSalt = 3, kClassSalt = 5, kAttributeSalt = 7 };
 
+inline bool IsExcludedAttribute(const AtomicString& name) {
+  return name == html_names::kClassAttr.LocalName() ||
+         name == html_names::kIdAttr.LocalName() ||
+         name == html_names::kStyleAttr.LocalName();
+}
+
 template <class Func>
 inline void CollectElementIdentifierHashes(const Element& element,
                                            Func&& func) {
@@ -60,8 +66,7 @@ inline void CollectElementIdentifierHashes(const Element& element,
   AttributeCollection attributes = element.AttributesWithoutUpdate();
   for (const auto& attribute_item : attributes) {
     const AtomicString& attribute_name = attribute_item.LocalName();
-    if (Element::IsExcludedAttribute(attribute_item.GetName(),
-                                     Element::kExcludeStandardAttributesOnly)) {
+    if (IsExcludedAttribute(attribute_name)) {
       continue;
     }
     if (attribute_name.IsLowerASCII()) {
@@ -103,11 +108,10 @@ inline void CollectDescendantSelectorIdentifierHashes(
     case CSSSelector::kAttributeBegin:
     case CSSSelector::kAttributeEnd:
     case CSSSelector::kAttributeHyphen: {
-      if (Element::IsExcludedAttribute(
-              selector.Attribute(), Element::kExcludeStandardAttributesOnly)) {
+      auto attribute_name = selector.Attribute().LocalName();
+      if (IsExcludedAttribute(attribute_name)) {
         break;
       }
-      const AtomicString& attribute_name = selector.Attribute().LocalName();
       auto lower_name = attribute_name.IsLowerASCII()
                             ? attribute_name
                             : attribute_name.LowerASCII();
@@ -120,10 +124,6 @@ inline void CollectDescendantSelectorIdentifierHashes(
         case CSSSelector::kPseudoParent: {
           // If we have a one-element :is(), :where() or &, treat it
           // as if the given list was written out as a normal descendant.
-          //
-          // TODO: Consider whether we can do the same here as for subject
-          // filters further down, so that e.g. :is(.a.b, .c.a) would at least
-          // add the hash for .a.
           const CSSSelector* selector_list = selector.SelectorListOrParent();
           if (selector_list &&
               CSSSelectorList::Next(*selector_list) == nullptr) {
@@ -171,7 +171,6 @@ void CollectDescendantCompoundSelectorIdentifierHashes(
         break;
       case CSSSelector::kDirectAdjacent:
       case CSSSelector::kIndirectAdjacent:
-      case CSSSelector::kPseudoChild:
         skip_over_subselectors = true;
         break;
       case CSSSelector::kShadowSlot:
@@ -194,80 +193,6 @@ void CollectDescendantCompoundSelectorIdentifierHashes(
 }
 
 }  // namespace
-
-void SelectorFilter::CollectSubjectIdentifierHashes(
-    const CSSSelector* selector,
-    Element::AttributesToExcludeHashesFor attributes_to_exclude,
-    Element::TinyBloomFilter& subject_filter) {
-  for (const CSSSelector* current = selector; current;
-       current = current->NextSimpleSelector()) {
-    switch (current->Match()) {
-      case CSSSelector::kClass:
-        if (!current->Value().empty()) {
-          subject_filter |= Element::FilterForString(current->Value());
-        }
-        break;
-      case CSSSelector::kAttributeExact:
-      case CSSSelector::kAttributeSet:
-      case CSSSelector::kAttributeList:
-      case CSSSelector::kAttributeContain:
-      case CSSSelector::kAttributeBegin:
-      case CSSSelector::kAttributeEnd:
-      case CSSSelector::kAttributeHyphen: {
-        if (Element::IsExcludedAttribute(current->Attribute(),
-                                         attributes_to_exclude)) {
-          break;
-        }
-        subject_filter |= Element::FilterForAttribute(current->Attribute());
-        break;
-      }
-      case CSSSelector::kPseudoClass:
-        switch (current->GetPseudoType()) {
-          case CSSSelector::kPseudoIs:
-          case CSSSelector::kPseudoWhere:
-          case CSSSelector::kPseudoParent: {
-            // If we have a :is(), :where() or &, and all alternatives share
-            // one or more bits (for instance because there is only one
-            // alternative), we can require those bits.
-            //
-            // If the list is empty, this ends up requiring all bits, which is
-            // fine (since :is() can never match anything anyway). The exception
-            // is if an empty list signifies parent-for-scope.
-            if (current->GetPseudoType() == CSSSelector::kPseudoParent &&
-                !current->SelectorListOrParent()) {
-              // & for @scope (as opposed to & for nesting). We don't know
-              // what this ends up pointing to, so we also cannot add
-              // anything to the filter.
-            } else {
-              Element::TinyBloomFilter intersection =
-                  ~Element::TinyBloomFilter{0};
-              for (const CSSSelector* sub_selector =
-                       current->SelectorListOrParent();
-                   sub_selector;
-                   sub_selector = CSSSelectorList::Next(*sub_selector)) {
-                Element::TinyBloomFilter sub_filter = 0;
-                CollectSubjectIdentifierHashes(
-                    sub_selector, attributes_to_exclude, sub_filter);
-                intersection &= sub_filter;
-              }
-              subject_filter |= intersection;
-            }
-            break;
-          }
-          default:
-            break;
-        }
-        break;
-      default:
-        break;
-    }
-
-    // Don't look past the subject.
-    if (current->Relation() != CSSSelector::kSubSelector) {
-      break;
-    }
-  }
-}
 
 void SelectorFilter::PushAllParentsOf(TreeScope& tree_scope) {
   PushAncestors(tree_scope.RootNode());
@@ -310,15 +235,10 @@ void SelectorFilter::PushParent(Element& parent) {
 void SelectorFilter::CollectIdentifierHashes(
     const CSSSelector& selector,
     const StyleScope* style_scope,
-    Vector<uint16_t>& bloom_hash_backing,
-    Element::TinyBloomFilter& subject_filter) {
+    Vector<uint16_t>& bloom_hash_backing) {
   CollectDescendantCompoundSelectorIdentifierHashes(
       selector.NextSimpleSelector(), selector.Relation(), style_scope,
       bloom_hash_backing);
-  subject_filter = 0;
-  CollectSubjectIdentifierHashes(
-      &selector, Element::kExcludeAllLazilySynchronizedAttributes,
-      subject_filter);
 }
 
 void SelectorFilter::Trace(Visitor* visitor) const {

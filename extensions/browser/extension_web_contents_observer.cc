@@ -27,6 +27,7 @@
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_features.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/common/mojom/view_type.mojom.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
@@ -116,9 +117,17 @@ ExtensionWebContentsObserver::ExtensionWebContentsObserver(
     : content::WebContentsObserver(web_contents),
       browser_context_(web_contents->GetBrowserContext()),
       dispatcher_(browser_context_),
-      initialized_(false) {}
+      initialized_(false) {
+  dispatcher_.set_delegate(this);
+}
 
 ExtensionWebContentsObserver::~ExtensionWebContentsObserver() {
+}
+
+content::WebContents* ExtensionWebContentsObserver::GetAssociatedWebContents()
+    const {
+  DCHECK(initialized_);
+  return web_contents();
 }
 
 void ExtensionWebContentsObserver::InitializeRenderFrame(
@@ -176,7 +185,7 @@ void ExtensionWebContentsObserver::SetUpRenderFrameHost(
   // Note: Keep this logic in sync with related logic in
   // ChromeContentBrowserClient::RegisterNonNetworkSubresourceURLLoaderFactories.
   if (type == Manifest::TYPE_EXTENSION ||
-      type == Manifest::Type::kLegacyPackagedApp) {
+      type == Manifest::TYPE_LEGACY_PACKAGED_APP) {
     util::InitializeFileSchemeAccessForExtension(
         render_frame_host->GetProcess()->GetDeprecatedID(), extension->id(),
         browser_context_);
@@ -194,6 +203,16 @@ void ExtensionWebContentsObserver::SetUpRenderFrameHost(
       ->ActivateExtensionInProcess(*extension, render_frame_host->GetProcess());
 }
 
+void ExtensionWebContentsObserver::RenderFrameCreated(
+    content::RenderFrameHost* render_frame_host) {
+  if (base::FeatureList::IsEnabled(
+          extensions_features::kRemoveCoreSiteInstance)) {
+    // If the primordial SiteInstance in ProcessManager is not used, we need
+    // to wait until `ReadyToCommitNavigation()` to set up the render frame.
+    return;
+  }
+  SetUpRenderFrameHost(render_frame_host);
+}
 void ExtensionWebContentsObserver::RenderFrameDeleted(
     content::RenderFrameHost* render_frame_host) {
   DCHECK(initialized_);
@@ -205,7 +224,10 @@ void ExtensionWebContentsObserver::RenderFrameDeleted(
 
 void ExtensionWebContentsObserver::ReadyToCommitNavigation(
     content::NavigationHandle* navigation_handle) {
-  SetUpRenderFrameHost(navigation_handle->GetRenderFrameHost());
+  if (base::FeatureList::IsEnabled(
+          extensions_features::kRemoveCoreSiteInstance)) {
+    SetUpRenderFrameHost(navigation_handle->GetRenderFrameHost());
+  }
 
   ScriptInjectionTracker::ReadyToCommitNavigation(PassKey(), navigation_handle);
 
@@ -300,6 +322,36 @@ void ExtensionWebContentsObserver::MediaPictureInPictureChanged(
     } else {
       process_manager->DecrementLazyKeepaliveCount(extension, Activity::MEDIA,
                                                    Activity::kPictureInPicture);
+    }
+  }
+}
+
+void ExtensionWebContentsObserver::PepperInstanceCreated() {
+  DCHECK(initialized_);
+  if (GetViewType(web_contents()) ==
+      mojom::ViewType::kExtensionBackgroundPage) {
+    ProcessManager* const process_manager =
+        ProcessManager::Get(browser_context_);
+    const Extension* const extension =
+        process_manager->GetExtensionForWebContents(web_contents());
+    if (extension) {
+      process_manager->IncrementLazyKeepaliveCount(
+          extension, Activity::PEPPER_API, std::string());
+    }
+  }
+}
+
+void ExtensionWebContentsObserver::PepperInstanceDeleted() {
+  DCHECK(initialized_);
+  if (GetViewType(web_contents()) ==
+      mojom::ViewType::kExtensionBackgroundPage) {
+    ProcessManager* const process_manager =
+        ProcessManager::Get(browser_context_);
+    const Extension* const extension =
+        process_manager->GetExtensionForWebContents(web_contents());
+    if (extension) {
+      process_manager->DecrementLazyKeepaliveCount(
+          extension, Activity::PEPPER_API, std::string());
     }
   }
 }

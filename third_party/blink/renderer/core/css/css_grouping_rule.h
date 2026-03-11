@@ -25,16 +25,13 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/css_rule.h"
-#include "third_party/blink/renderer/core/css/parser/css_nesting_type.h"
-#include "third_party/blink/renderer/platform/wtf/casting.h"
+#include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
 
 class ExceptionState;
 class CSSRuleList;
-class StyleRule;
-class StyleRuleGroup;
 
 StyleRule* FindClosestParentStyleRuleOrNull(CSSRule* parent);
 
@@ -65,19 +62,17 @@ StyleRuleBase* ParseRuleForInsert(const ExecutionContext* execution_context,
                                   ExceptionState& exception_state);
 
 // See CSSStyleRule/CSSGroupingRule::QuietlyInsertRule.
-template <typename VectorType>
 void ParseAndQuietlyInsertRule(
     const ExecutionContext*,
     const String& rule_string,
     unsigned index,
     CSSRule& parent_rule,
-    VectorType& child_rules,
+    HeapVector<Member<StyleRuleBase>>& child_rules,
     HeapVector<Member<CSSRule>>& child_rule_cssom_wrappers);
 
 // See CSSStyleRule/CSSGroupingRule::QuietlyDeleteRule.
-template <typename VectorType>
 void QuietlyDeleteRule(unsigned index,
-                       VectorType& child_rules,
+                       HeapVector<Member<StyleRuleBase>>& child_rules,
                        HeapVector<Member<CSSRule>>& child_rule_cssom_wrappers);
 
 class CORE_EXPORT CSSGroupingRule : public CSSRule {
@@ -137,18 +132,13 @@ struct DowncastTraits<CSSGroupingRule> {
       // CSSGroupingRule:
       case CSSRule::kFunctionRule:
       case CSSRule::kLayerBlockRule:
-      case CSSRule::kMixinRule:
       case CSSRule::kPageRule:
-      case CSSRule::kNavigationRule:
       case CSSRule::kScopeRule:
       case CSSRule::kStartingStyleRule:
         return true;
       // go/keep-sorted start
-      case CSSRule::kApplyMixinRule:
       case CSSRule::kCharsetRule:
-      case CSSRule::kContentsMixinRule:
       case CSSRule::kCounterStyleRule:
-      case CSSRule::kCustomMediaRule:
       case CSSRule::kFontFaceRule:
       case CSSRule::kFontFeatureRule:
       case CSSRule::kFontFeatureValuesRule:
@@ -163,7 +153,6 @@ struct DowncastTraits<CSSGroupingRule> {
       case CSSRule::kNestedDeclarationsRule:
       case CSSRule::kPositionTryRule:
       case CSSRule::kPropertyRule:
-      case CSSRule::kRouteRule:
       case CSSRule::kStyleRule:
       case CSSRule::kViewTransitionRule:
         // go/keep-sorted end

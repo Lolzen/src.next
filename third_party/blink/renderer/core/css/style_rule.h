@@ -26,6 +26,7 @@
 
 #include "base/bits.h"
 #include "base/compiler_specific.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/types/pass_key.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/container_query.h"
@@ -34,22 +35,19 @@
 #include "third_party/blink/renderer/core/css/css_syntax_definition.h"
 #include "third_party/blink/renderer/core/css/css_variable_data.h"
 #include "third_party/blink/renderer/core/css/media_list.h"
-#include "third_party/blink/renderer/core/css/mixin_parameter_bindings.h"
 #include "third_party/blink/renderer/core/css/parser/css_at_rule_id.h"
 #include "third_party/blink/renderer/core/css/parser/css_lazy_property_parser.h"
 #include "third_party/blink/renderer/core/css/parser/css_nesting_type.h"
 #include "third_party/blink/renderer/core/css/style_scope.h"
-#include "third_party/blink/renderer/core/route_matching/navigation_preposition.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 
 namespace blink {
 
+class CascadeLayer;
 class CSSRule;
 class CSSStyleSheet;
-class MixinParameterBindings;
 class ExecutionContext;
-class NavigationQuery;
 
 class CORE_EXPORT StyleRuleBase : public GarbageCollected<StyleRuleBase> {
  public:
@@ -65,7 +63,6 @@ class CORE_EXPORT StyleRuleBase : public GarbageCollected<StyleRuleBase> {
     kPage,
     kPageMargin,
     kProperty,
-    kNavigation,
     kKeyframes,
     kKeyframe,
     kLayerBlock,
@@ -82,10 +79,7 @@ class CORE_EXPORT StyleRuleBase : public GarbageCollected<StyleRuleBase> {
     kFunction,
     kMixin,
     kApplyMixin,
-    kContents,
     kPositionTry,
-    kCustomMedia,
-    kRoute,
   };
 
   // Name of a cascade layer as given by an @layer rule, split at '.' into a
@@ -122,8 +116,6 @@ class CORE_EXPORT StyleRuleBase : public GarbageCollected<StyleRuleBase> {
   bool IsPageRule() const { return GetType() == kPage; }
   bool IsPageRuleMargin() const { return GetType() == kPageMargin; }
   bool IsPropertyRule() const { return GetType() == kProperty; }
-  bool IsRouteRule() const { return GetType() == kRoute; }
-  bool IsNavigationRule() const { return GetType() == kNavigation; }
   bool IsStyleRule() const { return GetType() == kStyle; }
   bool IsScopeRule() const { return GetType() == kScope; }
   bool IsSupportsRule() const { return GetType() == kSupports; }
@@ -137,9 +129,9 @@ class CORE_EXPORT StyleRuleBase : public GarbageCollected<StyleRuleBase> {
   bool IsFunctionRule() const { return GetType() == kFunction; }
   bool IsMixinRule() const { return GetType() == kMixin; }
   bool IsApplyMixinRule() const { return GetType() == kApplyMixin; }
-  bool IsContentsRule() const { return GetType() == kContents; }
   bool IsPositionTryRule() const { return GetType() == kPositionTry; }
-  bool IsCustomMediaRule() const { return GetType() == kCustomMedia; }
+
+  StyleRuleBase* Copy() const;
 
   // FIXME: There shouldn't be any need for the null parent version.
   CSSRule* CreateCSSOMWrapper(
@@ -150,11 +142,8 @@ class CORE_EXPORT StyleRuleBase : public GarbageCollected<StyleRuleBase> {
                               CSSRule* parent_rule,
                               bool trigger_use_counters = false) const;
 
-  // Makes a new deep copy of the StyleRule under the new parent
-  // and with the given custom @env bindings. For new_parent,
-  // see CSSSelector::Renest().
-  StyleRuleBase* Clone(StyleRule* new_parent,
-                       const MixinParameterBindings* mixin_parameter_bindings);
+  // See CSSSelector::Renest.
+  StyleRuleBase* Renest(StyleRule* new_parent);
 
   void Trace(Visitor*) const;
   void TraceAfterDispatch(blink::Visitor* visitor) const {}
@@ -198,14 +187,11 @@ class CORE_EXPORT StyleRule : public StyleRuleBase {
 
  public:
   // Use these to allocate the right amount of memory for the StyleRule.
-  static StyleRule* Create(
-      base::span<CSSSelector> selectors,
-      CSSPropertyValueSet* properties,
-      const MixinParameterBindings* mixin_parameter_bindings = nullptr) {
+  static StyleRule* Create(base::span<CSSSelector> selectors,
+                           CSSPropertyValueSet* properties) {
     return MakeGarbageCollected<StyleRule>(
         AdditionalBytesForSelectors(selectors.size()),
-        base::PassKey<StyleRule>(), selectors, properties,
-        mixin_parameter_bindings);
+        base::PassKey<StyleRule>(), selectors, properties);
   }
   static StyleRule* Create(base::span<CSSSelector> selectors,
                            CSSLazyPropertyParser* lazy_property_parser) {
@@ -234,11 +220,10 @@ class CORE_EXPORT StyleRule : public StyleRuleBase {
   // additional bytes after the StyleRule (flattened_size is the number of
   // selectors). Do not call them directly; they are public only so that
   // MakeGarbageCollected() can call them. Instead, use Create() above or
-  // Clone() below, as appropriate.
+  // Copy() below, as appropriate.
   StyleRule(base::PassKey<StyleRule>,
             base::span<CSSSelector> selector_vector,
-            CSSPropertyValueSet*,
-            const MixinParameterBindings*);
+            CSSPropertyValueSet*);
   StyleRule(base::PassKey<StyleRule>,
             base::span<CSSSelector> selector_vector,
             CSSLazyPropertyParser*);
@@ -248,6 +233,7 @@ class CORE_EXPORT StyleRule : public StyleRuleBase {
   StyleRule(base::PassKey<StyleRule>,
             base::span<CSSSelector> selector_vector,
             StyleRule&&);
+  StyleRule(const StyleRule&, size_t flattened_size);
   StyleRule(const StyleRule&) = delete;
   ~StyleRule();
 
@@ -259,10 +245,10 @@ class CORE_EXPORT StyleRule : public StyleRuleBase {
   // Partial subset of the CSSSelector API.
   const CSSSelector* FirstSelector() const { return SelectorArray(); }
   const CSSSelector& SelectorAt(wtf_size_t index) const {
-    return UNSAFE_BUFFERS(SelectorArray()[index]);
+    return UNSAFE_TODO(SelectorArray()[index]);
   }
   CSSSelector& MutableSelectorAt(wtf_size_t index) {
-    return UNSAFE_BUFFERS(SelectorArray()[index]);
+    return UNSAFE_TODO(SelectorArray()[index]);
   }
   wtf_size_t SelectorIndex(const CSSSelector& selector) const {
     return static_cast<wtf_size_t>(&selector - FirstSelector());
@@ -282,6 +268,17 @@ class CORE_EXPORT StyleRule : public StyleRuleBase {
   const CSSPropertyValueSet& Properties() const;
   MutableCSSPropertyValueSet& MutableProperties();
 
+  StyleRule* Copy() const {
+    const CSSSelector* selector_array = SelectorArray();
+    size_t flattened_size = 1;
+    while (!UNSAFE_TODO(selector_array[flattened_size - 1])
+                .IsLastInSelectorList()) {
+      ++flattened_size;
+    }
+    return MakeGarbageCollected<StyleRule>(
+        AdditionalBytesForSelectors(flattened_size), *this, flattened_size);
+  }
+
   static unsigned AverageSizeInBytes();
 
   // Helper function to avoid parsing lazy properties when not needed.
@@ -294,9 +291,6 @@ class CORE_EXPORT StyleRule : public StyleRuleBase {
   }
   GCedHeapVector<Member<StyleRuleBase>>* ChildRules() {
     return child_rules_.Get();
-  }
-  const MixinParameterBindings* GetMixinParameterBindings() const {
-    return mixin_parameter_bindings_;
   }
   void EnsureChildRules() {
     // Allocate the child rule vector only when we need it,
@@ -321,9 +315,9 @@ class CORE_EXPORT StyleRule : public StyleRuleBase {
   bool HasParsedProperties() const;
 
   CSSSelector* SelectorArray() {
-    return reinterpret_cast<CSSSelector*>(base::bits::AlignUp(
-        UNSAFE_BUFFERS(reinterpret_cast<uint8_t*>(this + 1)),
-        alignof(CSSSelector)));
+    return reinterpret_cast<CSSSelector*>(
+        base::bits::AlignUp(UNSAFE_TODO(reinterpret_cast<uint8_t*>(this + 1)),
+                            alignof(CSSSelector)));
   }
   const CSSSelector* SelectorArray() const {
     return const_cast<StyleRule*>(this)->SelectorArray();
@@ -332,7 +326,6 @@ class CORE_EXPORT StyleRule : public StyleRuleBase {
   mutable Member<CSSPropertyValueSet> properties_;
   mutable Member<CSSLazyPropertyParser> lazy_property_parser_;
   Member<GCedHeapVector<Member<StyleRuleBase>>> child_rules_;
-  Member<const MixinParameterBindings> mixin_parameter_bindings_;
 };
 
 class CORE_EXPORT StyleRuleFontFace : public StyleRuleBase {
@@ -343,10 +336,18 @@ class CORE_EXPORT StyleRuleFontFace : public StyleRuleBase {
   const CSSPropertyValueSet& Properties() const { return *properties_; }
   MutableCSSPropertyValueSet& MutableProperties();
 
+  StyleRuleFontFace* Copy() const {
+    return MakeGarbageCollected<StyleRuleFontFace>(*this);
+  }
+
+  void SetCascadeLayer(const CascadeLayer* layer) { layer_ = layer; }
+  const CascadeLayer* GetCascadeLayer() const { return layer_.Get(); }
+
   void TraceAfterDispatch(blink::Visitor*) const;
 
  private:
   Member<CSSPropertyValueSet> properties_;  // Cannot be null.
+  Member<const CascadeLayer> layer_;
 };
 
 class CORE_EXPORT StyleRuleProperty : public StyleRuleBase {
@@ -364,11 +365,19 @@ class CORE_EXPORT StyleRuleProperty : public StyleRuleBase {
   bool SetNameText(const ExecutionContext* execution_context,
                    const String& name_text);
 
+  void SetCascadeLayer(const CascadeLayer* layer) { layer_ = layer; }
+  const CascadeLayer* GetCascadeLayer() const { return layer_.Get(); }
+
+  StyleRuleProperty* Copy() const {
+    return MakeGarbageCollected<StyleRuleProperty>(*this);
+  }
+
   void TraceAfterDispatch(blink::Visitor*) const;
 
  private:
   String name_;
   Member<CSSPropertyValueSet> properties_;
+  Member<const CascadeLayer> layer_;
 };
 
 class CORE_EXPORT StyleRuleGroup : public StyleRuleBase {
@@ -385,7 +394,7 @@ class CORE_EXPORT StyleRuleGroup : public StyleRuleBase {
 
  protected:
   StyleRuleGroup(RuleType, HeapVector<Member<StyleRuleBase>> rules);
-  StyleRuleGroup(const StyleRuleGroup&) = delete;
+  StyleRuleGroup(const StyleRuleGroup&);
 
  private:
   HeapVector<Member<StyleRuleBase>> child_rules_;
@@ -394,7 +403,11 @@ class CORE_EXPORT StyleRuleGroup : public StyleRuleBase {
 class CORE_EXPORT StyleRuleScope : public StyleRuleGroup {
  public:
   StyleRuleScope(const StyleScope&, HeapVector<Member<StyleRuleBase>> rules);
-  StyleRuleScope(const StyleRuleScope&) = delete;
+  StyleRuleScope(const StyleRuleScope&);
+
+  StyleRuleScope* Copy() const {
+    return MakeGarbageCollected<StyleRuleScope>(*this);
+  }
 
   void TraceAfterDispatch(blink::Visitor*) const;
 
@@ -408,12 +421,16 @@ class CORE_EXPORT StyleRuleScope : public StyleRuleGroup {
 class CORE_EXPORT StyleRuleLayerBlock : public StyleRuleGroup {
  public:
   StyleRuleLayerBlock(LayerName name, HeapVector<Member<StyleRuleBase>> rules);
-  StyleRuleLayerBlock(const StyleRuleLayerBlock&) = delete;
+  StyleRuleLayerBlock(const StyleRuleLayerBlock&);
   StyleRuleLayerBlock(const StyleRuleLayerBlock&,
                       HeapVector<Member<StyleRuleBase>> rules);
 
   const LayerName& GetName() const { return name_; }
   String GetNameAsString() const;
+
+  StyleRuleLayerBlock* Copy() const {
+    return MakeGarbageCollected<StyleRuleLayerBlock>(*this);
+  }
 
   void TraceAfterDispatch(blink::Visitor*) const;
 
@@ -430,6 +447,10 @@ class CORE_EXPORT StyleRuleLayerStatement : public StyleRuleBase {
   const Vector<LayerName>& GetNames() const { return names_; }
   Vector<String> GetNamesAsStrings() const;
 
+  StyleRuleLayerStatement* Copy() const {
+    return MakeGarbageCollected<StyleRuleLayerStatement>(*this);
+  }
+
   void TraceAfterDispatch(blink::Visitor*) const;
 
  private:
@@ -438,13 +459,12 @@ class CORE_EXPORT StyleRuleLayerStatement : public StyleRuleBase {
 
 class StyleRulePage : public StyleRuleGroup {
  public:
-  StyleRulePage(const CSSSelectorList* selector_list,
+  StyleRulePage(CSSSelectorList* selector_list,
                 CSSPropertyValueSet* properties,
                 HeapVector<Member<StyleRuleBase>> child_rules);
-  StyleRulePage(const StyleRulePage&) = delete;
+  StyleRulePage(const StyleRulePage&);
 
   const CSSSelector* Selector() const { return selector_list_->First(); }
-  const CSSSelectorList* SelectorList() const { return selector_list_; }
   const CSSPropertyValueSet& Properties() const { return *properties_; }
   MutableCSSPropertyValueSet& MutableProperties();
 
@@ -452,11 +472,19 @@ class StyleRulePage : public StyleRuleGroup {
     selector_list_ = selectors;
   }
 
+  StyleRulePage* Copy() const {
+    return MakeGarbageCollected<StyleRulePage>(*this);
+  }
+
+  void SetCascadeLayer(const CascadeLayer* layer) { layer_ = layer; }
+  const CascadeLayer* GetCascadeLayer() const { return layer_.Get(); }
+
   void TraceAfterDispatch(blink::Visitor*) const;
 
  private:
   Member<CSSPropertyValueSet> properties_;  // Cannot be null.
-  Member<const CSSSelectorList> selector_list_;
+  Member<const CascadeLayer> layer_;
+  Member<CSSSelectorList> selector_list_;
 };
 
 class StyleRulePageMargin : public StyleRuleBase {
@@ -467,6 +495,10 @@ class StyleRulePageMargin : public StyleRuleBase {
   const CSSPropertyValueSet& Properties() const { return *properties_; }
   MutableCSSPropertyValueSet& MutableProperties();
   CSSAtRuleID ID() const { return id_; }
+
+  StyleRulePageMargin* Copy() const {
+    return MakeGarbageCollected<StyleRulePageMargin>(*this);
+  }
 
   void TraceAfterDispatch(blink::Visitor*) const;
 
@@ -479,7 +511,6 @@ class StyleRulePageMargin : public StyleRuleBase {
 // above.
 class CORE_EXPORT StyleRuleCondition : public StyleRuleGroup {
  public:
-  StyleRuleCondition(const StyleRuleCondition&) = delete;
   String ConditionText() const { return condition_text_; }
 
   void TraceAfterDispatch(blink::Visitor* visitor) const {
@@ -491,13 +522,14 @@ class CORE_EXPORT StyleRuleCondition : public StyleRuleGroup {
   StyleRuleCondition(RuleType,
                      const String& condition_text,
                      HeapVector<Member<StyleRuleBase>> rules);
+  StyleRuleCondition(const StyleRuleCondition&);
   String condition_text_;
 };
 
 class CORE_EXPORT StyleRuleMedia : public StyleRuleCondition {
  public:
   StyleRuleMedia(const MediaQuerySet*, HeapVector<Member<StyleRuleBase>> rules);
-  StyleRuleMedia(const StyleRuleMedia&) = delete;
+  StyleRuleMedia(const StyleRuleMedia&) = default;
   StyleRuleMedia(const StyleRuleMedia&,
                  HeapVector<Member<StyleRuleBase>> rules);
 
@@ -505,6 +537,10 @@ class CORE_EXPORT StyleRuleMedia : public StyleRuleCondition {
 
   void SetMediaQueries(const MediaQuerySet* media_queries) {
     media_queries_ = media_queries;
+  }
+
+  StyleRuleMedia* Copy() const {
+    return MakeGarbageCollected<StyleRuleMedia>(*this);
   }
 
   void TraceAfterDispatch(blink::Visitor*) const;
@@ -518,11 +554,15 @@ class StyleRuleSupports : public StyleRuleCondition {
   StyleRuleSupports(const String& condition_text,
                     bool condition_is_supported,
                     HeapVector<Member<StyleRuleBase>> rules);
-  StyleRuleSupports(const StyleRuleSupports&) = delete;
+  StyleRuleSupports(const StyleRuleSupports&);
   StyleRuleSupports(const StyleRuleSupports&,
                     HeapVector<Member<StyleRuleBase>> rules);
 
   bool ConditionIsSupported() const { return condition_is_supported_; }
+  StyleRuleSupports* Copy() const {
+    return MakeGarbageCollected<StyleRuleSupports>(*this);
+  }
+
   void SetConditionText(const ExecutionContext*, String);
 
   void TraceAfterDispatch(blink::Visitor* visitor) const {
@@ -536,15 +576,17 @@ class StyleRuleSupports : public StyleRuleCondition {
 class CORE_EXPORT StyleRuleContainer : public StyleRuleCondition {
  public:
   StyleRuleContainer(ContainerQuery&, HeapVector<Member<StyleRuleBase>> rules);
-  StyleRuleContainer(const StyleRuleContainer&) = delete;
+  StyleRuleContainer(const StyleRuleContainer&);
   StyleRuleContainer(const StyleRuleContainer&,
                      HeapVector<Member<StyleRuleBase>> rules);
 
   ContainerQuery& GetContainerQuery() const { return *container_query_; }
 
-  void SetConditionText(const ExecutionContext*,
-                        StyleSheetContents* parent_contents,
-                        String);
+  StyleRuleContainer* Copy() const {
+    return MakeGarbageCollected<StyleRuleContainer>(*this);
+  }
+
+  void SetConditionText(const ExecutionContext*, String);
 
   void TraceAfterDispatch(blink::Visitor*) const;
 
@@ -552,31 +594,14 @@ class CORE_EXPORT StyleRuleContainer : public StyleRuleCondition {
   Member<ContainerQuery> container_query_;
 };
 
-class StyleRuleNavigation : public StyleRuleCondition {
- public:
-  StyleRuleNavigation(NavigationQuery*,
-                      HeapVector<Member<StyleRuleBase>> child_rules);
-  StyleRuleNavigation(const StyleRuleNavigation&) = delete;
-  StyleRuleNavigation(const StyleRuleNavigation&,
-                      HeapVector<Member<StyleRuleBase>>);
-
-  void TraceAfterDispatch(Visitor*) const;
-
-  const NavigationQuery& GetNavigationQuery() const {
-    return *navigation_query_;
-  }
-
- private:
-  Member<NavigationQuery> navigation_query_;
-};
-
 class StyleRuleStartingStyle : public StyleRuleGroup {
  public:
   explicit StyleRuleStartingStyle(HeapVector<Member<StyleRuleBase>> rules);
-  StyleRuleStartingStyle(const StyleRuleStartingStyle&) = delete;
-  StyleRuleStartingStyle(const StyleRuleStartingStyle& other,
-                         HeapVector<Member<StyleRuleBase>> rules)
-      : StyleRuleStartingStyle(std::move(rules)) {}
+  StyleRuleStartingStyle(const StyleRuleStartingStyle&) = default;
+
+  StyleRuleStartingStyle* Copy() const {
+    return MakeGarbageCollected<StyleRuleStartingStyle>(*this);
+  }
 
   void TraceAfterDispatch(blink::Visitor* visitor) const {
     StyleRuleGroup::TraceAfterDispatch(visitor);
@@ -635,9 +660,12 @@ class CORE_EXPORT StyleRuleFunction : public StyleRuleGroup {
                     CSSSyntaxDefinition return_type);
   StyleRuleFunction(const StyleRuleFunction&) = delete;
 
-  const AtomicString& Name() const { return name_; }
+  const AtomicString& GetName() const { return name_; }
   const HeapVector<Parameter>& GetParameters() const { return parameters_; }
   const CSSSyntaxDefinition& GetReturnType() const { return return_type_; }
+
+  void SetCascadeLayer(const CascadeLayer* layer) { layer_ = layer; }
+  const CascadeLayer* GetCascadeLayer() const { return layer_.Get(); }
 
   void TraceAfterDispatch(blink::Visitor*) const;
 
@@ -645,118 +673,40 @@ class CORE_EXPORT StyleRuleFunction : public StyleRuleGroup {
   AtomicString name_;
   HeapVector<Parameter> parameters_;
   CSSSyntaxDefinition return_type_;
+  Member<const CascadeLayer> layer_;
 };
 
 // An @mixin rule, representing a CSS mixin. We store all of the rules
-// and declarations in child_rules_ as usual (but with their selectors
-// pointing to a fake parent rule; see comment in
-// CSSParserImpl::ConsumeMixinRule()), and when @apply comes,
-// we clone all the children and reparent them into the point of @apply.
-class CORE_EXPORT StyleRuleMixin : public StyleRuleGroup {
+// and declarations under a dummy rule that serves as the parent;
+// when @apply comes, we clone all the children below that rule and
+// reparent them into the point of @apply.
+class CORE_EXPORT StyleRuleMixin : public StyleRuleBase {
  public:
-  StyleRuleMixin(AtomicString name,
-                 HeapVector<StyleRuleFunction::Parameter> parameters,
-                 HeapVector<Member<StyleRuleBase>> child_rules);
+  StyleRuleMixin(AtomicString name, StyleRule* fake_parent_rule);
   StyleRuleMixin(const StyleRuleMixin&) = delete;
-  StyleRuleMixin(const StyleRuleMixin&,
-                 HeapVector<Member<StyleRuleBase>> child_rules);
 
   const AtomicString& GetName() const { return name_; }
-  const HeapVector<StyleRuleFunction::Parameter>& GetParameters() const {
-    return parameters_;
-  }
+  StyleRule& FakeParentRule() const { return *fake_parent_rule_; }
 
   void TraceAfterDispatch(blink::Visitor*) const;
 
  private:
   AtomicString name_;
-  HeapVector<StyleRuleFunction::Parameter> parameters_;
+  Member<StyleRule> fake_parent_rule_;
 };
 
 // An @apply rule, representing applying a mixin.
 class CORE_EXPORT StyleRuleApplyMixin : public StyleRuleBase {
  public:
-  StyleRuleApplyMixin(AtomicString name,
-                      HeapVector<Member<CSSVariableData>> arguments,
-                      StyleRule* fake_parent_rule_for_declarations)
-      : StyleRuleBase(kApplyMixin),
-        name_(std::move(name)),
-        arguments_(std::move(arguments)),
-        fake_parent_rule_for_declarations_(fake_parent_rule_for_declarations) {}
+  explicit StyleRuleApplyMixin(AtomicString name);
   StyleRuleApplyMixin(const StyleRuleMixin&) = delete;
 
   const AtomicString& GetName() const { return name_; }
-  const HeapVector<Member<CSSVariableData>>& GetArguments() const {
-    return arguments_;
-  }
-
-  // Declarations argument (for @contents). May be nullptr.
-  StyleRule* FakeParentRuleForDeclarations() const {
-    return fake_parent_rule_for_declarations_;
-  }
 
   void TraceAfterDispatch(blink::Visitor*) const;
 
  private:
   AtomicString name_;
-  HeapVector<Member<CSSVariableData>> arguments_;
-  Member<StyleRule> fake_parent_rule_for_declarations_;
-};
-
-// A @contents rule, representing a placeholder within a mixin
-// for rules sent in through a parameter to @apply. The @contents
-// rule may have a declaration block, which is used as a fallback
-// if no @contents is given. We store that declaration block
-// as a dummy rule, similar to how StyleRuleMixin works.
-//
-// This class is named “…Statement” to avoid confusion with
-// the more general concept of contents of a style rule.
-class CORE_EXPORT StyleRuleContentsStatement : public StyleRuleBase {
- public:
-  explicit StyleRuleContentsStatement(StyleRule* fake_parent_rule_for_fallback)
-      : StyleRuleBase(kContents),
-        fake_parent_rule_for_fallback_(fake_parent_rule_for_fallback) {}
-  StyleRuleContentsStatement(const StyleRuleMixin&) = delete;
-
-  // May be nullptr.
-  StyleRule* FakeParentRuleForFallback() const {
-    return fake_parent_rule_for_fallback_;
-  }
-
-  void TraceAfterDispatch(blink::Visitor*) const;
-
- private:
-  Member<StyleRule> fake_parent_rule_for_fallback_;
-};
-
-class CORE_EXPORT StyleRuleCustomMedia : public StyleRuleBase {
- public:
-  StyleRuleCustomMedia(AtomicString name, MediaQuerySet* media_query_set);
-  StyleRuleCustomMedia(AtomicString name, bool value);
-
-  const String& GetName() const { return name_; }
-  bool IsMediaQueryValue() const {
-    return std::holds_alternative<Member<const MediaQuerySet>>(value_);
-  }
-  bool IsBooleanValue() const { return std::holds_alternative<bool>(value_); }
-  const MediaQuerySet* GetMediaQueryValue() const {
-    DCHECK(std::holds_alternative<Member<const MediaQuerySet>>(value_));
-    return std::get<Member<const MediaQuerySet>>(value_);
-  }
-  bool GetBooleanValue() const {
-    DCHECK(std::holds_alternative<bool>(value_));
-    return std::get<bool>(value_);
-  }
-  void SetMediaQueries(const MediaQuerySet* media_queries) {
-    value_ = media_queries;
-  }
-
-  void TraceAfterDispatch(blink::Visitor*) const;
-
- private:
-  AtomicString name_;
-  using CustomMediaValue = std::variant<Member<const MediaQuerySet>, bool>;
-  CustomMediaValue value_;
 };
 
 template <>
@@ -789,13 +739,6 @@ template <>
 struct DowncastTraits<StyleRuleProperty> {
   static bool AllowFrom(const StyleRuleBase& rule) {
     return rule.IsPropertyRule();
-  }
-};
-
-template <>
-struct DowncastTraits<StyleRuleNavigation> {
-  static bool AllowFrom(const StyleRuleBase& rule) {
-    return rule.IsNavigationRule();
   }
 };
 
@@ -883,20 +826,6 @@ template <>
 struct DowncastTraits<StyleRuleApplyMixin> {
   static bool AllowFrom(const StyleRuleBase& rule) {
     return rule.IsApplyMixinRule();
-  }
-};
-
-template <>
-struct DowncastTraits<StyleRuleContentsStatement> {
-  static bool AllowFrom(const StyleRuleBase& rule) {
-    return rule.IsContentsRule();
-  }
-};
-
-template <>
-struct DowncastTraits<StyleRuleCustomMedia> {
-  static bool AllowFrom(const StyleRuleBase& rule) {
-    return rule.IsCustomMediaRule();
   }
 };
 

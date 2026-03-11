@@ -37,7 +37,7 @@ class VideoFrameResourceProviderTest
       public testing::WithParamInterface<TransformTestParams> {
  public:
   void SetUp() override {
-    context_provider_ = viz::TestContextProvider::CreateRaster();
+    context_provider_ = viz::TestContextProvider::Create();
     ASSERT_EQ(context_provider_->BindToCurrentSequence(),
               gpu::ContextResult::kSuccess);
 

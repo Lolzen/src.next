@@ -1,6 +1,5 @@
 include_rules = [
 
-  "+components/cached_flags/android",
   # The util files in content/public/test/android are needed by
   # content/public/android/javatests.
   "+content/public/test/android",

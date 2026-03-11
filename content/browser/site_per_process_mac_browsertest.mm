@@ -264,14 +264,20 @@ void SendMacTouchpadPinchSequenceWithExpectedTarget(
   NSEvent* pinchBeginEvent =
       MockGestureEvent(NSEventTypeMagnify, 0, gesture_point.x(),
                        gesture_point.y(), NSEventPhaseBegan);
-  // Ignore the pinch threshold by indicating this is a synthetic gesture.
-  [cocoa_view magnifyWithEvent:pinchBeginEvent isSyntheticallyInjected:YES];
-  EXPECT_EQ(expected_target, router_touchpad_gesture_target);
+  // We don't simply use magnifyWithEvent for the begin event because we need
+  // to ignore the pinch threshold by indicating this is a synthetic gesture.
+  [cocoa_view handleBeginGestureWithEvent:pinchBeginEvent
+                  isSyntheticallyInjected:YES];
+  // We don't check the gesture target yet, since on mac the GesturePinchBegin
+  // isn't sent until the first PinchUpdate.
 
+  InputEventAckWaiter waiter(expected_target->GetRenderWidgetHost(),
+                             blink::WebInputEvent::Type::kGesturePinchBegin);
   NSEvent* pinchUpdateEvent =
       MockGestureEvent(NSEventTypeMagnify, 0.25, gesture_point.x(),
                        gesture_point.y(), NSEventPhaseChanged);
   [cocoa_view magnifyWithEvent:pinchUpdateEvent];
+  waiter.Wait();
   EXPECT_EQ(expected_target, router_touchpad_gesture_target);
 
   NSEvent* pinchEndEvent =

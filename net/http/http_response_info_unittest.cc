@@ -31,8 +31,7 @@ class HttpResponseInfoTest : public testing::Test {
     std::unique_ptr<base::Pickle> pickle = response_info.MakePickle(
         /*skip_transient_headers=*/false, /*response_truncated=*/false);
     bool truncated = false;
-    EXPECT_TRUE(restored_response_info->InitFromPickle(
-        base::PickleIterator(*pickle), &truncated));
+    EXPECT_TRUE(restored_response_info->InitFromPickle(*pickle, &truncated));
   }
 
   HttpResponseInfo response_info_;
@@ -259,8 +258,8 @@ TEST_F(HttpResponseInfoTest, FailsInitFromPickleWithSSLV3) {
       /*skip_transient_headers=*/false, /*response_truncated=*/false);
   bool truncated = false;
   HttpResponseInfo restored_tls12_response_info;
-  EXPECT_TRUE(restored_tls12_response_info.InitFromPickle(
-      base::PickleIterator(*tls12_pickle), &truncated));
+  EXPECT_TRUE(
+      restored_tls12_response_info.InitFromPickle(*tls12_pickle, &truncated));
   EXPECT_EQ(SSL_CONNECTION_VERSION_TLS1_2,
             SSLConnectionStatusToVersion(
                 restored_tls12_response_info.ssl_info.connection_status));
@@ -272,8 +271,8 @@ TEST_F(HttpResponseInfoTest, FailsInitFromPickleWithSSLV3) {
   std::unique_ptr<base::Pickle> ssl3_pickle = response_info_.MakePickle(
       /*skip_transient_headers=*/false, /*response_truncated=*/false);
   HttpResponseInfo restored_ssl3_response_info;
-  EXPECT_FALSE(restored_ssl3_response_info.InitFromPickle(
-      base::PickleIterator(*ssl3_pickle), &truncated));
+  EXPECT_FALSE(
+      restored_ssl3_response_info.InitFromPickle(*ssl3_pickle, &truncated));
 }
 
 // Test that `dns_aliases` is preserved.
@@ -309,12 +308,12 @@ TEST_F(HttpResponseInfoTest, EmptyBrowserRunId) {
   EXPECT_FALSE(restored_response_info.browser_run_id.has_value());
 }
 
-// Test that did_use_shared_dictionary is NOT preserved .
+// Test that did_use_shared_dictionary is preserved .
 TEST_F(HttpResponseInfoTest, DidUseSharedDictionary) {
   response_info_.did_use_shared_dictionary = true;
   HttpResponseInfo restored_response_info;
   PickleAndRestore(response_info_, &restored_response_info);
-  EXPECT_FALSE(restored_response_info.did_use_shared_dictionary);
+  EXPECT_TRUE(restored_response_info.did_use_shared_dictionary);
 }
 
 }  // namespace

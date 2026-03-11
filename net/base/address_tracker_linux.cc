@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
+#pragma allow_unsafe_libc_calls
+#endif
+
 #include "net/base/address_tracker_linux.h"
 
 #include <errno.h>
@@ -10,8 +15,6 @@
 #include <sys/ioctl.h>
 
 #include <optional>
-#include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -26,14 +29,11 @@
 #include "base/memory/page_size.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/sequence_checker.h"
-#include "base/strings/string_util.h"
 #include "base/task/current_thread.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
-#include "net/base/net_platform_api_util.h"
 #include "net/base/network_interfaces_linux.h"
-#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/android_info.h"
@@ -151,24 +151,18 @@ T* SafelyCastNetlinkMsgData(const struct nlmsghdr* header, int length) {
 }  // namespace
 
 // static
-std::string AddressTrackerLinux::GetInterfaceName(int interface_index) {
+char* AddressTrackerLinux::GetInterfaceName(int interface_index, char* buf) {
+  memset(buf, 0, IFNAMSIZ);
   base::ScopedFD ioctl_socket = GetSocketForIoctl();
   if (!ioctl_socket.is_valid())
-    return std::string();
+    return buf;
 
   struct ifreq ifr = {};
   ifr.ifr_ifindex = interface_index;
 
-  if (ioctl(ioctl_socket.get(), SIOCGIFNAME, &ifr) != 0) {
-    return std::string();
-  }
-
-  // `ifr.ifr_name` should be nul terminated, but for safety, remove the final
-  // character and return SpanMaybeWithNulToStringView(), which will ensure the
-  // returned string will fit within `ifr_name`, with a terminating null added,
-  // in a future query.
-  return std::string(SpanMaybeWithNulToStringView(
-      base::span(ifr.ifr_name).first(sizeof(ifr.ifr_name) - 1)));
+  if (ioctl(ioctl_socket.get(), SIOCGIFNAME, &ifr) == 0)
+    strncpy(buf, ifr.ifr_name, IFNAMSIZ - 1);
+  return buf;
 }
 
 AddressTrackerLinux::AddressTrackerLinux()
@@ -181,11 +175,10 @@ AddressTrackerLinux::AddressTrackerLinux()
       tracking_(false) {}
 
 AddressTrackerLinux::AddressTrackerLinux(
-    const base::RepeatingCallback<
-        void(NetworkChangeNotifier::IPAddressChangeType)>& address_callback,
+    const base::RepeatingClosure& address_callback,
     const base::RepeatingClosure& link_callback,
     const base::RepeatingClosure& tunnel_callback,
-    const absl::flat_hash_set<std::string>& ignored_interfaces,
+    const std::unordered_set<std::string>& ignored_interfaces,
     scoped_refptr<base::SequencedTaskRunner> blocking_thread_runner)
     : get_interface_name_(GetInterfaceName),
       address_callback_(address_callback),
@@ -321,8 +314,9 @@ bool AddressTrackerLinux::IsInterfaceIgnored(int interface_index) const {
   if (ignored_interfaces_.empty())
     return false;
 
-  std::string interface_name = get_interface_name_(interface_index);
-  return ignored_interfaces_.contains(interface_name);
+  char buf[IFNAMSIZ] = {};
+  const char* interface_name = get_interface_name_(interface_index, buf);
+  return ignored_interfaces_.find(interface_name) != ignored_interfaces_.end();
 }
 
 NetworkChangeNotifier::ConnectionType
@@ -368,10 +362,10 @@ void AddressTrackerLinux::DumpInitialAddressesAndWatch() {
 
   // Consume pending message to populate the AddressMap, but don't notify.
   // Sending another request without first reading responses results in EBUSY.
-  NetworkChangeNotifier::IPAddressChangeType address_change_type;
+  bool address_changed;
   bool link_changed;
   bool tunnel_changed;
-  ReadMessages(&address_change_type, &link_changed, &tunnel_changed);
+  ReadMessages(&address_changed, &link_changed, &tunnel_changed);
 
   // Request dump of link state
   request.header.nlmsg_type = RTM_GETLINK;
@@ -386,7 +380,7 @@ void AddressTrackerLinux::DumpInitialAddressesAndWatch() {
   }
 
   // Consume pending message to populate links_online_, but don't notify.
-  ReadMessages(&address_change_type, &link_changed, &tunnel_changed);
+  ReadMessages(&address_changed, &link_changed, &tunnel_changed);
   {
     AddressTrackerAutoLock lock(*this, connection_type_lock_);
     connection_type_initialized_ = true;
@@ -404,12 +398,11 @@ void AddressTrackerLinux::DumpInitialAddressesAndWatch() {
   }
 }
 
-void AddressTrackerLinux::ReadMessages(
-    NetworkChangeNotifier::IPAddressChangeType* address_change_type,
-    bool* link_changed,
-    bool* tunnel_changed) {
+void AddressTrackerLinux::ReadMessages(bool* address_changed,
+                                       bool* link_changed,
+                                       bool* tunnel_changed) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  *address_change_type = NetworkChangeNotifier::IP_ADDRESS_CHANGE_NONE;
+  *address_changed = false;
   *link_changed = false;
   *tunnel_changed = false;
   bool first_loop = true;
@@ -460,35 +453,19 @@ void AddressTrackerLinux::ReadMessages(
         PLOG(ERROR) << "Failed to recv from netlink socket";
         return;
       }
-      HandleMessage(buffer.data(), rv, address_change_type, link_changed,
+      HandleMessage(buffer.data(), rv, address_changed, link_changed,
                     tunnel_changed);
     }
   }
-  if (*link_changed ||
-      *address_change_type != NetworkChangeNotifier::IP_ADDRESS_CHANGE_NONE) {
+  if (*link_changed || *address_changed)
     UpdateCurrentConnectionType();
-  }
 }
 
-// Upgrades |IP_ADDRESS_CHANGE_NONE| to either |IP_ADDRESS_CHANGE_IPV6_TEMPADDR|
-// or |IP_ADDRESS_CHANGE_NORMAL| and possibly upgrades
-// |IP_ADDRESS_CHANGE_IPV6_TEMPADDR| to |IP_ADDRESS_CHANGE_NORMAL|.
-static NetworkChangeNotifier::IPAddressChangeType ModifyAddressChangeType(
-    NetworkChangeNotifier::IPAddressChangeType previous_change_type,
-    const struct ifaddrmsg& msg) {
-  if (msg.ifa_family == AF_INET6 && msg.ifa_flags & IFA_F_TEMPORARY &&
-      previous_change_type != NetworkChangeNotifier::IP_ADDRESS_CHANGE_NORMAL) {
-    return NetworkChangeNotifier::IP_ADDRESS_CHANGE_IPV6_TEMPADDR;
-  }
-  return NetworkChangeNotifier::IP_ADDRESS_CHANGE_NORMAL;
-}
-
-void AddressTrackerLinux::HandleMessage(
-    const char* buffer,
-    int length,
-    NetworkChangeNotifier::IPAddressChangeType* address_change_type,
-    bool* link_changed,
-    bool* tunnel_changed) {
+void AddressTrackerLinux::HandleMessage(const char* buffer,
+                                        int length,
+                                        bool* address_changed,
+                                        bool* link_changed,
+                                        bool* tunnel_changed) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(buffer);
   // Note that NLMSG_NEXT decrements |length| to reflect the number of bytes
@@ -535,19 +512,12 @@ void AddressTrackerLinux::HandleMessage(
           auto it = address_map_.find(address);
           if (it == address_map_.end()) {
             address_map_.insert(it, std::pair(address, msg_copy));
-            *address_change_type =
-                ModifyAddressChangeType(*address_change_type, *msg);
-            // Unfortunately, `ifaddrmsg` has no equality operator, so have to
-            // either do this, or compare every field individually.
-          } else if (base::byte_span_from_ref(it->second) !=
-                     base::byte_span_from_ref(msg_copy)) {
+            *address_changed = true;
+          } else if (memcmp(&it->second, &msg_copy, sizeof(msg_copy))) {
             it->second = msg_copy;
-            *address_change_type =
-                ModifyAddressChangeType(*address_change_type, *msg);
+            *address_changed = true;
           }
-          if (*address_change_type !=
-                  NetworkChangeNotifier::IP_ADDRESS_CHANGE_NONE &&
-              address_map_diff_.has_value()) {
+          if (*address_changed && address_map_diff_.has_value()) {
             (*address_map_diff_)[address] = msg_copy;
           }
         }
@@ -563,8 +533,7 @@ void AddressTrackerLinux::HandleMessage(
         if (GetAddress(header, length, &address, nullptr)) {
           AddressTrackerAutoLock lock(*this, address_map_lock_);
           if (address_map_.erase(address)) {
-            *address_change_type =
-                ModifyAddressChangeType(*address_change_type, *msg);
+            *address_changed = true;
             if (address_map_diff_.has_value()) {
               (*address_map_diff_)[address] = std::nullopt;
             }
@@ -630,15 +599,15 @@ void AddressTrackerLinux::HandleMessage(
 
 void AddressTrackerLinux::OnFileCanReadWithoutBlocking() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  NetworkChangeNotifier::IPAddressChangeType address_change_type;
+  bool address_changed;
   bool link_changed;
   bool tunnel_changed;
-  ReadMessages(&address_change_type, &link_changed, &tunnel_changed);
+  ReadMessages(&address_changed, &link_changed, &tunnel_changed);
   if (diff_callback_) {
     RunDiffCallback();
   }
-  if (address_change_type != NetworkChangeNotifier::IP_ADDRESS_CHANGE_NONE) {
-    address_callback_.Run(address_change_type);
+  if (address_changed) {
+    address_callback_.Run();
   }
   if (link_changed) {
     link_callback_.Run();
@@ -649,13 +618,14 @@ void AddressTrackerLinux::OnFileCanReadWithoutBlocking() {
 }
 
 bool AddressTrackerLinux::IsTunnelInterface(int interface_index) const {
-  return IsTunnelInterfaceName(get_interface_name_(interface_index));
+  char buf[IFNAMSIZ] = {};
+  return IsTunnelInterfaceName(get_interface_name_(interface_index, buf));
 }
 
 // static
-bool AddressTrackerLinux::IsTunnelInterfaceName(std::string_view name) {
+bool AddressTrackerLinux::IsTunnelInterfaceName(const char* name) {
   // Linux kernel drivers/net/tun.c uses "tun" name prefix.
-  return base::StartsWith(name, "tun");
+  return strncmp(name, "tun", 3) == 0;
 }
 
 void AddressTrackerLinux::UpdateCurrentConnectionType() {

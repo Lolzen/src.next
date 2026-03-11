@@ -12,12 +12,9 @@
 #include "chrome/browser/extensions/extension_management_constants.h"
 #include "chrome/browser/extensions/managed_installation_mode.h"
 #include "chrome/browser/extensions/managed_toolbar_pin_mode.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/url_pattern_set.h"
 #include "url/gurl.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -30,7 +27,7 @@ const char kMalformedPreferenceWarning[] =
 // Maximum number of characters for a 'blocked_install_message' value.
 const int kBlockedInstallMessageMaxLength = 1000;
 
-bool GetString(const base::DictValue& dict,
+bool GetString(const base::Value::Dict& dict,
                const char* key,
                std::string* result) {
   const std::string* value = dict.FindString(key);
@@ -61,7 +58,7 @@ IndividualSettings::IndividualSettings(
 
 IndividualSettings::~IndividualSettings() = default;
 
-bool IndividualSettings::Parse(const base::DictValue& dict,
+bool IndividualSettings::Parse(const base::Value::Dict& dict,
                                ParsingScope scope) {
   std::string installation_mode_str;
   if (GetString(dict, schema_constants::kInstallationMode,
@@ -134,7 +131,7 @@ bool IndividualSettings::Parse(const base::DictValue& dict,
   // for the same reason, we keep the code for now.
   APIPermissionSet parsed_blocked_permissions;
   APIPermissionSet explicitly_allowed_permissions;
-  const base::ListValue* list_value =
+  const base::Value::List* list_value =
       dict.FindList(schema_constants::kAllowedPermissions);
   if (list_value) {
     if (!APIPermissionSet::ParseFromJSON(
@@ -156,10 +153,10 @@ bool IndividualSettings::Parse(const base::DictValue& dict,
                                &blocked_permissions);
 
   // Parses list of Match Patterns into a URLPatternSet.
-  auto parse_url_pattern_set = [](const base::DictValue& dict, const char key[],
-                                  URLPatternSet* out_value) {
+  auto parse_url_pattern_set = [](const base::Value::Dict& dict,
+                                  const char key[], URLPatternSet* out_value) {
     // Get the list of URLPatterns.
-    const base::ListValue* host_list_value = dict.FindList(key);
+    const base::Value::List* host_list_value = dict.FindList(key);
     if (host_list_value) {
       if (host_list_value->size() > schema_constants::kMaxItemsURLPatternSet) {
         LOG(WARNING) << "Exceeded maximum number of URL match patterns ("
@@ -228,8 +225,6 @@ bool IndividualSettings::Parse(const base::DictValue& dict,
   if (GetString(dict, schema_constants::kToolbarPin, &toolbar_pin_str)) {
     if (toolbar_pin_str == schema_constants::kDefaultUnpinned) {
       toolbar_pin = ManagedToolbarPinMode::kDefaultUnpinned;
-    } else if (toolbar_pin_str == schema_constants::kDefaultPinned) {
-      toolbar_pin = ManagedToolbarPinMode::kDefaultPinned;
     } else if (toolbar_pin_str == schema_constants::kForcePinned) {
       toolbar_pin = ManagedToolbarPinMode::kForcePinned;
     } else {
@@ -255,7 +250,6 @@ void IndividualSettings::Reset() {
   policy_blocked_hosts.ClearPatterns();
   policy_allowed_hosts.ClearPatterns();
   blocked_install_message.clear();
-  toolbar_pin = ManagedToolbarPinMode::kDefaultUnpinned;
 }
 
 GlobalSettings::GlobalSettings() = default;

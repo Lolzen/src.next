@@ -60,9 +60,9 @@ bool PointerLockController::RequestPointerLock(Element* target,
   window->GetFrame()->GetWidgetForLocalRoot()->RequestMouseLock(
       LocalFrame::HasTransientUserActivation(window->GetFrame()),
       /*unadjusted_movement_requested=*/false,
-      blink::BindOnce(&PointerLockController::LockRequestCallback,
-                      WrapWeakPersistent(this), std::move(callback),
-                      /*unadjusted_movement_requested=*/false));
+      WTF::BindOnce(&PointerLockController::LockRequestCallback,
+                    WrapWeakPersistent(this), std::move(callback),
+                    /*unadjusted_movement_requested=*/false));
   lock_pending_ = true;
   element_ = target;
   return true;
@@ -135,11 +135,12 @@ void PointerLockController::RequestPointerLock(
 
       mouse_lock_context_->RequestMouseLockChange(
           unadjusted_movement_requested,
-          blink::BindOnce(&PointerLockController::ChangeLockRequestCallback,
-                          WrapWeakPersistent(this), WrapWeakPersistent(target),
-                          BindOnce(&PointerLockController::ProcessResultPromise,
-                                   WrapPersistent(resolver)),
-                          unadjusted_movement_requested));
+          WTF::BindOnce(
+              &PointerLockController::ChangeLockRequestCallback,
+              WrapWeakPersistent(this), WrapWeakPersistent(target),
+              WTF::BindOnce(&PointerLockController::ProcessResultPromise,
+                            WrapPersistent(resolver)),
+              unadjusted_movement_requested));
       return;
     }
 
@@ -152,11 +153,12 @@ void PointerLockController::RequestPointerLock(
     window->GetFrame()->GetWidgetForLocalRoot()->RequestMouseLock(
         LocalFrame::HasTransientUserActivation(window->GetFrame()),
         unadjusted_movement_requested,
-        blink::BindOnce(&PointerLockController::LockRequestCallback,
-                        WrapWeakPersistent(this),
-                        BindOnce(&PointerLockController::ProcessResultPromise,
-                                 WrapPersistent(resolver)),
-                        unadjusted_movement_requested));
+        WTF::BindOnce(
+            &PointerLockController::LockRequestCallback,
+            WrapWeakPersistent(this),
+            WTF::BindOnce(&PointerLockController::ProcessResultPromise,
+                          WrapPersistent(resolver)),
+            unadjusted_movement_requested));
     lock_pending_ = true;
     element_ = target;
   }
@@ -184,7 +186,7 @@ void PointerLockController::LockRequestCallback(
                                  TaskType::kUserInteraction));
     // The browser might unlock the mouse for many reasons including closing
     // the tab, the user hitting esc, the page losing focus, and more.
-    mouse_lock_context_.set_disconnect_handler(BindOnce(
+    mouse_lock_context_.set_disconnect_handler(WTF::BindOnce(
         &PointerLockController::ExitPointerLock, WrapWeakPersistent(this)));
   }
   ProcessResult(std::move(callback), unadjusted_movement_requested, result);
@@ -246,11 +248,6 @@ DOMException* PointerLockController::ConvertResultToException(
       return MakeGarbageCollected<DOMException>(
           DOMExceptionCode::kSecurityError,
           "The user has exited the lock before this request was completed.");
-    case mojom::blink::PointerLockResult::kUserEscapeCooldown:
-      return MakeGarbageCollected<DOMException>(
-          DOMExceptionCode::kSecurityError,
-          "Pointer lock cannot be acquired immediately after the user has "
-          "exited the lock.");
     case mojom::blink::PointerLockResult::kSuccess:
     case mojom::blink::PointerLockResult::kUnknownError:
       return MakeGarbageCollected<DOMException>(
@@ -268,14 +265,14 @@ void PointerLockController::ExitPointerLock() {
 
   // Set the last mouse position back the locked position.
   if (pointer_lock_document && pointer_lock_document->GetFrame()) {
-    LocalFrame* frame = pointer_lock_document->GetFrame();
-    frame->GetEventHandler().ResetMousePositionForPointerUnlock();
+    pointer_lock_document->GetFrame()
+        ->GetEventHandler()
+        .ResetMousePositionForPointerUnlock();
   }
 
   ClearElement();
   document_of_removed_element_while_waiting_for_unlock_ = nullptr;
   mouse_lock_context_.reset();
-  high_framerate_request_.reset();
 }
 
 void PointerLockController::ElementRemoved(Element* element) {
@@ -332,12 +329,6 @@ void PointerLockController::DidAcquirePointerLock() {
     // sends all mouse events to the initial target of the drag.
     // If Lock is entered it supersedes any in progress Capture.
     frame->GetWidgetForLocalRoot()->MouseCaptureLost();
-    // Acquiring the mouse pointer lock is a strong indication of a high-end web
-    // experience, which would benefit from higher framerates. In particular,
-    // this is the case for gaming, where pointer lock is essential for most
-    // games.
-    high_framerate_request_ =
-        frame->GetWidgetForLocalRoot()->RequestHighFramerate();
   }
 }
 

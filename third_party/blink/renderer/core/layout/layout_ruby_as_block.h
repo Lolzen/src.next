@@ -32,9 +32,7 @@ class CORE_EXPORT LayoutRubyAsBlock : public LayoutBlockFlow {
 
   void AddChild(LayoutObject* child,
                 LayoutObject* before_child = nullptr) override;
-  void StyleDidChange(StyleDifference,
-                      const ComputedStyle* old_style,
-                      const StyleChangeContext&) override;
+  void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
   void RemoveLeftoverAnonymousBlock(LayoutBlock*) override;
 };
 

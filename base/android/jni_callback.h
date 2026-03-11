@@ -31,13 +31,6 @@ BASE_EXPORT ScopedJavaLocalRef<jobject> ToJniCallback(
 BASE_EXPORT ScopedJavaLocalRef<jobject> ToJniCallback(
     JNIEnv* env,
     const JniRepeatingWrappedCallbackType& callback);
-// Overloads that accept no parameter.
-BASE_EXPORT ScopedJavaLocalRef<jobject> ToJniCallback(
-    JNIEnv* env,
-    base::OnceCallback<void()>&& callback);
-BASE_EXPORT ScopedJavaLocalRef<jobject> ToJniCallback(
-    JNIEnv* env,
-    const base::RepeatingCallback<void()>& callback);
 
 // Java Callbacks don't return a value so any return value by the passed in
 // callback will be ignored.
@@ -45,15 +38,15 @@ template <typename R, typename Arg>
 BASE_EXPORT ScopedJavaLocalRef<jobject> ToJniCallback(
     JNIEnv* env,
     base::OnceCallback<R(Arg)>&& callback) {
-  return ToJniCallback(
-      env, base::BindOnce(
-               [](base::OnceCallback<R(Arg)> captured_callback,
-                  const jni_zero::JavaRef<jobject>& j_result) {
-                 auto result = jni_zero::FromJniType<std::decay_t<Arg>>(
-                     jni_zero::AttachCurrentThread(), j_result);
-                 std::move(captured_callback).Run(std::move(result));
-               },
-               std::move(callback)));
+  return ToJniCallback(env, base::BindOnce(
+                                [](base::OnceCallback<R(Arg)> captured_callback,
+                                   const jni_zero::JavaRef<jobject>& j_result) {
+                                  Arg result = jni_zero::FromJniType<Arg>(
+                                      jni_zero::AttachCurrentThread(),
+                                      j_result);
+                                  std::move(captured_callback).Run(result);
+                                },
+                                std::move(callback)));
 }
 
 // Java Callbacks don't return a value so any return value by the passed in
@@ -82,7 +75,7 @@ BASE_EXPORT ScopedJavaLocalRef<jobject> ToJniCallback(
                   const jni_zero::JavaRef<jobject>& j_result) {
                  Arg result = jni_zero::FromJniType<Arg>(
                      jni_zero::AttachCurrentThread(), j_result);
-                 captured_callback.Run(std::move(result));
+                 captured_callback.Run(result);
                },
                callback));
 }

@@ -9,8 +9,7 @@
 #include "base/files/scoped_file.h"
 #include "base/memory/raw_ptr.h"
 
-struct AHardwareBuffer;
-struct AHardwareBuffer_Desc;
+extern "C" typedef struct AHardwareBuffer AHardwareBuffer;
 
 namespace base {
 namespace android {
@@ -59,8 +58,6 @@ class BASE_EXPORT ScopedHardwareBufferHandle {
   // Creates a new handle with its own newly acquired reference to the
   // underlying buffer object. |this| must be a valid handle.
   ScopedHardwareBufferHandle Clone() const;
-
-  AHardwareBuffer_Desc Describe() const;
 
   // Consumes a handle and returns a file descriptor which can be used to
   // transmit the handle over IPC. A subsequent receiver may use

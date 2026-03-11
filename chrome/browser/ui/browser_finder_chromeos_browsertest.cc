@@ -33,9 +33,7 @@ class BrowserFinderWithDesksTest : public InProcessBrowserTest {
     desks_controller->NewDesk(ash::DesksCreationRemovalSource::kButton);
   }
 
-  void ActivateBrowser(BrowserWindowInterface* browser) {
-    browser->GetWindow()->Activate();
-  }
+  void ActivateBrowser(Browser* browser) { browser->window()->Activate(); }
 
   Browser* CreateTestBrowser() {
     Browser* new_browser = CreateBrowser(browser()->profile());
@@ -54,10 +52,10 @@ IN_PROC_BROWSER_TEST_F(BrowserFinderWithDesksTest, FindAnyBrowser) {
   auto* desk_2 = desks_controller->desks()[1].get();
   auto* desk_3 = desks_controller->desks()[2].get();
 
-  BrowserWindowInterface* const browser_1 = CreateTestBrowser();
+  Browser* browser_1 = CreateTestBrowser();
   CloseBrowserSynchronously(browser());
-  SetBrowser(browser_1);
-  auto* window_1 = browser_1->GetWindow()->GetNativeWindow();
+  SelectFirstBrowser();
+  auto* window_1 = browser_1->window()->GetNativeWindow();
   EXPECT_EQ(1u, chrome::GetBrowserCount(browser()->profile()));
   EXPECT_TRUE(desk_1->is_active());
   EXPECT_TRUE(desks_controller->BelongsToActiveDesk(window_1));
@@ -106,10 +104,10 @@ IN_PROC_BROWSER_TEST_F(BrowserFinderWithDesksTest, FindTabbedBrowser) {
   auto* desk_2 = desks_controller->desks()[1].get();
   auto* desk_3 = desks_controller->desks()[2].get();
 
-  BrowserWindowInterface* const browser_1 = CreateTestBrowser();
+  Browser* browser_1 = CreateTestBrowser();
   CloseBrowserSynchronously(browser());
-  SetBrowser(browser_1);
-  auto* window_1 = browser_1->GetWindow()->GetNativeWindow();
+  SelectFirstBrowser();
+  auto* window_1 = browser_1->window()->GetNativeWindow();
   EXPECT_EQ(1u, chrome::GetBrowserCount(browser()->profile()));
   EXPECT_TRUE(desk_1->is_active());
   EXPECT_TRUE(desks_controller->BelongsToActiveDesk(window_1));
@@ -131,14 +129,27 @@ IN_PROC_BROWSER_TEST_F(BrowserFinderWithDesksTest, FindTabbedBrowser) {
 
   // Create a browser on desk_3
   Browser* browser_3 = CreateTestBrowser();
-  EXPECT_EQ(browser_3, chrome::FindTabbedBrowser(browser()->profile(), true,
-                                                 display::kInvalidDisplayId));
+
+  // Since browser_3 is not closing, FindTabbedBrowser with
+  // ignore_closing_browsers=true should return it.
+  EXPECT_EQ(browser_3,
+            chrome::FindTabbedBrowser(browser()->profile(), true,
+                                      display::kInvalidDisplayId, true));
+  // FindTabbedBrowser with ignore_closing_browsers=false should also return
+  // browser_3.
+  EXPECT_EQ(browser_3,
+            chrome::FindTabbedBrowser(browser()->profile(), true,
+                                      display::kInvalidDisplayId, false));
 
   // Start closing the browser
   CloseBrowserAsynchronously(browser_3);
 
-  // Since browser_3 is closing and has been scheduled for deletion at this
-  // point, FindTabbedBrowser should return nullptr.
-  EXPECT_EQ(nullptr, chrome::FindTabbedBrowser(browser()->profile(), true,
-                                               display::kInvalidDisplayId));
+  // Since browser_3 is closing at this point, FindTabbedBrowser should always
+  // return nullptr.
+  EXPECT_EQ(nullptr,
+            chrome::FindTabbedBrowser(browser()->profile(), true,
+                                      display::kInvalidDisplayId, true));
+  EXPECT_EQ(nullptr,
+            chrome::FindTabbedBrowser(browser()->profile(), true,
+                                      display::kInvalidDisplayId, false));
 }

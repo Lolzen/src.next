@@ -47,24 +47,22 @@ class SpanCursorController {
 
         Editable editable = mDelegate.getEditableText();
 
-        String autocompleteText = state.getAutocompleteText();
-        if (autocompleteText != null) {
-            SpannableString spanString = new SpannableString(autocompleteText);
+        if (state.getAutocompleteText().isPresent()) {
+            SpannableString spanString = new SpannableString(state.getAutocompleteText().get());
             // The flag here helps make sure that span does not get spill to other part of the
             // text.
             spanString.setSpan(
                     mAutocompleteBgColorSpan,
                     0,
-                    autocompleteText.length(),
+                    state.getAutocompleteText().map(t -> t.length()).orElse(0),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             editable.append(spanString);
         }
 
-        String additionalTextStr = state.getAdditionalText();
-        if (additionalTextStr != null
+        if (state.getAdditionalText().isPresent()
                 && OmniboxFeatures.shouldShowRichInlineAutocompleteUrl(
                         state.getUserText().length())) {
-            String additionalText = " - " + additionalTextStr;
+            String additionalText = " - " + state.getAdditionalText().get();
             SpannableString additionalTextSpanString = new SpannableString(additionalText);
             additionalTextSpanString.setSpan(
                     mAdditionalTextFgColorSpan,

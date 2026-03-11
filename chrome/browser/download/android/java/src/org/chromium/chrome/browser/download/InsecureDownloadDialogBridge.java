@@ -51,7 +51,7 @@ public class InsecureDownloadDialogBridge {
             long totalBytes,
             long callbackId) {
         Activity activity = windowAndroid.getActivity().get();
-        if (!(activity instanceof ModalDialogManagerHolder)) {
+        if (activity == null) {
             onConfirmed(callbackId, false);
             return;
         }

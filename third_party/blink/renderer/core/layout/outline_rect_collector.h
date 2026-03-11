@@ -23,8 +23,6 @@ class OutlineRectCollector {
   virtual ~OutlineRectCollector() = default;
 
   virtual Type GetType() const = 0;
-  // Collects a rect. Empty rect should be respected because an empty box
-  // can still have an outline.
   virtual void AddRect(const PhysicalRect&) = 0;
   virtual std::unique_ptr<OutlineRectCollector> ForDescendantCollector()
       const = 0;
@@ -34,7 +32,6 @@ class OutlineRectCollector {
                        const PhysicalOffset& post_offset) = 0;
   virtual void Combine(OutlineRectCollector*,
                        const PhysicalOffset& additional_offset) = 0;
-  // Returns true if the collector has not collected any rects.
   virtual bool IsEmpty() const = 0;
 };
 
@@ -44,8 +41,8 @@ class CORE_EXPORT UnionOutlineRectCollector : public OutlineRectCollector {
 
   Type GetType() const final { return Type::kUnion; }
 
-  void AddRect(const PhysicalRect& r) final;
-  PhysicalRect Rect() const { return rect_.value_or(PhysicalRect()); }
+  void AddRect(const PhysicalRect& r) final { rect_.Unite(r); }
+  const PhysicalRect& Rect() const { return rect_; }
 
   std::unique_ptr<OutlineRectCollector> ForDescendantCollector() const final {
     return std::make_unique<UnionOutlineRectCollector>();
@@ -58,10 +55,10 @@ class CORE_EXPORT UnionOutlineRectCollector : public OutlineRectCollector {
   void Combine(OutlineRectCollector*,
                const PhysicalOffset& additional_offset) final;
 
-  bool IsEmpty() const final { return !rect_.has_value(); }
+  bool IsEmpty() const final { return rect_.IsEmpty(); }
 
  private:
-  std::optional<PhysicalRect> rect_;
+  PhysicalRect rect_;
 };
 
 class CORE_EXPORT VectorOutlineRectCollector : public OutlineRectCollector {

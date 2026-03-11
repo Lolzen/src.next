@@ -25,7 +25,6 @@
 #include "chrome/browser/download/download_core_service_factory.h"
 #include "chrome/browser/download/download_core_service_impl.h"
 #include "chrome/browser/download/download_ui_model.h"
-#include "chrome/browser/download/status_text_builder_utils.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -54,7 +53,6 @@
 
 #if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
 #include "chrome/browser/safe_browsing/download_protection/download_protection_service.h"
-#include "components/safe_browsing/core/common/proto/csd.pb.h"
 #endif  // BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
 
 #endif  // !BUILDFLAG(IS_ANDROID)
@@ -70,7 +68,7 @@ using ::testing::ReturnRef;
 using ::testing::ReturnRefOfCopy;
 using ::testing::SetArgPointee;
 
-#if !BUILDFLAG(IS_ANDROID) && BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
+#if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
 using TailoredVerdict = safe_browsing::ClientDownloadResponse::TailoredVerdict;
 #endif
 
@@ -98,45 +96,53 @@ const base::FilePath::CharType kDefaultDisplayFileName[] =
 // Default URL for a mock download item in DownloadItemModelTest.
 const char kDefaultURL[] = "http://example.com/foo.bar";
 
-class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
- public:
-  explicit TestChromeDownloadManagerDelegate(Profile* profile)
-      : ChromeDownloadManagerDelegate(profile) {}
-  ~TestChromeDownloadManagerDelegate() override = default;
-
-  // ChromeDownloadManagerDelegate override:
-  bool IsOpenInBrowserPreferredForFile(const base::FilePath& path) override {
-    return true;
-  }
-};
-
 // A DownloadCoreService that returns the TestChromeDownloadManagerDelegate.
 class TestDownloadCoreService : public DownloadCoreServiceImpl {
  public:
   explicit TestDownloadCoreService(Profile* profile);
   ~TestDownloadCoreService() override;
 
+  void set_download_manager_delegate(ChromeDownloadManagerDelegate* delegate) {
+    delegate_ = delegate;
+  }
+
   ChromeDownloadManagerDelegate* GetDownloadManagerDelegate() override;
 
-  std::unique_ptr<ChromeDownloadManagerDelegate> delegate_;
+  raw_ptr<ChromeDownloadManagerDelegate, DanglingUntriaged> delegate_;
 };
 
 TestDownloadCoreService::TestDownloadCoreService(Profile* profile)
-    : DownloadCoreServiceImpl(profile),
-      delegate_(std::make_unique<NiceMock<TestChromeDownloadManagerDelegate>>(
-          profile)) {}
+    : DownloadCoreServiceImpl(profile) {}
 
 TestDownloadCoreService::~TestDownloadCoreService() = default;
 
 ChromeDownloadManagerDelegate*
 TestDownloadCoreService::GetDownloadManagerDelegate() {
-  return delegate_.get();
+  return delegate_;
 }
 
 static std::unique_ptr<KeyedService> CreateTestDownloadCoreService(
     content::BrowserContext* browser_context) {
   return std::make_unique<TestDownloadCoreService>(
       Profile::FromBrowserContext(browser_context));
+}
+
+class TestChromeDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
+ public:
+  explicit TestChromeDownloadManagerDelegate(Profile* profile)
+      : ChromeDownloadManagerDelegate(profile) {}
+  ~TestChromeDownloadManagerDelegate() override;
+
+  // ChromeDownloadManagerDelegate override:
+  bool IsOpenInBrowserPreferredForFile(const base::FilePath& path) override;
+};
+
+TestChromeDownloadManagerDelegate::~TestChromeDownloadManagerDelegate() =
+    default;
+
+bool TestChromeDownloadManagerDelegate::IsOpenInBrowserPreferredForFile(
+    const base::FilePath& path) {
+  return true;
 }
 
 class FakeRenameHandler : public download::DownloadItemRenameHandler {
@@ -164,9 +170,13 @@ class DownloadItemModelTest : public testing::Test {
   void SetUp() override {
     ASSERT_TRUE(testing_profile_manager_.SetUp());
     profile_ = testing_profile_manager_.CreateTestingProfile("testing_profile");
-
+    delegate_ =
+        std::make_unique<NiceMock<TestChromeDownloadManagerDelegate>>(profile_);
     DownloadCoreServiceFactory::GetInstance()->SetTestingFactory(
         profile_, base::BindRepeating(&CreateTestDownloadCoreService));
+    static_cast<TestDownloadCoreService*>(
+        DownloadCoreServiceFactory::GetForBrowserContext(profile_))
+        ->set_download_manager_delegate(delegate_.get());
   }
 
  protected:
@@ -242,7 +252,8 @@ class DownloadItemModelTest : public testing::Test {
   DownloadItemModel model_;
   base::SimpleTestClock clock_;
   TestingProfileManager testing_profile_manager_;
-  raw_ptr<TestingProfile> profile_ = nullptr;
+  raw_ptr<TestingProfile> profile_;
+  std::unique_ptr<NiceMock<TestChromeDownloadManagerDelegate>> delegate_;
 
   base::test::ScopedFeatureList scoped_feature_list_;
 };
@@ -279,9 +290,6 @@ TEST_F(DownloadItemModelTest, InterruptedStatus) {
        u"Failed - File too large", u"File is too big for this device"},
       {download::DOWNLOAD_INTERRUPT_REASON_FILE_VIRUS_INFECTED,
        u"Failed - Virus detected", u"Virus detected"},
-      {download::DOWNLOAD_INTERRUPT_REASON_LOCAL_DOWNLOAD_BLOCKED,
-       u"Failed - Local download blocked",
-       u"Your organization blocked the local download of this file."},
       {download::DOWNLOAD_INTERRUPT_REASON_FILE_BLOCKED, u"Failed - Blocked",
        u"Blocked by your organization"},
       {download::DOWNLOAD_INTERRUPT_REASON_FILE_SECURITY_CHECK_FAILED,
@@ -372,8 +380,6 @@ TEST_F(DownloadItemModelTest, InterruptTooltip) {
        "foo.bar\nFile too large"},
       {download::DOWNLOAD_INTERRUPT_REASON_FILE_VIRUS_INFECTED,
        "foo.bar\nVirus detected"},
-      {download::DOWNLOAD_INTERRUPT_REASON_LOCAL_DOWNLOAD_BLOCKED,
-       "foo.bar\nLocal download blocked"},
       {download::DOWNLOAD_INTERRUPT_REASON_FILE_BLOCKED, "foo.bar\nBlocked"},
       {download::DOWNLOAD_INTERRUPT_REASON_FILE_SECURITY_CHECK_FAILED,
        "foo.bar\nVirus scan failed"},
@@ -734,8 +740,9 @@ TEST_F(DownloadItemModelTest, GetBubbleStatusMessageWithBytes) {
   auto* arabic_bytes = L"5 \x062A";
   auto* arabic_status = L"\x0645";
   std::u16string arabic =
-      StatusTextBuilderUtils::GetBubbleStatusMessageWithBytes(
-          base::WideToUTF16(arabic_bytes), base::WideToUTF16(arabic_status));
+      DownloadUIModel::BubbleStatusTextBuilder::GetBubbleStatusMessageWithBytes(
+          base::WideToUTF16(arabic_bytes), base::WideToUTF16(arabic_status),
+          false);
   std::vector<int> expected_arabic =
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_POSIX)
       {8207, 8235, 53, 32, 1578, 32, 8226, 32, 1605, 8236, 8207};
@@ -746,9 +753,9 @@ TEST_F(DownloadItemModelTest, GetBubbleStatusMessageWithBytes) {
 
   // Hebrew
   auto* hebrew_status = L"\x05D0";
-  std::u16string hebrew =
-      StatusTextBuilderUtils::GetBubbleStatusMessageWithBytes(
-          u"5 MB", base::WideToUTF16(hebrew_status));
+  std::u16string hebrew = DownloadUIModel::BubbleStatusTextBuilder ::
+      GetBubbleStatusMessageWithBytes(u"5 MB", base::WideToUTF16(hebrew_status),
+                                      false);
   std::vector<int> expected_hebrew =
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_POSIX)
       {8207, 8235, 8234, 53, 32, 77, 66, 8236, 32, 8226, 32, 1488, 8236, 8207};
@@ -759,35 +766,35 @@ TEST_F(DownloadItemModelTest, GetBubbleStatusMessageWithBytes) {
 
   // English
   base::i18n::SetRTLForTesting(false);
-  std::u16string english =
-      StatusTextBuilderUtils::GetBubbleStatusMessageWithBytes(u"5 MB", u"A");
+  std::u16string english = DownloadUIModel::BubbleStatusTextBuilder ::
+      GetBubbleStatusMessageWithBytes(u"5 MB", u"A", false);
   std::vector<int> expected_english = {53, 32, 77, 66, 32, 8226, 32, 65};
   compare_results(english, expected_english);
 }
+#endif  // !BUILDFLAG(IS_ANDROID)
 
-TEST_F(DownloadItemModelTest, ShouldShowInUi) {
+TEST_F(DownloadItemModelTest, ShouldShowInShelf) {
   SetupDownloadItemDefaults();
 
-  // By default the download item should be displayable on the UI when it is
+  // By default the download item should be displayable on the shelf when it is
   // not a transient download.
   EXPECT_CALL(item(), IsTransient()).WillOnce(Return(false));
-  EXPECT_TRUE(model().ShouldShowInUi());
+  EXPECT_TRUE(model().ShouldShowInShelf());
 
   EXPECT_CALL(item(), IsTransient()).WillOnce(Return(true));
-  EXPECT_FALSE(model().ShouldShowInUi());
+  EXPECT_FALSE(model().ShouldShowInShelf());
 
-  // Once explicitly set, ShouldShowInUi() should return the explicit value
+  // Once explicitly set, ShouldShowInShelf() should return the explicit value
   // regardless of whether it's a transient download, which should no longer
   // be considered by the model after initializing it.
   EXPECT_CALL(item(), IsTransient()).Times(1);
 
-  model().SetShouldShowInUi(true);
-  EXPECT_TRUE(model().ShouldShowInUi());
+  model().SetShouldShowInShelf(true);
+  EXPECT_TRUE(model().ShouldShowInShelf());
 
-  model().SetShouldShowInUi(false);
-  EXPECT_FALSE(model().ShouldShowInUi());
+  model().SetShouldShowInShelf(false);
+  EXPECT_FALSE(model().ShouldShowInShelf());
 }
-#endif  // !BUILDFLAG(IS_ANDROID)
 
 TEST_F(DownloadItemModelTest, DangerLevel) {
   SetupDownloadItemDefaults();
@@ -824,6 +831,59 @@ TEST_F(DownloadItemModelTest, HasSupportedImageMimeType) {
   ON_CALL(item(), GetTargetFilePath())
       .WillByDefault(ReturnRef(kNoExtensionPath));
   EXPECT_FALSE(model().HasSupportedImageMimeType());
+}
+
+TEST_F(DownloadItemModelTest, ShouldRemoveFromShelfWhenComplete) {
+  const struct TestCase {
+    DownloadItem::DownloadState state;
+    bool is_dangerous;  // Expectation for IsDangerous().
+    bool is_auto_open;  // Expectation for GetOpenWhenComplete().
+    bool auto_opened;   // Whether the download was successfully
+                        // auto-opened. Expecation for GetAutoOpened().
+    bool expected_result;
+  } kTestCases[] = {
+    // All the valid combinations of state, is_dangerous, is_auto_open and
+    // auto_opened.
+    //
+    //                              .--- Is dangerous.
+    //                             |       .--- Auto open or temporary.
+    //                             |      |      .--- Auto opened.
+    //                             |      |      |      .--- Expected result.
+    { DownloadItem::IN_PROGRESS, false, false, false, false},
+    { DownloadItem::IN_PROGRESS, false, true , false, true },
+    { DownloadItem::IN_PROGRESS, true , false, false, false},
+    { DownloadItem::IN_PROGRESS, true , true , false, false},
+    { DownloadItem::COMPLETE,    false, false, false, false},
+    { DownloadItem::COMPLETE,    false, true , false, false},
+    { DownloadItem::COMPLETE,    false, false, true , true },
+    { DownloadItem::COMPLETE,    false, true , true , true },
+    { DownloadItem::CANCELLED,   false, false, false, false},
+    { DownloadItem::CANCELLED,   false, true , false, false},
+    { DownloadItem::CANCELLED,   true , false, false, false},
+    { DownloadItem::CANCELLED,   true , true , false, false},
+    { DownloadItem::INTERRUPTED, false, false, false, false},
+    { DownloadItem::INTERRUPTED, false, true , false, false},
+    { DownloadItem::INTERRUPTED, true , false, false, false},
+    { DownloadItem::INTERRUPTED, true , true , false, false}
+  };
+
+  SetupDownloadItemDefaults();
+
+  for (const auto& test_case : kTestCases) {
+    EXPECT_CALL(item(), GetOpenWhenComplete())
+        .WillRepeatedly(Return(test_case.is_auto_open));
+    EXPECT_CALL(item(), GetState())
+        .WillRepeatedly(Return(test_case.state));
+    EXPECT_CALL(item(), IsDangerous())
+        .WillRepeatedly(Return(test_case.is_dangerous));
+    EXPECT_CALL(item(), GetAutoOpened())
+        .WillRepeatedly(Return(test_case.auto_opened));
+
+    EXPECT_EQ(test_case.expected_result,
+              model().ShouldRemoveFromShelfWhenComplete());
+    Mock::VerifyAndClearExpectations(&item());
+    Mock::VerifyAndClearExpectations(&model());
+  }
 }
 
 TEST_F(DownloadItemModelTest, ShouldShowDropdown) {

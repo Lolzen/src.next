@@ -33,6 +33,7 @@
 namespace net {
 
 BASE_FEATURE(kTransportSecurityFileWriterSchedule,
+             "TransportSecurityFileWriterSchedule",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 namespace {
@@ -83,16 +84,19 @@ std::optional<TransportSecurityState::HashedHost> ExternalStringToHashedDomain(
 }
 
 // Version 2 of the on-disk format consists of a single JSON object. The
-// top-level dictionary has "version" (with integer value) and "sts" with
-// an unordered list of dictionaries, each representing cached data for
-// a single host. Version 2 is the only currently supported format.
+// top-level dictionary has "version", "sts", and "expect_ct" entries. The first
+// is an integer, the latter two are unordered lists of dictionaries, each
+// representing cached data for a single host.
 
 // Stored in serialized dictionary values to distinguish incompatible versions.
+// Version 1 is distinguished by the lack of an integer version value.
 const char kVersionKey[] = "version";
 const int kCurrentVersionValue = 2;
 
-// Key for the list of STS entries in top level serialized dictionary.
+// Keys in top level serialized dictionary, for lists of STS and Expect-CT
+// entries, respectively. The Expect-CT key is legacy and deleted when read.
 const char kSTSKey[] = "sts";
+const char kExpectCTKey[] = "expect_ct";
 
 // Hostname entry, used in serialized STS dictionaries. Value is produced by
 // passing hashed hostname strings to HashedDomainToExternalString().
@@ -117,15 +121,15 @@ std::string LoadState(const base::FilePath& path) {
 }
 
 // Serializes STS data from |state| to a Value.
-base::ListValue SerializeSTSData(const TransportSecurityState* state) {
-  base::ListValue sts_list;
+base::Value::List SerializeSTSData(const TransportSecurityState* state) {
+  base::Value::List sts_list;
 
   TransportSecurityState::STSStateIterator sts_iterator(*state);
   for (; sts_iterator.HasNext(); sts_iterator.Advance()) {
     const TransportSecurityState::STSState& sts_state =
         sts_iterator.domain_state();
 
-    base::DictValue serialized;
+    base::Value::Dict serialized;
     serialized.Set(kHostname,
                    HashedDomainToExternalString(sts_iterator.hostname()));
     serialized.Set(kStsIncludeSubdomains, sts_state.include_subdomains);
@@ -156,7 +160,7 @@ void DeserializeSTSData(const base::Value& sts_list,
   base::Time current_time(base::Time::Now());
 
   for (const base::Value& sts_entry : sts_list.GetList()) {
-    const base::DictValue* sts_dict = sts_entry.GetIfDict();
+    const base::Value::Dict* sts_dict = sts_entry.GetIfDict();
     if (!sts_dict)
       continue;
 
@@ -269,7 +273,7 @@ void TransportSecurityPersister::OnWriteFinished(base::OnceClosure callback) {
 std::optional<std::string> TransportSecurityPersister::SerializeData() {
   CHECK(foreground_runner_->RunsTasksInCurrentSequence());
 
-  base::DictValue toplevel;
+  base::Value::Dict toplevel;
   toplevel.Set(kVersionKey, kCurrentVersionValue);
   toplevel.Set(kSTSKey, SerializeSTSData(transport_security_state_));
 
@@ -284,7 +288,12 @@ void TransportSecurityPersister::LoadEntries(const std::string& serialized) {
   DCHECK(foreground_runner_->RunsTasksInCurrentSequence());
 
   transport_security_state_->ClearDynamicData();
-  Deserialize(serialized, transport_security_state_);
+  bool contains_legacy_expect_ct_data = false;
+  Deserialize(serialized, transport_security_state_,
+              contains_legacy_expect_ct_data);
+  if (contains_legacy_expect_ct_data) {
+    StateIsDirty(transport_security_state_);
+  }
 }
 
 // static
@@ -293,23 +302,30 @@ base::TimeDelta TransportSecurityPersister::GetCommitInterval() {
                     kMaxCommitInterval);
 }
 
-void TransportSecurityPersister::Deserialize(const std::string& serialized,
-                                             TransportSecurityState* state) {
-  std::optional<base::DictValue> value = base::JSONReader::ReadDict(
-      serialized, base::JSON_PARSE_CHROMIUM_EXTENSIONS);
+void TransportSecurityPersister::Deserialize(
+    const std::string& serialized,
+    TransportSecurityState* state,
+    bool& contains_legacy_expect_ct_data) {
+  std::optional<base::Value::Dict> value =
+      base::JSONReader::ReadDict(serialized);
   if (!value) {
     return;
   }
 
   std::optional<int> version = value->FindInt(kVersionKey);
 
-  // Version 2 is the only currently supported format
+  // Stop if the data is out of date (or in the previous format that didn't have
+  // a version number).
   if (!version || *version != kCurrentVersionValue)
     return;
 
   base::Value* sts_value = value->Find(kSTSKey);
   if (sts_value)
     DeserializeSTSData(*sts_value, state);
+
+  // If an Expect-CT key is found on deserialization, record this so that a
+  // write can be scheduled to clear it from disk.
+  contains_legacy_expect_ct_data = !!value->Find(kExpectCTKey);
 }
 
 void TransportSecurityPersister::CompleteLoad(const std::string& state) {

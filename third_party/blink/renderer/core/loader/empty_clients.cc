@@ -128,12 +128,10 @@ void EmptyLocalFrameClient::BeginNavigation(
     const String&,
     const std::optional<Impression>&,
     const LocalFrameToken* initiator_frame_token,
-    SourceLocation*,
+    std::unique_ptr<SourceLocation>,
     mojo::PendingRemote<mojom::blink::NavigationStateKeepAliveHandle>,
     bool is_container_initiated,
-    bool has_rel_opener,
-    mojo::PendingReceiver<
-        mojom::blink::NavigationResumeDeferredCommitListener>) {}
+    bool has_rel_opener) {}
 
 void EmptyLocalFrameClient::DispatchWillSendSubmitEvent(HTMLFormElement*) {}
 

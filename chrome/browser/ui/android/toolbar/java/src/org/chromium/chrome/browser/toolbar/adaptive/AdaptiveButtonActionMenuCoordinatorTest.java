@@ -10,6 +10,8 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ListView;
 
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.filters.SmallTest;
@@ -66,7 +68,9 @@ public class AdaptiveButtonActionMenuCoordinatorTest {
 
         listener.onLongClick(menuView);
 
-        coordinator.getListMenuForTesting().clickItemForTesting(0);
+        ViewGroup menuContent = (ViewGroup) coordinator.getContentViewForTesting();
+        ListView menuListView = menuContent.findViewById(R.id.app_menu_list);
+        menuListView.performItemClick(null, 0, menuListView.getAdapter().getItemId(0));
 
         verify(menuView).showMenu();
         verify(mCallback).onResult(R.id.customize_adaptive_button_menu_id);
@@ -101,8 +105,8 @@ public class AdaptiveButtonActionMenuCoordinatorTest {
     @Test
     @SmallTest
     @EnableFeatures(ChromeFeatureList.ADAPTIVE_BUTTON_IN_TOP_TOOLBAR_CUSTOMIZATION_V2)
-    public void testCreateOnLongClickListener_showsToast() {
-        var coordinator = spy(new AdaptiveButtonActionMenuCoordinator(/* showMenu= */ false));
+    public void testCreateOnLongClickListener_noPopupMenu() {
+        var coordinator = new AdaptiveButtonActionMenuCoordinator(/* showMenu= */ false);
         View.OnLongClickListener listener = coordinator.createOnLongClickListener(mCallback);
 
         ListMenuButton menuView =
@@ -113,12 +117,9 @@ public class AdaptiveButtonActionMenuCoordinatorTest {
         doReturn(ApplicationProvider.getApplicationContext().getResources())
                 .when(menuView)
                 .getResources();
-        String contentDescription = "Test Content Description";
-        menuView.setContentDescription(contentDescription);
 
+        // Long click menuView, nothing should happen.
         listener.onLongClick(menuView);
-
-        verify(coordinator).showAnchoredToastInternal(menuView, contentDescription);
         verify(menuView, never()).showMenu();
     }
 }

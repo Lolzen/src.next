@@ -41,10 +41,6 @@ class CORE_EXPORT LayoutIFrame : public LayoutEmbeddedContent {
   }
 
  private:
-  void UpdateAfterLayout() final;
-
-  PhysicalNaturalSizingInfo GetNaturalDimensions() const override;
-
   bool IsLayoutIFrame() const final {
     NOT_DESTROYED();
     return true;

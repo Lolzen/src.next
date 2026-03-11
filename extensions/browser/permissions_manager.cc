@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
 #include "base/observer_list.h"
@@ -54,13 +55,13 @@ void AddSiteToPrefs(ExtensionPrefs* extension_prefs,
                     const url::Origin& origin) {
   std::unique_ptr<prefs::ScopedDictionaryPrefUpdate> update =
       extension_prefs->CreatePrefUpdate(kUserPermissions);
-  base::ListValue* list = nullptr;
+  base::Value::List* list = nullptr;
 
   bool pref_exists = (*update)->GetListWithoutPathExpansion(pref, &list);
   if (pref_exists) {
     list->Append(origin.Serialize());
   } else {
-    base::ListValue sites;
+    base::Value::List sites;
     sites.Append(origin.Serialize());
     (*update)->SetKey(pref, base::Value(std::move(sites)));
   }
@@ -72,7 +73,7 @@ void RemoveSiteFromPrefs(ExtensionPrefs* extension_prefs,
                          const url::Origin& origin) {
   std::unique_ptr<prefs::ScopedDictionaryPrefUpdate> update =
       extension_prefs->CreatePrefUpdate(kUserPermissions);
-  base::ListValue* list = nullptr;
+  base::Value::List* list = nullptr;
   (*update)->GetListWithoutPathExpansion(pref, &list);
   DCHECK(list);
   list->EraseValue(base::Value(origin.Serialize()));
@@ -81,7 +82,7 @@ void RemoveSiteFromPrefs(ExtensionPrefs* extension_prefs,
 // Returns sites from `pref` in `extension_prefs`.
 std::set<url::Origin> GetSitesFromPrefs(ExtensionPrefs* extension_prefs,
                                         const char* pref) {
-  const base::DictValue& user_permissions =
+  const base::Value::Dict& user_permissions =
       extension_prefs->GetPrefAsDictionary(kUserPermissions);
   std::set<url::Origin> sites;
 
@@ -274,14 +275,6 @@ PermissionsManager::PermissionsManager(content::BrowserContext* browser_context)
     user_permissions_.permitted_sites =
         GetSitesFromPrefs(extension_prefs_, kPermittedSites);
   }
-
-  // The user host restrictions will be empty when feature
-  // `kExtensionsMenuAccessControl` is disabled
-  auto [user_blocked_sites, user_allowed_sites] =
-      GetUserBlockedAndAllowedSites();
-  PermissionsData::SetUserHostRestrictions(
-      util::GetBrowserContextId(browser_context_),
-      std::move(user_blocked_sites), std::move(user_allowed_sites));
 }
 
 PermissionsManager::~PermissionsManager() {
@@ -309,25 +302,6 @@ void PermissionsManager::RegisterProfilePrefs(
   registry->RegisterDictionaryPref(kUserPermissions.name);
 }
 
-std::pair<URLPatternSet, URLPatternSet>
-PermissionsManager::GetUserBlockedAndAllowedSites() const {
-  // TODO(http://crbug.com/1268198): AddOrigin() below can fail if the
-  // added URLPattern doesn't parse (such as if the schemes are invalid). We
-  // need to make sure that origins added to this list only contain schemes that
-  // are valid for extensions to act upon (and gracefully handle others).
-  URLPatternSet user_blocked_sites;
-  for (const auto& site : user_permissions_.restricted_sites) {
-    user_blocked_sites.AddOrigin(Extension::kValidHostPermissionSchemes, site);
-  }
-
-  URLPatternSet user_allowed_sites;
-  for (const auto& site : user_permissions_.permitted_sites) {
-    user_allowed_sites.AddOrigin(Extension::kValidHostPermissionSchemes, site);
-  }
-
-  return {std::move(user_blocked_sites), std::move(user_allowed_sites)};
-}
-
 void PermissionsManager::UpdateUserSiteSetting(const url::Origin& origin,
                                                UserSiteSetting site_setting) {
   switch (site_setting) {
@@ -353,7 +327,7 @@ void PermissionsManager::UpdateUserSiteSetting(const url::Origin& origin,
 }
 
 void PermissionsManager::AddUserRestrictedSite(const url::Origin& origin) {
-  if (user_permissions_.restricted_sites.contains(origin)) {
+  if (base::Contains(user_permissions_.restricted_sites, origin)) {
     return;
   }
 
@@ -375,7 +349,7 @@ void PermissionsManager::AddUserPermittedSite(const url::Origin& origin) {
   DCHECK(base::FeatureList::IsEnabled(
       extensions_features::kExtensionsMenuAccessControlWithPermittedSites));
 
-  if (user_permissions_.permitted_sites.contains(origin)) {
+  if (base::Contains(user_permissions_.permitted_sites, origin)) {
     return;
   }
 
@@ -433,10 +407,10 @@ PermissionsManager::GetUserPermissionsSettings() const {
 
 PermissionsManager::UserSiteSetting PermissionsManager::GetUserSiteSetting(
     const url::Origin& origin) const {
-  if (user_permissions_.permitted_sites.contains(origin)) {
+  if (base::Contains(user_permissions_.permitted_sites, origin)) {
     return UserSiteSetting::kGrantAllExtensions;
   }
-  if (user_permissions_.restricted_sites.contains(origin)) {
+  if (base::Contains(user_permissions_.restricted_sites, origin)) {
     return UserSiteSetting::kBlockAllExtensions;
   }
   return UserSiteSetting::kCustomizeByExtension;
@@ -1013,8 +987,16 @@ void PermissionsManager::RemoveObserver(Observer* observer) {
 }
 
 void PermissionsManager::OnUserPermissionsSettingsChanged() {
-  auto [user_blocked_sites, user_allowed_sites] =
-      GetUserBlockedAndAllowedSites();
+  // TODO(http://crbug.com/1268198): AddOrigin() below can fail if the
+  // added URLPattern doesn't parse (such as if the schemes are invalid). We
+  // need to make sure that origins added to this list only contain schemes that
+  // are valid for extensions to act upon (and gracefully handle others).
+  URLPatternSet user_blocked_sites;
+  for (const auto& site : user_permissions_.restricted_sites)
+    user_blocked_sites.AddOrigin(Extension::kValidHostPermissionSchemes, site);
+  URLPatternSet user_allowed_sites;
+  for (const auto& site : user_permissions_.permitted_sites)
+    user_allowed_sites.AddOrigin(Extension::kValidHostPermissionSchemes, site);
 
   PermissionSet user_allowed_set(APIPermissionSet(), ManifestPermissionSet(),
                                  user_allowed_sites.Clone(),

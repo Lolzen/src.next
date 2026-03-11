@@ -16,11 +16,13 @@ import androidx.annotation.VisibleForTesting;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 
+import java.util.Optional;
+
 /** An abstraction of the text model to show, keep track of, and update autocomplete. */
 @NullMarked
 public interface AutocompleteEditTextModelBase {
     /** An embedder should implement this. */
-    interface Delegate {
+    public interface Delegate {
         /**
          * @see TextView#getText()
          */
@@ -72,9 +74,9 @@ public interface AutocompleteEditTextModelBase {
         boolean isFocused();
 
         /**
-         * @see TextView#sendAccessibilityEvent(AccessibilityEvent)
+         * @see TextView#sendAccessibilityEventUnchecked(AccessibilityEvent)
          */
-        void sendAccessibilityEvent(AccessibilityEvent event);
+        void sendAccessibilityEventUnchecked(AccessibilityEvent event);
 
         /**
          * Call super.dispatchKeyEvent(KeyEvent).
@@ -111,9 +113,6 @@ public interface AutocompleteEditTextModelBase {
          * @return The package name of the current keyboard app.
          */
         String getKeyboardPackageName();
-
-        /** Specifies whether the current user input should be shown as multi-line. */
-        void setInputIsMultilineEligible(boolean isMultilineEligible);
     }
 
     /**
@@ -188,7 +187,7 @@ public interface AutocompleteEditTextModelBase {
      *     default match.
      */
     @VisibleForTesting
-    @Nullable String getAdditionalText();
+    Optional<String> getAdditionalText();
 
     /**
      * Sets whether text changes should trigger autocomplete.
@@ -205,13 +204,11 @@ public interface AutocompleteEditTextModelBase {
      * @param inlineAutocompleteText The suggested autocompletion for the user's text.
      * @param additionalText This string is displayed adjacent to the omnibox if this match is the
      *     default. Will usually be URL when autocompleting a title, and empty otherwise.
-     * @param siteSearchLabel The site search label to be shown.
      */
     void setAutocompleteText(
             CharSequence userText,
             @Nullable CharSequence inlineAutocompleteText,
-            @Nullable String additionalText,
-            @Nullable String siteSearchLabel);
+            Optional<String> additionalText);
 
     /**
      * Whether we want to be showing inline autocomplete results. We don't want to show them as the

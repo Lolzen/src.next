@@ -8,13 +8,13 @@
 
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "content/public/browser/render_process_host.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/service_worker/worker_id.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_id.h"
-#include "ipc/constants.mojom.h"
+#include "ipc/ipc_message.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -27,7 +27,7 @@ std::unique_ptr<EventListener> EventListener::ForExtension(
     const std::string& event_name,
     const ExtensionId& extension_id,
     content::RenderProcessHost* process,
-    std::optional<base::DictValue> filter) {
+    std::optional<base::Value::Dict> filter) {
   DCHECK(process);
 
   return base::WrapUnique(new EventListener(
@@ -41,7 +41,7 @@ std::unique_ptr<EventListener> EventListener::ForURL(
     const std::string& event_name,
     const GURL& listener_url,
     content::RenderProcessHost* process,
-    std::optional<base::DictValue> filter) {
+    std::optional<base::Value::Dict> filter) {
   // Use only the origin to identify the event listener, e.g. chrome://settings
   // for chrome://settings/accounts, to avoid multiple events being triggered
   // for the same process. See crbug.com/536858 for details. // TODO(devlin): If
@@ -61,7 +61,7 @@ std::unique_ptr<EventListener> EventListener::ForExtensionServiceWorker(
     const GURL& service_worker_scope,
     int64_t service_worker_version_id,
     int worker_thread_id,
-    std::optional<base::DictValue> filter) {
+    std::optional<base::Value::Dict> filter) {
   return base::WrapUnique(new EventListener(
       event_name, extension_id, service_worker_scope, process, browser_context,
       true, service_worker_version_id, worker_thread_id, std::move(filter)));
@@ -73,7 +73,7 @@ std::unique_ptr<EventListener> EventListener::CreateLazyListener(
     content::BrowserContext* browser_context,
     bool is_for_service_worker,
     const GURL& service_worker_scope,
-    std::optional<base::DictValue> filter) {
+    std::optional<base::Value::Dict> filter) {
   return base::WrapUnique(new EventListener(
       event_name, extension_id, service_worker_scope, /*process=*/nullptr,
       browser_context, is_for_service_worker,
@@ -102,7 +102,7 @@ bool EventListener::Equals(const EventListener* other) const {
 }
 
 std::unique_ptr<EventListener> EventListener::Copy() const {
-  std::optional<base::DictValue> filter_copy;
+  std::optional<base::Value::Dict> filter_copy;
   if (filter_) {
     filter_copy = filter_->Clone();
   }
@@ -133,7 +133,7 @@ EventListener::EventListener(const std::string& event_name,
                              bool is_for_service_worker,
                              int64_t service_worker_version_id,
                              int worker_thread_id,
-                             std::optional<base::DictValue> filter)
+                             std::optional<base::Value::Dict> filter)
     : event_name_(event_name),
       extension_id_(extension_id),
       listener_url_(listener_url),
@@ -179,10 +179,10 @@ bool EventListenerMap::AddListener(std::unique_ptr<EventListener> listener) {
 }
 
 std::unique_ptr<EventMatcher> EventListenerMap::ParseEventMatcher(
-    const base::DictValue& filter_dict) {
+    const base::Value::Dict& filter_dict) {
   return std::make_unique<EventMatcher>(
-      std::make_unique<base::DictValue>(filter_dict.Clone()),
-      IPC::mojom::kRoutingIdNone);
+      std::make_unique<base::Value::Dict>(filter_dict.Clone()),
+      MSG_ROUTING_NONE);
 }
 
 bool EventListenerMap::RemoveListener(const EventListener* listener) {
@@ -302,16 +302,13 @@ void EventListenerMap::RemoveListenersForExtension(
 }
 
 void EventListenerMap::RemoveActiveServiceWorkerListenersForExtension(
-    const WorkerId& worker_id) {
+    const ExtensionId& extension_id) {
   RemoveListenersForExtensionImpl(
-      worker_id.extension_id, /*removal_predicate=*/base::BindRepeating(
-          [](const WorkerId& worker_id, const ExtensionId& extension_id,
-             EventListener* listener) {
-            return listener->extension_id() == worker_id.extension_id &&
-                   listener->is_for_service_worker() && !listener->IsLazy() &&
-                   listener->process()->GetID() == worker_id.render_process_id;
-          },
-          worker_id));
+      extension_id, /*removal_predicate=*/base::BindRepeating(
+          [](const ExtensionId& extension_id, EventListener* listener) {
+            return listener->extension_id() == extension_id &&
+                   listener->is_for_service_worker() && !listener->IsLazy();
+          }));
 }
 
 void EventListenerMap::LoadUnfilteredLazyListeners(
@@ -333,7 +330,7 @@ void EventListenerMap::LoadFilteredLazyListeners(
     content::BrowserContext* browser_context,
     const ExtensionId& extension_id,
     bool is_for_service_worker,
-    const base::DictValue& filtered) {
+    const base::Value::Dict& filtered) {
   for (const auto item : filtered) {
     // We skip entries if they are malformed.
     if (!item.second.is_list()) {
@@ -343,7 +340,7 @@ void EventListenerMap::LoadFilteredLazyListeners(
       if (!filter_value.is_dict()) {
         continue;
       }
-      const base::DictValue& filter = filter_value.GetDict();
+      const base::Value::Dict& filter = filter_value.GetDict();
       AddListener(EventListener::CreateLazyListener(
           item.first, extension_id, browser_context, is_for_service_worker,
           is_for_service_worker
@@ -360,7 +357,7 @@ std::set<const EventListener*> EventListenerMap::GetEventListeners(
   if (IsFilteredEvent(event)) {
     // Look up the interested listeners via the EventFilter.
     std::set<MatcherID> ids = event_filter_.MatchEvent(
-        event.event_name, *event.filter_info, IPC::mojom::kRoutingIdNone);
+        event.event_name, *event.filter_info, MSG_ROUTING_NONE);
     for (const MatcherID& id : ids) {
       EventListener* listener = listeners_by_matcher_id_[id];
       CHECK(listener);
@@ -441,7 +438,7 @@ void EventListenerMap::CleanupListener(EventListener* listener) {
 }
 
 bool EventListenerMap::IsFilteredEvent(const Event& event) const {
-  return filtered_events_.contains(event.event_name);
+  return base::Contains(filtered_events_, event.event_name);
 }
 
 }  // namespace extensions

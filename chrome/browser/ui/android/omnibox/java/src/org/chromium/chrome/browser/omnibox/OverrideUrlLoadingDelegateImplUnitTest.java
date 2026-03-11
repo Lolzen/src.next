@@ -10,8 +10,6 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
-import static org.chromium.chrome.browser.url_constants.UrlConstantResolver.getOriginalNativeNtpUrl;
-
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -43,8 +41,8 @@ public class OverrideUrlLoadingDelegateImplUnitTest {
 
     @Test
     public void handleLoadUrl_unsupportedUrl() {
-        assertFalse(willHandleLoadUrlWithPostData(getOriginalNativeNtpUrl(), false));
-        assertFalse(willHandleLoadUrlWithPostData(getOriginalNativeNtpUrl(), true));
+        assertFalse(willHandleLoadUrlWithPostData(UrlConstants.NTP_URL, false));
+        assertFalse(willHandleLoadUrlWithPostData(UrlConstants.NTP_URL, true));
     }
 
     @Test

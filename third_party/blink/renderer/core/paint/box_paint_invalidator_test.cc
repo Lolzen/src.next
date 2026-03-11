@@ -15,7 +15,6 @@
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
 #include "third_party/blink/renderer/platform/graphics/paint/raster_invalidation_tracking.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
-#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 
 namespace blink {
 
@@ -54,8 +53,7 @@ class BoxPaintInvalidatorTest : public PaintAndRasterInvalidationTest {
 
     target.setAttribute(
         html_names::kStyleAttr,
-        AtomicString(StrCat(
-            {target.getAttribute(html_names::kStyleAttr), "; width: 200px"})));
+        target.getAttribute(html_names::kStyleAttr) + "; width: 200px");
     GetDocument().View()->UpdateLifecycleToLayoutClean(
         DocumentUpdateReason::kTest);
 

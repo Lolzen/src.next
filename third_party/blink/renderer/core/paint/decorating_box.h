@@ -7,7 +7,6 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/inline/fragment_item.h"
-#include "third_party/blink/renderer/core/style/applied_text_decoration.h"
 #include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 
 namespace blink {
@@ -22,37 +21,35 @@ class CORE_EXPORT DecoratingBox {
  public:
   DecoratingBox(const PhysicalOffset& content_offset_in_container,
                 const ComputedStyle& style,
-                const AppliedTextDecorationVector* decorations)
+                const Vector<AppliedTextDecoration, 1>* decorations)
       : content_offset_in_container_(content_offset_in_container),
         style_(&style),
         decorations_(decorations ? decorations
-                                 : &style.AppliedTextDecorations()) {}
+                                 : &style.AppliedTextDecorations()) {
+  }
   DecoratingBox(const FragmentItem& item,
                 const ComputedStyle& style,
-                const AppliedTextDecorationVector* decorations)
+                const Vector<AppliedTextDecoration, 1>* decorations)
       : DecoratingBox(item.ContentOffsetInContainerFragment(),
                       style,
                       decorations) {}
   explicit DecoratingBox(const FragmentItem& item)
       : DecoratingBox(item, item.Style(), /* decorations */ nullptr) {}
 
-  void Trace(Visitor* visitor) const {
-    visitor->Trace(style_);
-    visitor->Trace(decorations_);
-  }
+  void Trace(Visitor* visitor) const { visitor->Trace(style_); }
 
   const PhysicalOffset& ContentOffsetInContainer() const {
     return content_offset_in_container_;
   }
   const ComputedStyle& Style() const { return *style_; }
-  const AppliedTextDecorationVector* AppliedTextDecorations() const {
-    return decorations_.Get();
+  const Vector<AppliedTextDecoration, 1>* AppliedTextDecorations() const {
+    return decorations_;
   }
 
  private:
   PhysicalOffset content_offset_in_container_;
   Member<const ComputedStyle> style_;
-  Member<const AppliedTextDecorationVector> decorations_;
+  const Vector<AppliedTextDecoration, 1>* decorations_;
 };
 
 }  // namespace blink

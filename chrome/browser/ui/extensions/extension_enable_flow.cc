@@ -19,7 +19,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_system.h"
-#include "ui/gfx/native_ui_types.h"
+#include "ui/gfx/native_widget_types.h"
 
 #if !BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/ui/profiles/profile_picker.h"
@@ -83,9 +83,11 @@ void ExtensionEnableFlow::Run() {
 }
 
 void ExtensionEnableFlow::CheckPermissionAndMaybePromptUser() {
-  auto* system = extensions::ExtensionSystem::Get(profile_);
-  auto* registrar = extensions::ExtensionRegistrar::Get(profile_);
-  auto* registry = extensions::ExtensionRegistry::Get(profile_);
+  extensions::ExtensionSystem* system =
+      extensions::ExtensionSystem::Get(profile_);
+  extensions::ExtensionService* service = system->extension_service();
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile_);
   const Extension* extension =
       registry->disabled_extensions().GetByID(extension_id_);
 
@@ -106,7 +108,10 @@ void ExtensionEnableFlow::CheckPermissionAndMaybePromptUser() {
         base::BindOnce(&ExtensionEnableFlow::OnExtensionApprovalDone,
                        weak_ptr_factory_.GetWeakPtr());
     supervised_user_extensions_delegate->RequestToEnableExtensionOrShowError(
-        *extension, parent_contents_, std::move(extension_approval_callback));
+        *extension, parent_contents_,
+        SupervisedUserExtensionParentApprovalEntryPoint::
+            kOnTerminatedExtensionEnableFlowOperation,
+        std::move(extension_approval_callback));
     return;
   }
 
@@ -133,9 +138,10 @@ void ExtensionEnableFlow::CheckPermissionAndMaybePromptUser() {
   if (!prefs->DidExtensionEscalatePermissions(extension_id_)) {
     // Enable the extension immediately if its privileges weren't escalated.
     // This is a no-op if the extension was previously terminated.
-    registrar->EnableExtension(extension_id_);
+    service->EnableExtension(extension_id_);
 
-    DCHECK(registrar->IsExtensionEnabled(extension_id_));
+    DCHECK(extensions::ExtensionRegistrar::Get(profile_)->IsExtensionEnabled(
+        extension_id_));
     delegate_->ExtensionEnableFlowFinished();  // |delegate_| may delete us.
     return;
   }
@@ -158,17 +164,22 @@ void ExtensionEnableFlow::CreatePrompt() {
 }
 
 void ExtensionEnableFlow::OnExtensionApprovalDone(
-    extensions::SupervisedExtensionApprovalResult result) {
+    extensions::SupervisedUserExtensionsDelegate::ExtensionApprovalResult
+        result) {
   switch (result) {
-    case extensions::SupervisedExtensionApprovalResult::kApproved:
+    case extensions::SupervisedUserExtensionsDelegate::ExtensionApprovalResult::
+        kApproved:
       EnableExtension();
       break;
-    case extensions::SupervisedExtensionApprovalResult::kCanceled:
+    case extensions::SupervisedUserExtensionsDelegate::ExtensionApprovalResult::
+        kCanceled:
       delegate_->ExtensionEnableFlowAborted(
           /*user_initiated=*/true);  // |delegate_| may delete us.
       break;
-    case extensions::SupervisedExtensionApprovalResult::kFailed:
-    case extensions::SupervisedExtensionApprovalResult::kBlocked:
+    case extensions::SupervisedUserExtensionsDelegate::ExtensionApprovalResult::
+        kFailed:
+    case extensions::SupervisedUserExtensionsDelegate::ExtensionApprovalResult::
+        kBlocked:
       delegate_->ExtensionEnableFlowAborted(
           /*user_initiated=*/false);  // |delegate_| may delete us.
       break;
@@ -189,7 +200,7 @@ void ExtensionEnableFlow::StopObserving() {
 void ExtensionEnableFlow::OnLoadFailure(
     content::BrowserContext* browser_context,
     const base::FilePath& file_path,
-    const std::u16string& error) {
+    const std::string& error) {
   StopObserving();
   delegate_->ExtensionEnableFlowAborted(
       /*user_initiated=*/false);  // |delegate_| may delete us.

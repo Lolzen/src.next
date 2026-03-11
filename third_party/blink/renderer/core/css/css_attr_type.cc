@@ -7,10 +7,8 @@
 #include <optional>
 
 #include "third_party/blink/renderer/core/css/css_numeric_literal_value.h"
-#include "third_party/blink/renderer/core/css/css_primitive_value.h"
 #include "third_party/blink/renderer/core/css/css_string_value.h"
 #include "third_party/blink/renderer/core/css/css_syntax_definition.h"
-#include "third_party/blink/renderer/core/css/parser/css_parser_local_context.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_save_point.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_token.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_token_stream.h"
@@ -30,10 +28,6 @@ std::optional<CSSPrimitiveValue::UnitType> ConsumeDimensionUnitType(
   }
   if (type != kIdentToken) {
     return std::nullopt;
-  }
-  if (stream.Peek().Value() == "number") {
-    stream.Consume();
-    return CSSPrimitiveValue::UnitType::kNumber;
   }
   CSSPrimitiveValue::UnitType unit =
       CSSPrimitiveValue::StringToUnitType(stream.Peek().Value());
@@ -56,7 +50,10 @@ std::optional<CSSPrimitiveValue::UnitType> ConsumeDimensionUnitType(
 
 std::optional<CSSAttrType> CSSAttrType::Consume(CSSParserTokenStream& stream) {
   if (stream.Peek().GetType() == kIdentToken &&
-      stream.Peek().Value() == "raw-string") {
+      ((RuntimeEnabledFeatures::CSSAttrRawStringEnabled() &&
+        stream.Peek().Value() == "raw-string") ||
+       (!RuntimeEnabledFeatures::CSSAttrRawStringEnabled() &&
+        stream.Peek().Value() == "string"))) {
     stream.Consume();
     return CSSAttrType();
   }
@@ -81,24 +78,23 @@ std::optional<CSSAttrType> CSSAttrType::Consume(CSSParserTokenStream& stream) {
 }
 
 const CSSValue* CSSAttrType::Parse(StringView text,
-                                   const CSSParserContext& context,
-                                   CSSParserLocalContext& local_context) const {
+                                   const CSSParserContext& context) const {
   if (IsString()) {
     return MakeGarbageCollected<CSSStringValue>(text.ToString());
   }
   if (IsDimensionUnit()) {
     CSSParserTokenStream stream(text);
     CSSPrimitiveValue* number_value = css_parsing_utils::ConsumeNumber(
-        stream, context, local_context, CSSPrimitiveValue::ValueRange::kAll);
+        stream, context, CSSPrimitiveValue::ValueRange::kAll);
     if (CSSNumericLiteralValue* literal =
             DynamicTo<CSSNumericLiteralValue>(number_value)) {
       return MakeGarbageCollected<CSSNumericLiteralValue>(
-          literal->ClampedDoubleValue(), *dimension_unit_);
+          literal->GetDoubleValue(), *dimension_unit_);
     }
     return nullptr;
   }
   if (IsSyntax()) {
-    return syntax_->Parse(text, context, local_context, false);
+    return syntax_->Parse(text, context, false);
   }
   return nullptr;
 }

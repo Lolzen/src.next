@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/containers/contains.h"
 
 namespace content {
 
@@ -66,13 +67,13 @@ bool PosixFileDescriptorInfoImpl::HasID(int id) const {
 }
 
 bool PosixFileDescriptorInfoImpl::OwnsFD(base::PlatformFile file) {
-  return std::ranges::contains(owned_descriptors_, file, &base::ScopedFD::get);
+  return base::Contains(owned_descriptors_, file, &base::ScopedFD::get);
 }
 
 base::ScopedFD PosixFileDescriptorInfoImpl::ReleaseFD(base::PlatformFile file) {
   auto found =
       std::ranges::find(owned_descriptors_, file, &base::ScopedFD::get);
-  CHECK(found != owned_descriptors_.end());
+  CHECK(found != owned_descriptors_.end(), base::NotFatalUntil::M131);
 
   base::ScopedFD fd;
   std::swap(*found, fd);

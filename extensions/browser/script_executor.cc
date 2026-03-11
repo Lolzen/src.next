@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/dcheck_is_on.h"
 #include "base/functional/bind.h"
 #include "base/hash/hash.h"
@@ -30,6 +31,8 @@
 #include "extensions/browser/script_injection_tracker.h"
 #include "extensions/common/mojom/host_id.mojom.h"
 #include "extensions/common/mojom/match_origin_as_fallback.mojom-shared.h"
+#include "ipc/ipc_message.h"
+#include "ipc/ipc_message_macros.h"
 #include "pdf/buildflags.h"
 
 #if BUILDFLAG(ENABLE_PDF)
@@ -72,7 +75,7 @@ class Handler : public content::WebContentsObserver {
         continue;
       }
 
-      DCHECK(!std::ranges::contains(pending_render_frames_, frame));
+      DCHECK(!base::Contains(pending_render_frames_, frame));
       if (!frame->IsRenderFrameLive()) {
         ExtensionApiFrameIdMap::DocumentId document_id =
             ExtensionApiFrameIdMap::GetDocumentId(frame);
@@ -192,7 +195,7 @@ class Handler : public content::WebContentsObserver {
 #endif  // BUILDFLAG(ENABLE_PDF)
 
     if (!frame->IsRenderFrameLive() ||
-        std::ranges::contains(pending_render_frames_, frame)) {
+        base::Contains(pending_render_frames_, frame)) {
       return content::RenderFrameHost::FrameIterationAction::kContinue;
     }
 
@@ -212,7 +215,7 @@ class Handler : public content::WebContentsObserver {
     ScriptExecutor::FrameResult result;
     result.frame_id = frame_id;
     result.document_id = ExtensionApiFrameIdMap::GetDocumentId(frame);
-    DCHECK(!results_.contains(frame->GetFrameToken()));
+    DCHECK(!base::Contains(results_, frame->GetFrameToken()));
     results_[frame->GetFrameToken()] = std::move(result);
   }
 
@@ -243,7 +246,7 @@ class Handler : public content::WebContentsObserver {
 
   ScriptExecutor::FrameResult& GetFrameResult(
       const blink::LocalFrameToken& frame_token) {
-    DCHECK(results_.contains(frame_token));
+    DCHECK(base::Contains(results_, frame_token));
     return results_[frame_token];
   }
 
@@ -253,7 +256,7 @@ class Handler : public content::WebContentsObserver {
                        mojom::ExecuteCodeParamsPtr params,
                        content::RenderFrameHost* frame) {
     DCHECK(frame->IsRenderFrameLive());
-    DCHECK(std::ranges::contains(pending_render_frames_, frame));
+    DCHECK(base::Contains(pending_render_frames_, frame));
 
     if (params->injection->is_js()) {
       ScriptInjectionTracker::ScriptType script_type =

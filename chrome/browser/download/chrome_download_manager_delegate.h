@@ -8,7 +8,6 @@
 #include <stdint.h>
 
 #include <deque>
-#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,7 +31,7 @@
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/download_manager_delegate.h"
 #include "extensions/buildflags/buildflags.h"
-#include "ui/gfx/native_ui_types.h"
+#include "ui/gfx/native_widget_types.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 
 #if BUILDFLAG(IS_ANDROID)
@@ -40,12 +39,9 @@
 #include "chrome/browser/download/android/download_message_bridge.h"
 #endif
 
-#if BUILDFLAG(ENTERPRISE_CONTENT_ANALYSIS)
-#include "base/types/expected.h"
-#endif
-
 #if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
-#include "chrome/browser/download/download_completion_blocker.h"
+#include "chrome/browser/safe_browsing/download_protection/download_protection_service.h"
+#include "chrome/browser/safe_browsing/download_protection/download_protection_util.h"
 #endif
 
 class DownloadPrefs;
@@ -55,23 +51,10 @@ namespace content {
 class DownloadManager;
 }
 
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+#if BUILDFLAG(ENABLE_EXTENSIONS)
 namespace extensions {
 class CrxInstaller;
 class CrxInstallError;
-}
-#endif
-
-#if BUILDFLAG(ENTERPRISE_CONTENT_ANALYSIS)
-namespace enterprise_obfuscation {
-enum class Error;
-}
-#endif
-
-#if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
-namespace safe_browsing {
-class DownloadProtectionService;
-enum class DownloadCheckResult;
 }
 #endif
 
@@ -139,7 +122,6 @@ class ChromeDownloadManagerDelegate
       const std::string& request_origin,
       int64_t content_length,
       bool is_transient,
-      bool is_content_initiated,
       content::WebContents* web_contents) override;
   void GetSaveDir(content::BrowserContext* browser_context,
                   base::FilePath* website_save_dir,
@@ -311,7 +293,7 @@ class ChromeDownloadManagerDelegate
       const base::FilePath& suggested_path,
       DownloadTargetDeterminerDelegate::ConfirmationCallback callback);
 
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+#if BUILDFLAG(ENABLE_EXTENSIONS)
   // Called when CrxInstaller in running_crx_installs_ finishes installation.
   void OnInstallerDone(const base::UnguessableToken& token,
                        content::DownloadOpenDelayedCallback callback,
@@ -389,14 +371,6 @@ class ChromeDownloadManagerDelegate
   // Return true if the mime type is pdf and Chrome supports open this pdf.
   bool IsPdfAndSupported(const std::string& mime_type,
                          content::WebContents* web_contents);
-
-  // Called after user interacted on the incognito download confirmation message
-  // before proceeding to save a package.
-  void RequestIncognitoSavePackageConfirmationDone(
-      const GURL& url,
-      const base::FilePath& suggested_path,
-      content::SavePackagePathPickedCallback callback,
-      bool accept);
 #endif
 
   raw_ptr<Profile, DanglingUntriaged> profile_;
@@ -409,17 +383,17 @@ class ChromeDownloadManagerDelegate
   // If history database fails to initialize, this will always be kInvalidId.
   // Otherwise, the first available download id is assigned from history
   // database, and incremented by one for each download.
-  uint32_t next_download_id_ = download::DownloadItem::kInvalidId;
+  uint32_t next_download_id_;
 
   // Whether |next_download_id_| is retrieved from history db.
-  bool next_id_retrieved_ = false;
+  bool next_id_retrieved_;
 
   // The |GetNextId| callbacks that may be cached before loading the download
   // database.
   IdCallbackVector id_callbacks_;
   std::unique_ptr<DownloadPrefs> download_prefs_;
 
-#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+#if BUILDFLAG(ENABLE_EXTENSIONS)
   // CRX installs that are currently in progress.
   std::map<base::UnguessableToken, scoped_refptr<extensions::CrxInstaller>>
       running_crx_installs_;
@@ -429,7 +403,7 @@ class ChromeDownloadManagerDelegate
   std::deque<base::OnceClosure> file_picker_callbacks_;
 
   // Whether a file picker dialog is showing.
-  bool is_file_picker_showing_ = false;
+  bool is_file_picker_showing_;
 
   base::WeakPtrFactory<ChromeDownloadManagerDelegate> weak_ptr_factory_{this};
 };

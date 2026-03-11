@@ -12,12 +12,10 @@
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
-#include "content/public/test/content_browser_test_content_browser_client.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "mojo/public/cpp/bindings/binder_map.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "services/device/public/mojom/battery_monitor.mojom.h"
@@ -74,60 +72,32 @@ class MockBatteryMonitor : public device::mojom::BatteryMonitor {
   mojo::Receiver<device::mojom::BatteryMonitor> receiver_{this};
 };
 
-class TestBatteryMonitorContentBrowserClient
-    : public ContentBrowserTestContentBrowserClient {
- public:
-  TestBatteryMonitorContentBrowserClient() = default;
-  ~TestBatteryMonitorContentBrowserClient() override = default;
-
-  void RegisterBrowserInterfaceBindersForFrame(
-      content::RenderFrameHost* render_frame_host,
-      mojo::BinderMapWithContext<content::RenderFrameHost*>* map) override {
-    ContentBrowserTestContentBrowserClient::
-        RegisterBrowserInterfaceBindersForFrame(render_frame_host, map);
-    map->Add<device::mojom::BatteryMonitor>(
-        base::BindRepeating(&TestBatteryMonitorContentBrowserClient::Bind,
-                            weak_factory_.GetWeakPtr()));
-  }
-
-  MockBatteryMonitor& mock_battery_monitor() { return mock_battery_monitor_; }
-
- private:
-  void Bind(content::RenderFrameHost* render_frame_host,
-            mojo::PendingReceiver<device::mojom::BatteryMonitor> receiver) {
-    mock_battery_monitor_.Bind(std::move(receiver));
-  }
-
-  MockBatteryMonitor mock_battery_monitor_;
-  base::WeakPtrFactory<TestBatteryMonitorContentBrowserClient> weak_factory_{
-      this};
-};
-
 class BatteryMonitorTest : public ContentBrowserTest {
  public:
-  BatteryMonitorTest() = default;
-
-  void SetUpOnMainThread() override {
-    ContentBrowserTest::SetUpOnMainThread();
-    browser_client_ =
-        std::make_unique<TestBatteryMonitorContentBrowserClient>();
-    // Create a new renderer now that RegisterBrowserInterfaceBindersForFrame
-    // is overridden.
-    RecreateWindow();
+  BatteryMonitorTest() {
+    mock_battery_monitor_ = std::make_unique<MockBatteryMonitor>();
+    // Because Device Service also runs in this process(browser process), here
+    // we can directly set our binder to intercept interface requests against
+    // it.
+    OverrideBatteryMonitorBinderForTesting(
+        base::BindRepeating(&MockBatteryMonitor::Bind,
+                            base::Unretained(mock_battery_monitor_.get())));
   }
 
   BatteryMonitorTest(const BatteryMonitorTest&) = delete;
   BatteryMonitorTest& operator=(const BatteryMonitorTest&) = delete;
 
-  ~BatteryMonitorTest() override = default;
+  ~BatteryMonitorTest() override {
+    OverrideBatteryMonitorBinderForTesting(base::NullCallback());
+  }
 
  protected:
-  MockBatteryMonitor& mock_battery_monitor() {
-    return browser_client_->mock_battery_monitor();
+  MockBatteryMonitor* mock_battery_monitor() {
+    return mock_battery_monitor_.get();
   }
 
  private:
-  std::unique_ptr<TestBatteryMonitorContentBrowserClient> browser_client_;
+  std::unique_ptr<MockBatteryMonitor> mock_battery_monitor_;
 };
 
 IN_PROC_BROWSER_TEST_F(BatteryMonitorTest, NavigatorGetBatteryInfo) {
@@ -138,37 +108,34 @@ IN_PROC_BROWSER_TEST_F(BatteryMonitorTest, NavigatorGetBatteryInfo) {
   status.charging_time = 100;
   status.discharging_time = std::numeric_limits<double>::infinity();
   status.level = 0.5;
-  mock_battery_monitor().DidChange(status);
+  mock_battery_monitor()->DidChange(status);
 
   GURL test_url = GetTestUrl("battery_monitor",
                              "battery_status_promise_resolution_test.html");
   NavigateToURLBlockUntilNavigationsComplete(shell(), test_url, 2);
-  EXPECT_EQ("pass", shell()->web_contents()->GetLastCommittedURL().GetRef());
+  EXPECT_EQ("pass", shell()->web_contents()->GetLastCommittedURL().ref());
 }
 
-// TODO(crbug.com/460621062): Re-enable the test
-IN_PROC_BROWSER_TEST_F(BatteryMonitorTest,
-                       DISABLED_NavigatorGetBatteryListenChange) {
+IN_PROC_BROWSER_TEST_F(BatteryMonitorTest, NavigatorGetBatteryListenChange) {
   // From JavaScript request a promise for the battery status information.
   // Once it resolves add an event listener for battery level change. Set
   // battery level to 0.6 and invoke update. Check that the event listener
   // is invoked with the correct value for level and navigate to #pass.
   device::mojom::BatteryStatus status;
-  mock_battery_monitor().DidChange(status);
+  mock_battery_monitor()->DidChange(status);
 
   TestNavigationObserver same_tab_observer(shell()->web_contents(), 2);
   GURL test_url =
       GetTestUrl("battery_monitor", "battery_status_event_listener_test.html");
   shell()->LoadURL(test_url);
   same_tab_observer.Wait();
-  EXPECT_EQ("resolved",
-            shell()->web_contents()->GetLastCommittedURL().GetRef());
+  EXPECT_EQ("resolved", shell()->web_contents()->GetLastCommittedURL().ref());
 
   TestNavigationObserver same_tab_observer2(shell()->web_contents(), 1);
   status.level = 0.6;
-  mock_battery_monitor().DidChange(status);
+  mock_battery_monitor()->DidChange(status);
   same_tab_observer2.Wait();
-  EXPECT_EQ("pass", shell()->web_contents()->GetLastCommittedURL().GetRef());
+  EXPECT_EQ("pass", shell()->web_contents()->GetLastCommittedURL().ref());
 }
 
 }  //  namespace

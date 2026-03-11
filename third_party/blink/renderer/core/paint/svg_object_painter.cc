@@ -4,12 +4,12 @@
 
 #include "third_party/blink/renderer/core/paint/svg_object_painter.h"
 
-#include "base/types/optional_util.h"
 #include "cc/paint/color_filter.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_resource_paint_server.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_resources.h"
 #include "third_party/blink/renderer/core/paint/paint_auto_dark_mode.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
+#include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 
 namespace blink {
 
@@ -152,9 +152,7 @@ bool SVGObjectPainter::PreparePaint(
         initial_paint, additional_paint_server_transform);
     if (ApplyPaintResource(context_paint,
                            base::OptionalToPtr(resolved_transform), flags)) {
-      flags.setColor(SkColors::kBlack);
-      // TODO: Don't quantize the alpha to 8-bit.
-      flags.setAlphaf(base::ClampRound<uint8_t>(alpha * 255) / 255.0f);
+      flags.setColor(ScaleAlpha(SK_ColorBLACK, alpha));
       ApplyColorInterpolation(paint_flags, style, flags);
       return true;
     }

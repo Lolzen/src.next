@@ -38,14 +38,12 @@
 #include "third_party/blink/renderer/core/frame/remote_dom_window.h"
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
-#include "third_party/blink/renderer/core/url/dom_origin.h"
 #include "third_party/blink/renderer/core/url/dom_url_utils_read_only.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_dom_activity_logger.h"
 #include "third_party/blink/renderer/platform/bindings/v8_dom_wrapper.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
-#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 
 namespace blink {
 
@@ -158,7 +156,7 @@ void Location::setProtocol(v8::Isolate* isolate,
   if (!url.SetProtocol(protocol)) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
-        StrCat({"'", protocol, "' is an invalid protocol."}));
+        "'" + protocol + "' is an invalid protocol.");
     return;
   }
 
@@ -283,16 +281,15 @@ void Location::SetLocation(const String& url,
                                                  completed_url)) {
     if (exception_state) {
       exception_state->ThrowSecurityError(
-          StrCat({"The current window does not have permission to navigate the "
-                  "target frame to '",
-                  completed_url.GetString(), "'."}));
+          "The current window does not have permission to navigate the target "
+          "frame to '" +
+          url + "'.");
     }
     return;
   }
   if (exception_state && !completed_url.IsValid()) {
-    exception_state->ThrowDOMException(
-        DOMExceptionCode::kSyntaxError,
-        StrCat({"'", completed_url.GetString(), "' is not a valid URL."}));
+    exception_state->ThrowDOMException(DOMExceptionCode::kSyntaxError,
+                                       "'" + url + "' is not a valid URL.");
     return;
   }
 

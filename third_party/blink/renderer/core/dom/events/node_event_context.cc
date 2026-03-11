@@ -41,8 +41,7 @@ NodeEventContext::NodeEventContext(Node& node, EventTarget& current_target)
                       Member<EventTarget>::AtomicInitializerTag{}),
       tree_scope_event_context_(
           nullptr,
-          Member<TreeScopeEventContext>::AtomicInitializerTag{}),
-      invocation_target_in_shadow_tree_(node.IsInShadowTree()) {}
+          Member<TreeScopeEventContext>::AtomicInitializerTag{}) {}
 
 void NodeEventContext::Trace(Visitor* visitor) const {
   visitor->Trace(node_);
@@ -58,7 +57,6 @@ void NodeEventContext::HandleLocalEvents(Event& event) const {
   }
   event.SetTarget(Target());
   event.SetCurrentTarget(current_target_.Get());
-  event.SetInvocationTargetInShadowTree(invocation_target_in_shadow_tree_);
   node_->HandleLocalEvents(event);
 }
 

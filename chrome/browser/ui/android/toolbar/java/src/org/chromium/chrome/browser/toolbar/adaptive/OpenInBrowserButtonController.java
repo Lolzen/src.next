@@ -9,9 +9,8 @@ import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 
-import org.chromium.base.metrics.RecordUserAction;
+import org.chromium.base.supplier.Supplier;
 import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.toolbar.R;
 import org.chromium.chrome.browser.toolbar.optional_button.BaseButtonDataProvider;
@@ -22,8 +21,6 @@ import org.chromium.components.feature_engagement.EventConstants;
 import org.chromium.components.feature_engagement.FeatureConstants;
 import org.chromium.components.feature_engagement.Tracker;
 
-import java.util.function.Supplier;
-
 /**
  * Optional toolbar button which opens the current Custom Tab in BrApp. May be used by {@link
  * AdaptiveToolbarButtonController}.
@@ -32,7 +29,7 @@ import java.util.function.Supplier;
 public class OpenInBrowserButtonController extends BaseButtonDataProvider {
 
     private final Runnable mOpenInBrowserRunnable;
-    private final Supplier<@Nullable Tracker> mTrackerSupplier;
+    private final Supplier<Tracker> mTrackerSupplier;
 
     /**
      * Creates {@code OpenInBrowserButtonController}.
@@ -46,19 +43,20 @@ public class OpenInBrowserButtonController extends BaseButtonDataProvider {
     public OpenInBrowserButtonController(
             Context context,
             Drawable buttonDrawable,
-            Supplier<@Nullable Tab> activeTabSupplier,
+            Supplier<Tab> activeTabSupplier,
             Runnable openInBrowserRunnable,
-            Supplier<@Nullable Tracker> trackerSupplier) {
+            Supplier<Tracker> trackerSupplier) {
         super(
                 activeTabSupplier,
                 /* modalDialogManager= */ null,
                 buttonDrawable,
-                context.getString(R.string.menu_open_in_product_default),
+                context.getString(R.string.menu_open_in_product),
                 /* actionChipLabelResId= */ Resources.ID_NULL,
                 /* supportsTinting= */ true,
                 /* iphCommandBuilder= */ null,
                 AdaptiveToolbarButtonVariant.OPEN_IN_BROWSER,
-                /* tooltipTextResId= */ R.string.menu_open_in_product_default);
+                /* tooltipTextResId= */ R.string.menu_open_in_product,
+                /* showBackgroundHighlight= */ true);
         setShouldShowOnIncognitoTabs(true);
         mOpenInBrowserRunnable = openInBrowserRunnable;
         mTrackerSupplier = trackerSupplier;
@@ -66,13 +64,12 @@ public class OpenInBrowserButtonController extends BaseButtonDataProvider {
 
     @Override
     public void onClick(View view) {
+        // TODO: Record User action
         mOpenInBrowserRunnable.run();
-        Tracker tracker = mTrackerSupplier.get();
-        if (tracker != null) {
+        if (mTrackerSupplier.hasValue()) {
             String event = EventConstants.ADAPTIVE_TOOLBAR_CUSTOMIZATION_OPEN_IN_BROWSER_OPENED;
-            tracker.notifyEvent(event);
+            mTrackerSupplier.get().notifyEvent(event);
         }
-        RecordUserAction.record("MobileTopToolbarOpenInBrowserButton");
     }
 
     /**

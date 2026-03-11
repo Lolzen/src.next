@@ -10,6 +10,8 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/extensions/permissions/permissions_test_util.h"
+#include "chrome/browser/extensions/permissions/permissions_updater.h"
 #include "chrome/browser/extensions/test_extension_environment.h"
 #include "chrome/common/extensions/permissions/chrome_permission_message_provider.h"
 #include "chrome/grit/generated_resources.h"
@@ -17,9 +19,6 @@
 #include "components/crx_file/id_util.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registrar.h"
-#include "extensions/browser/permissions/permissions_test_util.h"
-#include "extensions/browser/permissions/permissions_updater.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/manifest.h"
@@ -31,8 +30,6 @@
 #include "extensions/common/permissions/usb_device_permission_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using extensions::mojom::APIPermissionID;
 
@@ -54,8 +51,7 @@ namespace extensions {
 class PermissionMessagesUnittest : public testing::Test {
  public:
   PermissionMessagesUnittest()
-      : message_provider_(std::make_unique<ChromePermissionMessageProvider>()) {
-  }
+      : message_provider_(new ChromePermissionMessageProvider()) {}
 
   PermissionMessagesUnittest(const PermissionMessagesUnittest&) = delete;
   PermissionMessagesUnittest& operator=(const PermissionMessagesUnittest&) =
@@ -65,8 +61,8 @@ class PermissionMessagesUnittest : public testing::Test {
 
  protected:
   void CreateAndInstallExtensionWithPermissions(
-      base::ListValue required_permissions,
-      base::ListValue optional_permissions) {
+      base::Value::List required_permissions,
+      base::Value::List optional_permissions) {
     app_ = ExtensionBuilder("Test")
                .SetManifestKey("permissions", std::move(required_permissions))
                .SetManifestKey("optional_permissions",
@@ -129,7 +125,8 @@ class PermissionMessagesUnittest : public testing::Test {
 // other (the 'history' permission has superset permissions).
 TEST_F(PermissionMessagesUnittest, HistoryHidesTabsMessage) {
   CreateAndInstallExtensionWithPermissions(
-      base::ListValue().Append("tabs").Append("history"), base::ListValue());
+      base::Value::List().Append("tabs").Append("history"),
+      base::Value::List());
 
   ASSERT_EQ(1U, required_permissions().size());
   EXPECT_EQ(l10n_util::GetStringUTF16(
@@ -142,8 +139,9 @@ TEST_F(PermissionMessagesUnittest, HistoryHidesTabsMessage) {
 // If an app requests the 'history' permission, but already has the 'tabs'
 // permission, only the new coalesced message is displayed.
 TEST_F(PermissionMessagesUnittest, MixedPermissionMessagesCoalesceOnceGranted) {
-  CreateAndInstallExtensionWithPermissions(base::ListValue().Append("tabs"),
-                                           base::ListValue().Append("history"));
+  CreateAndInstallExtensionWithPermissions(
+      base::Value::List().Append("tabs"),
+      base::Value::List().Append("history"));
 
   ASSERT_EQ(1U, required_permissions().size());
   EXPECT_EQ(
@@ -180,8 +178,9 @@ TEST_F(PermissionMessagesUnittest, MixedPermissionMessagesCoalesceOnceGranted) {
 // not affected by this grant.
 TEST_F(PermissionMessagesUnittest,
        AntiTest_PromptCanRequestSubsetOfAlreadyGrantedPermissions) {
-  CreateAndInstallExtensionWithPermissions(base::ListValue().Append("history"),
-                                           base::ListValue().Append("tabs"));
+  CreateAndInstallExtensionWithPermissions(
+      base::Value::List().Append("history"),
+      base::Value::List().Append("tabs"));
 
   ASSERT_EQ(1U, required_permissions().size());
   EXPECT_EQ(l10n_util::GetStringUTF16(
@@ -221,7 +220,8 @@ TEST_F(PermissionMessagesUnittest,
 TEST_F(PermissionMessagesUnittest,
        AntiTest_PromptCanBeEmptyButCausesChangeInPermissions) {
   CreateAndInstallExtensionWithPermissions(
-      base::ListValue().Append("tabs"), base::ListValue().Append("sessions"));
+      base::Value::List().Append("tabs"),
+      base::Value::List().Append("sessions"));
 
   ASSERT_EQ(1U, required_permissions().size());
   EXPECT_EQ(
@@ -267,7 +267,7 @@ TEST_F(USBDevicePermissionMessagesTest, SingleDevice) {
         u"Access any PVR Mass Storage from HUMAX Co., Ltd. via USB";
 
     auto permission_list =
-        base::ListValue().Append(base::Value::FromUniquePtrValue(
+        base::Value::List().Append(base::Value::FromUniquePtrValue(
             UsbDevicePermissionData(0x02ad, 0x138c, -1, -1).ToValue()));
     base::Value permission_value = base::Value(std::move(permission_list));
 
@@ -282,7 +282,7 @@ TEST_F(USBDevicePermissionMessagesTest, SingleDevice) {
   {
     const char16_t kMessage[] = u"Access USB devices from HUMAX Co., Ltd.";
 
-    base::ListValue permission_list;
+    base::Value::List permission_list;
     permission_list.Append(base::Value::FromUniquePtrValue(
         UsbDevicePermissionData(0x02ad, 0x138d, -1, -1).ToValue()));
     base::Value permission_value = base::Value(std::move(permission_list));
@@ -298,7 +298,7 @@ TEST_F(USBDevicePermissionMessagesTest, SingleDevice) {
   {
     const char16_t kMessage[] = u"Access USB devices from an unknown vendor";
 
-    base::ListValue permission_list;
+    base::Value::List permission_list;
     permission_list.Append(base::Value::FromUniquePtrValue(
         UsbDevicePermissionData(0x02ae, 0x138d, -1, -1).ToValue()));
     base::Value permission_value = base::Value(std::move(permission_list));
@@ -322,7 +322,7 @@ TEST_F(USBDevicePermissionMessagesTest, MultipleDevice) {
   });
 
   // Prepare data set
-  base::ListValue permission_list;
+  base::Value::List permission_list;
   permission_list.Append(base::Value::FromUniquePtrValue(
       UsbDevicePermissionData(0x02ad, 0x138c, -1, -1).ToValue()));
   // This device's product ID is not in Chrome's database.

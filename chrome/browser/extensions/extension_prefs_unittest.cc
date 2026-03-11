@@ -17,10 +17,8 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/install_tracker_factory.h"
-#include "chrome/browser/extensions/test_extension_system.h"
+#include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/test/base/testing_profile.h"
 #include "components/content_settings/core/browser/content_settings_registry.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -35,13 +33,10 @@
 #include "extensions/browser/extension_pref_value_map.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_prefs_observer.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/browser/install_flag.h"
 #include "extensions/browser/install_prefs_helper.h"
-#include "extensions/browser/install_tracker.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/browser/pref_types.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/extension_id.h"
@@ -49,12 +44,6 @@
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_info.h"
 #include "testing/gmock/include/gmock/gmock.h"
-
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-#include "chrome/browser/extensions/chrome_app_sorting.h"
-#endif
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using base::Time;
 using extensions::mojom::APIPermissionID;
@@ -68,8 +57,7 @@ static void AddPattern(URLPatternSet* extent, const std::string& pattern) {
 }
 
 ExtensionPrefsTest::ExtensionPrefsTest()
-    : prefs_(base::SingleThreadTaskRunner::GetCurrentDefault(),
-             std::make_unique<TestingProfile>()) {}
+    : prefs_(base::SingleThreadTaskRunner::GetCurrentDefault()) {}
 
 ExtensionPrefsTest::~ExtensionPrefsTest() = default;
 
@@ -87,35 +75,15 @@ void ExtensionPrefsTest::TearDown() {
   // Shutdown the InstallTracker early, which is a dependency on some
   // ExtensionPrefTests (and depends on PrefService being available in
   // shutdown).
-  InstallTrackerFactory::GetForBrowserContext(prefs_.browser_context())
-      ->Shutdown();
+  InstallTracker::Get(prefs_.profile())->Shutdown();
 
   // Reset ExtensionPrefs, and re-verify.
   prefs_.ResetPrefRegistry();
   RegisterPreferences(prefs_.pref_registry().get());
   prefs_.RecreateExtensionPrefs();
-
-  // Hack: After recreating ExtensionPrefs, the AppSorting also needs to be
-  // recreated. (ExtensionPrefs is never recreated in non-test code.)
-  static_cast<TestExtensionSystem*>(
-      ExtensionSystem::Get(prefs_.browser_context()))
-      ->RecreateAppSorting();
-
   Verify();
   prefs_.pref_service()->CommitPendingWrite();
   base::RunLoop().RunUntilIdle();
-
-  testing::Test::TearDown();
-}
-
-ChromeAppSorting* ExtensionPrefsTest::app_sorting() {
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-  return static_cast<ChromeAppSorting*>(
-      ExtensionSystem::Get(prefs_.browser_context())->app_sorting());
-#else
-  // Android doesn't support Chrome Apps, hence has no app sorting.
-  NOTREACHED();
-#endif
 }
 
 // Tests the LastPingDay/SetLastPingDay functions.
@@ -180,6 +148,68 @@ class ExtensionPrefsDeprecatedDisableReason : public ExtensionPrefsTest {
 
 TEST_F(ExtensionPrefsDeprecatedDisableReason, MigrateExtensionState) {}
 
+class ExtensionPrefsDisableReasonsBitflagToListMigration
+    : public ExtensionPrefsTest {
+ public:
+  void Initialize() override {
+    extension_1_ = prefs_.AddExtension("test1");
+    prefs()->AddDisableReasons(extension_1_->id(),
+                               extension_1_disable_reasons_);
+
+    extension_2_ = prefs_.AddExtension("test2");
+    prefs()->AddDisableReasons(extension_2_->id(),
+                               extension_2_disable_reasons_);
+  }
+
+  void Verify() override {
+    // Verify that the disable reasons are returned correctly.
+    EXPECT_EQ(prefs()->GetDisableReasons(extension_1_->id()),
+              extension_1_disable_reasons_);
+    EXPECT_EQ(prefs()->GetDisableReasons(extension_2_->id()),
+              extension_2_disable_reasons_);
+
+    // Verify() is called twice.
+    // In the first execution, we have the modern state. We wipe out this state
+    // and simulate the legacy state. In the second execution, `ExtensionPrefs`
+    // is re-constructed. It should re-construct the modern state from the
+    // simulated legacy state.
+    SimulateLegacyState();
+  }
+
+ private:
+  void SimulateLegacyState() {
+    // Write the disable reasons to the preference as a bitflag.
+    constexpr const char kPrefDisableReasons[] = "disable_reasons";
+    prefs()->UpdateExtensionPref(
+        extension_1_->id(), kPrefDisableReasons,
+        base::Value(DisableReasonSetToBitflag(extension_1_disable_reasons_)));
+    prefs()->UpdateExtensionPref(
+        extension_2_->id(), kPrefDisableReasons,
+        base::Value(DisableReasonSetToBitflag(extension_2_disable_reasons_)));
+  }
+
+  int DisableReasonSetToBitflag(const DisableReasonSet& set) {
+    int flag = 0;
+    for (disable_reason::DisableReason reason : set) {
+      flag |= reason;
+    }
+    return flag;
+  }
+
+  scoped_refptr<Extension> extension_1_;
+  const DisableReasonSet extension_1_disable_reasons_ = {
+      disable_reason::DISABLE_USER_ACTION,
+      disable_reason::DISABLE_BLOCKED_BY_POLICY};
+
+  scoped_refptr<Extension> extension_2_;
+  const DisableReasonSet extension_2_disable_reasons_ = {
+      disable_reason::DISABLE_PERMISSIONS_INCREASE,
+      disable_reason::DISABLE_NOT_VERIFIED,
+      disable_reason::DISABLE_USER_ACTION};
+};
+
+TEST_F(ExtensionPrefsDisableReasonsBitflagToListMigration, TestPrefMigration) {}
+
 class ExtensionPrefsEscalatePermissions : public ExtensionPrefsTest {
  public:
   void Initialize() override {
@@ -212,7 +242,7 @@ class ExtensionPrefsGrantedPermissions : public ExtensionPrefsTest {
     std::unique_ptr<APIPermission> permission(
         permission_info->CreateAPIPermission());
     {
-      base::ListValue list;
+      base::Value::List list;
       list.Append("tcp-connect:*.example.com:80");
       list.Append("udp-bind::8080");
       list.Append("udp-send-to::8888");
@@ -488,13 +518,13 @@ class ExtensionPrefsDelayedInstallInfo : public ExtensionPrefsTest {
  public:
   // Sets idle install information for one test extension.
   void SetIdleInfo(const std::string& id, int num) {
-    base::DictValue manifest;
+    base::Value::Dict manifest;
     manifest.Set(manifest_keys::kName, "test");
     manifest.Set(manifest_keys::kVersion, "1." + base::NumberToString(num));
     manifest.Set(manifest_keys::kManifestVersion, 2);
     base::FilePath path =
         prefs_.extensions_dir().AppendASCII(base::NumberToString(num));
-    std::u16string errors;
+    std::string errors;
     scoped_refptr<Extension> extension =
         Extension::Create(path, ManifestLocation::kInternal, manifest,
                           Extension::NO_FLAGS, id, &errors);
@@ -598,7 +628,7 @@ TEST_F(ExtensionPrefsDelayedInstallInfo, DelayedInstallInfo) {}
 class ExtensionPrefsFinishDelayedInstallInfo : public ExtensionPrefsTest {
  public:
   void Initialize() override {
-    base::DictValue dictionary;
+    base::Value::Dict dictionary;
     dictionary.Set(manifest_keys::kName, "test");
     dictionary.Set(manifest_keys::kVersion, "0.1");
     dictionary.Set(manifest_keys::kManifestVersion, 2);
@@ -609,16 +639,16 @@ class ExtensionPrefsFinishDelayedInstallInfo : public ExtensionPrefsTest {
     id_ = extension->id();
 
     // Set idle info
-    base::DictValue manifest;
+    base::Value::Dict manifest;
     manifest.Set(manifest_keys::kName, "test");
     manifest.Set(manifest_keys::kVersion, "0.2");
     manifest.Set(manifest_keys::kManifestVersion, 2);
-    base::ListValue scripts;
+    base::Value::List scripts;
     scripts.Append("test.js");
     manifest.SetByDottedPath(manifest_keys::kBackgroundScripts,
                              std::move(scripts));
     base::FilePath path = prefs_.extensions_dir().AppendASCII("test_0.2");
-    std::u16string errors;
+    std::string errors;
     scoped_refptr<Extension> new_extension =
         Extension::Create(path, ManifestLocation::kInternal, manifest,
                           Extension::NO_FLAGS, id_, &errors);
@@ -637,7 +667,7 @@ class ExtensionPrefsFinishDelayedInstallInfo : public ExtensionPrefsTest {
     EXPECT_FALSE(prefs()->GetDelayedInstallInfo(id_));
     EXPECT_EQ(std::string("Param"), GetInstallParam(prefs(), id_));
 
-    const base::DictValue* dict = prefs()->ReadPrefAsDict(id_, "manifest");
+    const base::Value::Dict* dict = prefs()->ReadPrefAsDict(id_, "manifest");
     ASSERT_TRUE(dict);
     const std::string* name = dict->FindString(manifest_keys::kName);
     ASSERT_TRUE(name);
@@ -646,7 +676,7 @@ class ExtensionPrefsFinishDelayedInstallInfo : public ExtensionPrefsTest {
     ASSERT_TRUE(version);
     EXPECT_EQ("0.2", *version);
     EXPECT_FALSE(dict->FindString(manifest_keys::kBackgroundPage));
-    const base::ListValue* scripts =
+    const base::Value::List* scripts =
         dict->FindListByDottedPath(manifest_keys::kBackgroundScripts);
     ASSERT_TRUE(scripts);
     EXPECT_EQ(1u, scripts->size());
@@ -783,7 +813,7 @@ class ExtensionPrefsBitMapPrefValueClearedIfEqualsDefaultValue
   }
 
   void Verify() override {
-    const base::DictValue* ext = prefs()->GetExtensionPref(extension_->id());
+    const base::Value::Dict* ext = prefs()->GetExtensionPref(extension_->id());
     ASSERT_TRUE(ext);
     // The pref value should be cleared.
     EXPECT_FALSE(ext->FindInt("disable_reasons"));
@@ -800,7 +830,7 @@ class ExtensionPrefsFlags : public ExtensionPrefsTest {
  public:
   void Initialize() override {
     {
-      base::DictValue dictionary;
+      base::Value::Dict dictionary;
       dictionary.Set(manifest_keys::kName, "from_webstore");
       dictionary.Set(manifest_keys::kVersion, "0.1");
       dictionary.Set(manifest_keys::kManifestVersion, 2);
@@ -809,7 +839,7 @@ class ExtensionPrefsFlags : public ExtensionPrefsTest {
     }
 
     {
-      base::DictValue dictionary;
+      base::Value::Dict dictionary;
       dictionary.Set(manifest_keys::kName, "was_installed_by_default");
       dictionary.Set(manifest_keys::kVersion, "0.1");
       dictionary.Set(manifest_keys::kManifestVersion, 2);
@@ -819,7 +849,7 @@ class ExtensionPrefsFlags : public ExtensionPrefsTest {
     }
 
     {
-      base::DictValue dictionary;
+      base::Value::Dict dictionary;
       dictionary.Set(manifest_keys::kName, "was_installed_by_oem");
       dictionary.Set(manifest_keys::kVersion, "0.1");
       dictionary.Set(manifest_keys::kManifestVersion, 2);
@@ -843,8 +873,8 @@ class ExtensionPrefsFlags : public ExtensionPrefsTest {
 TEST_F(ExtensionPrefsFlags, ExtensionPrefsFlags) {}
 
 PrefsPrepopulatedTestBase::PrefsPrepopulatedTestBase() {
-  base::DictValue simple_dict;
-  std::u16string error;
+  base::Value::Dict simple_dict;
+  std::string error;
 
   simple_dict.Set(manifest_keys::kVersion, "1.0.0.0");
   simple_dict.Set(manifest_keys::kManifestVersion, 2);
@@ -1262,8 +1292,7 @@ using ExtensionPrefsSimpleTest = testing::Test;
 // getter collapses unknown values to DISABLE_UNKNOWN.
 TEST_F(ExtensionPrefsSimpleTest, DisableReasonsRawManipulation) {
   content::BrowserTaskEnvironment task_environment;
-  TestExtensionPrefs prefs(base::SingleThreadTaskRunner::GetCurrentDefault(),
-                           std::make_unique<TestingProfile>());
+  TestExtensionPrefs prefs(base::SingleThreadTaskRunner::GetCurrentDefault());
   std::string extension_id = prefs.AddExtension("Test Extension")->id();
 
   ExtensionPrefs* extension_prefs = prefs.prefs();
@@ -1331,14 +1360,13 @@ TEST_F(ExtensionPrefsSimpleTest, ProfileExtensionPrefsMapTest) {
                                      PrefScope::kProfile};
 
   content::BrowserTaskEnvironment task_environment_;
-  TestExtensionPrefs prefs(base::SingleThreadTaskRunner::GetCurrentDefault(),
-                           std::make_unique<TestingProfile>());
+  TestExtensionPrefs prefs(base::SingleThreadTaskRunner::GetCurrentDefault());
 
   auto* registry = prefs.pref_registry().get();
   registry->RegisterBooleanPref(kTestBooleanPref.name, false);
   registry->RegisterIntegerPref(kTestIntegerPref.name, 0);
   registry->RegisterStringPref(kTestStringPref.name, std::string());
-  registry->RegisterTimePref(kTestTimePref.name, base::Time());
+  registry->RegisterStringPref(kTestTimePref.name, std::string());
   registry->RegisterStringPref(kTestGURLPref.name, std::string());
   registry->RegisterDictionaryPref(kTestDictPref.name);
 
@@ -1349,7 +1377,7 @@ TEST_F(ExtensionPrefsSimpleTest, ProfileExtensionPrefsMapTest) {
   prefs.prefs()->SetTimePref(kTestTimePref, time);
   GURL url = GURL("https://example/com");
   prefs.prefs()->SetGURLPref(kTestGURLPref, url);
-  base::DictValue dict;
+  base::Value::Dict dict;
   dict.Set("key", "val");
   prefs.prefs()->SetDictionaryPref(kTestDictPref, std::move(dict));
 
@@ -1364,11 +1392,83 @@ TEST_F(ExtensionPrefsSimpleTest, ProfileExtensionPrefsMapTest) {
   EXPECT_EQ(*string_ptr, "val");
 }
 
+// Tests that the "state" key is removed in per-extension prefs.
+TEST_F(ExtensionPrefsSimpleTest, ExtensionEnabledStateMigration) {
+  content::BrowserTaskEnvironment task_environment;
+  TestExtensionPrefs test_prefs(
+      base::SingleThreadTaskRunner::GetCurrentDefault());
+  ExtensionPrefs* extension_prefs = test_prefs.prefs();
+  constexpr const char kPrefState[] = "state";
+  int state = -1;
+
+  // Possible values for the "state" pref.
+  enum State {
+    DISABLED = 0,
+    ENABLED = 1,
+    DEPRECATED_EXTERNAL_EXTENSION_UNINSTALLED = 2
+  };
+
+  // Extension 1 is disabled with disable reasons. After migration, the state
+  // should be removed and the current disable reasons should be retained.
+  const ExtensionId extension_1 = test_prefs.AddExtensionAndReturnId("test1");
+  extension_prefs->UpdateExtensionPref(extension_1, kPrefState,
+                                       base::Value(State::DISABLED));
+  const DisableReasonSet extension_1_disable_reasons = {
+      disable_reason::DISABLE_EXTERNAL_EXTENSION,
+      disable_reason::DISABLE_PERMISSIONS_INCREASE};
+  extension_prefs->AddDisableReasons(extension_1, extension_1_disable_reasons);
+  EXPECT_TRUE(
+      extension_prefs->ReadPrefAsInteger(extension_1, kPrefState, &state));
+  EXPECT_EQ(state, State::DISABLED);
+
+  // Extension 2 is disabled without disable reasons. After migration, the
+  // state should be removed and DISABLE_USER_ACTION should be added as the
+  // disable reason.
+  const ExtensionId extension_2 = test_prefs.AddExtensionAndReturnId("test2");
+  extension_prefs->UpdateExtensionPref(extension_2, kPrefState,
+                                       base::Value(State::DISABLED));
+  EXPECT_TRUE(
+      extension_prefs->ReadPrefAsInteger(extension_2, kPrefState, &state));
+  EXPECT_EQ(state, State::DISABLED);
+
+  // Extension 3 is enabled. It should remain enabled after the migration.
+  const ExtensionId extension_3 = test_prefs.AddExtensionAndReturnId("test3");
+  extension_prefs->UpdateExtensionPref(extension_3, kPrefState,
+                                       base::Value(State::ENABLED));
+  EXPECT_TRUE(
+      extension_prefs->ReadPrefAsInteger(extension_3, kPrefState, &state));
+  EXPECT_EQ(state, State::ENABLED);
+
+  // Cause the migration.
+  test_prefs.RecreateExtensionPrefs();
+  extension_prefs = test_prefs.prefs();
+
+  // Validate extension 1.
+  EXPECT_FALSE(
+      extension_prefs->ReadPrefAsInteger(extension_1, kPrefState, &state));
+  EXPECT_TRUE(extension_prefs->IsExtensionDisabled(extension_1));
+  EXPECT_EQ(extension_prefs->GetDisableReasons(extension_1),
+            extension_1_disable_reasons);
+
+  // Validate extension 2.
+  EXPECT_FALSE(
+      extension_prefs->ReadPrefAsInteger(extension_2, kPrefState, &state));
+  EXPECT_TRUE(extension_prefs->IsExtensionDisabled(extension_2));
+  EXPECT_THAT(extension_prefs->GetDisableReasons(extension_2),
+              testing::ElementsAre(disable_reason::DISABLE_USER_ACTION));
+
+  // Validate extension 3.
+  EXPECT_FALSE(
+      extension_prefs->ReadPrefAsInteger(extension_3, kPrefState, &state));
+  EXPECT_FALSE(extension_prefs->IsExtensionDisabled(extension_3));
+  EXPECT_THAT(extension_prefs->GetDisableReasons(extension_3),
+              testing::IsEmpty());
+}
+
 TEST_F(ExtensionPrefsSimpleTest, DisableReasonsObserverTest) {
   content::BrowserTaskEnvironment task_environment;
   TestExtensionPrefs test_prefs(
-      base::SingleThreadTaskRunner::GetCurrentDefault(),
-      std::make_unique<TestingProfile>());
+      base::SingleThreadTaskRunner::GetCurrentDefault());
   const ExtensionId extension_id = test_prefs.AddExtensionAndReturnId("test");
 
   class Observer : public ExtensionPrefsObserver {
@@ -1465,18 +1565,17 @@ TEST_F(ExtensionPrefsSimpleTest, ExtensionSpecificPrefsMapTest) {
                                      PrefScope::kExtensionSpecific};
 
   content::BrowserTaskEnvironment task_environment_;
-  TestExtensionPrefs prefs(base::SingleThreadTaskRunner::GetCurrentDefault(),
-                           std::make_unique<TestingProfile>());
+  TestExtensionPrefs prefs(base::SingleThreadTaskRunner::GetCurrentDefault());
 
   std::string extension_id = prefs.AddExtensionAndReturnId("1");
   prefs.prefs()->SetBooleanPref(extension_id, kTestBooleanPref, true);
   prefs.prefs()->SetIntegerPref(extension_id, kTestIntegerPref, 1);
   prefs.prefs()->SetStringPref(extension_id, kTestStringPref, "foo");
-  base::DictValue dict;
+  base::Value::Dict dict;
   dict.Set("key", "val");
   prefs.prefs()->SetDictionaryPref(extension_id, kTestDictPref,
                                    std::move(dict));
-  base::ListValue list;
+  base::Value::List list;
   list.Append("list_val");
   prefs.prefs()->SetListPref(extension_id, kTestListPref, std::move(list));
   base::Time time = base::Time::Now();
@@ -1495,14 +1594,14 @@ TEST_F(ExtensionPrefsSimpleTest, ExtensionSpecificPrefsMapTest) {
                                               &string_value));
   EXPECT_EQ(string_value, "foo");
 
-  const base::DictValue* dict_val =
+  const base::Value::Dict* dict_val =
       prefs.prefs()->ReadPrefAsDictionary(extension_id, kTestDictPref);
   ASSERT_TRUE(dict_val);
   const std::string* string_ptr = dict_val->FindString("key");
   ASSERT_TRUE(string_ptr);
   EXPECT_EQ(*string_ptr, "val");
 
-  const base::ListValue* list_val =
+  const base::Value::List* list_val =
       prefs.prefs()->ReadPrefAsList(extension_id, kTestListPref);
   ASSERT_TRUE(list_val);
   ASSERT_FALSE(list_val->empty());
@@ -1514,8 +1613,7 @@ TEST_F(ExtensionPrefsSimpleTest, ExtensionSpecificPrefsMapTest) {
 
 TEST_F(ExtensionPrefsSimpleTest, HasOnlyDisableReasonTest) {
   content::BrowserTaskEnvironment task_environment;
-  TestExtensionPrefs prefs(base::SingleThreadTaskRunner::GetCurrentDefault(),
-                           std::make_unique<TestingProfile>());
+  TestExtensionPrefs prefs(base::SingleThreadTaskRunner::GetCurrentDefault());
   std::string extension_id = prefs.AddExtension("Test Extension")->id();
   ExtensionPrefs* extension_prefs = prefs.prefs();
 
@@ -1546,8 +1644,7 @@ TEST_F(ExtensionPrefsSimpleTest, HasOnlyDisableReasonTest) {
 
 TEST_F(ExtensionPrefsSimpleTest, RemoveDisableReasons) {
   content::BrowserTaskEnvironment task_environment;
-  TestExtensionPrefs prefs(base::SingleThreadTaskRunner::GetCurrentDefault(),
-                           std::make_unique<TestingProfile>());
+  TestExtensionPrefs prefs(base::SingleThreadTaskRunner::GetCurrentDefault());
   std::string extension_id = prefs.AddExtension("Test Extension")->id();
   ExtensionPrefs* extension_prefs = prefs.prefs();
   extension_prefs->AddDisableReasons(

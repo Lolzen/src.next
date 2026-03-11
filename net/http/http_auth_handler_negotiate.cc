@@ -36,10 +36,10 @@ using DelegationType = HttpAuth::DelegationType;
 
 namespace {
 
-base::DictValue NetLogParameterChannelBindings(
+base::Value::Dict NetLogParameterChannelBindings(
     const std::string& channel_binding_token,
     NetLogCaptureMode capture_mode) {
-  base::DictValue dict;
+  base::Value::Dict dict;
   if (!NetLogCaptureIncludesSocketBytes(capture_mode))
     return dict;
 
@@ -365,9 +365,10 @@ int HttpAuthHandlerNegotiate::DoResolveCanonicalNameComplete(int rv) {
       // Expect at most a single DNS alias representing the canonical name
       // because the `HostResolver` request was made with
       // `include_canonical_name`.
-      DCHECK_LE(resolve_host_request_->GetDnsAliasResults().size(), 1u);
-      if (!resolve_host_request_->GetDnsAliasResults().empty()) {
-        server = *resolve_host_request_->GetDnsAliasResults().begin();
+      DCHECK(resolve_host_request_->GetDnsAliasResults());
+      DCHECK_LE(resolve_host_request_->GetDnsAliasResults()->size(), 1u);
+      if (!resolve_host_request_->GetDnsAliasResults()->empty()) {
+        server = *resolve_host_request_->GetDnsAliasResults()->begin();
         DCHECK(!server.empty());
       }
     } else {

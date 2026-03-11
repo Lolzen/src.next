@@ -94,10 +94,8 @@ void ViewPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info) {
       ObjectPainter(layout_view).ShouldRecordSpecialHitTestData(paint_info);
 
   Element* element = DynamicTo<Element>(layout_view.GetNode());
-
-  bool paints_element_tracking_id_or_region_capture_data =
-      element &&
-      (element->GetRegionCaptureCropId() || element->GetTrackedElementRect()) &&
+  bool paints_region_capture_data =
+      element && element->GetRegionCaptureCropId() &&
       // TODO(wangxianzhu): This is to avoid the side-effect of
       // HitTestOpaqueness on region capture data. Verify if the side-effect
       // really matters.
@@ -114,8 +112,7 @@ void ViewPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info) {
     return false;
   }();
   if (!layout_view.HasBoxDecorationBackground() && !paints_hit_test_data &&
-      !paints_scroll_hit_test &&
-      !paints_element_tracking_id_or_region_capture_data &&
+      !paints_scroll_hit_test && !paints_region_capture_data &&
       !is_represented_via_pseudo_elements) {
     return;
   }
@@ -223,11 +220,11 @@ void ViewPainter::PaintBoxDecorationBackground(const PaintInfo& paint_info) {
                            *background_client);
   }
 
-  if (paints_element_tracking_id_or_region_capture_data) {
+  if (paints_region_capture_data) {
     BoxPainter(layout_view)
-        .RecordTrackedElementAndRegionCaptureData(
-            paint_info, PhysicalRect(pixel_snapped_background_rect),
-            *background_client);
+        .RecordRegionCaptureData(paint_info,
+                                 PhysicalRect(pixel_snapped_background_rect),
+                                 *background_client);
   }
 
   // Record the scroll hit test after the non-scrolling background so
@@ -377,10 +374,12 @@ void ViewPainter::PaintRootElementGroup(
 
   recorder.UniteVisualRect(paint_rect);
 
-  const FillLayer& background_layers = style.BackgroundLayers();
-  auto [should_draw_background_in_separate_buffer, last_background_layer] =
+  BoxPainterBase::FillLayerOcclusionOutputList reversed_paint_list;
+  bool should_draw_background_in_separate_buffer =
       BoxModelObjectPainter(layout_view)
-          .AnalyzeFillLayersForPainting(background_layers);
+          .CalculateFillLayerOcclusionCulling(reversed_paint_list,
+                                              style.BackgroundLayers());
+  DCHECK(reversed_paint_list.size());
 
   if (painted_separate_effect) {
     should_draw_background_in_separate_buffer = true;
@@ -434,14 +433,11 @@ void ViewPainter::PaintRootElementGroup(
   BoxBackgroundPaintContext bg_paint_context(layout_view, &box_fragment_,
                                              background_image_offset);
   BoxModelObjectPainter box_model_painter(layout_view);
-  FillLayer::IterateFillLayersInReverseOrder(
-      &background_layers, last_background_layer,
-      [&box_model_painter, paint_info, paint_rect,
-       bg_paint_context](const FillLayer& fill_layer) {
-        box_model_painter.PaintFillLayer(
-            paint_info, Color(), fill_layer, PhysicalRect(paint_rect),
-            kBackgroundBleedNone, bg_paint_context);
-      });
+  for (const auto* fill_layer : base::Reversed(reversed_paint_list)) {
+    box_model_painter.PaintFillLayer(paint_info, Color(), *fill_layer,
+                                     PhysicalRect(paint_rect),
+                                     kBackgroundBleedNone, bg_paint_context);
+  }
 
   if (should_draw_background_in_separate_buffer && !painted_separate_effect)
     context.EndLayer();

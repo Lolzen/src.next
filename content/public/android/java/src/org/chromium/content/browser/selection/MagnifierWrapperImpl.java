@@ -20,7 +20,7 @@ public class MagnifierWrapperImpl implements MagnifierWrapper {
     private static final String TAG = "Magnifier";
 
     private @Nullable Magnifier mMagnifier;
-    private final SelectionPopupControllerImpl.ReadbackViewCallback mCallback;
+    private SelectionPopupControllerImpl.ReadbackViewCallback mCallback;
 
     /** Constructor. */
     public MagnifierWrapperImpl(SelectionPopupControllerImpl.ReadbackViewCallback callback) {

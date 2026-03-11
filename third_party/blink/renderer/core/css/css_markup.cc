@@ -40,14 +40,14 @@
 namespace blink {
 
 // "ident" from the CSS tokenizer, minus backslash-escape sequences
-bool IsCSSTokenizerIdentifier(const StringView& string) {
+static bool IsCSSTokenizerIdentifier(const StringView& string) {
   unsigned length = string.length();
 
   if (!length) {
     return false;
   }
 
-  return VisitCharacters(string, [](auto chars) {
+  return WTF::VisitCharacters(string, [](auto chars) {
     size_t index{0};
 
     // -?
@@ -149,13 +149,17 @@ String SerializeString(const String& string) {
 }
 
 String SerializeURI(const String& string) {
-  return StrCat({"url(", SerializeString(string), ")"});
+  return WTF::StrCat({"url(", SerializeString(string), ")"});
 }
 
 String SerializeFontFamily(const AtomicString& string) {
   // Some <font-family> values are serialized without quotes.
   // See https://github.com/w3c/csswg-drafts/issues/5846
-  return css_parsing_utils::IsInvalidFontFamily(string)
+  return (css_parsing_utils::IsCSSWideKeyword(string) ||
+          css_parsing_utils::IsDefaultKeyword(string) ||
+          FontFamily::InferredTypeFor(string) ==
+              FontFamily::Type::kGenericFamily ||
+          !IsCSSTokenizerIdentifier(string))
              ? SerializeString(string)
              : string;
 }

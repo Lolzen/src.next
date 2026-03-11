@@ -8,7 +8,6 @@
 #include "base/check_op.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/resolver/cascade_origin.h"
-#include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
 
 namespace blink {
 
@@ -29,7 +28,7 @@ inline uint32_t EncodeOriginImportance(CascadeOrigin origin, bool important) {
 // Tree order bits are flipped for important declarations to reverse the
 // priority [1].
 //
-// [1] https://drafts.csswg.org/css-shadow/#shadow-cascading
+// [1] https://drafts.csswg.org/css-scoping/#shadow-cascading
 inline uint32_t EncodeTreeOrder(uint16_t tree_order, bool important) {
   if (important) {
     return tree_order ^ 0xFFFF;
@@ -50,19 +49,6 @@ inline uint64_t EncodeLayerOrder(uint16_t layer_order, bool important) {
   }
 }
 
-inline uint32_t EncodeMatchResultPosition(uint16_t block,
-                                          uint16_t declaration) {
-  return (static_cast<uint32_t>(block) << 16) | declaration;
-}
-
-inline wtf_size_t DecodeMatchedPropertiesIndex(uint32_t position) {
-  return (position >> 16) & 0xFFFF;
-}
-
-inline wtf_size_t DecodeDeclarationIndex(uint32_t position) {
-  return position & 0xFFFF;
-}
-
 // The CascadePriority class encapsulates a subset of the cascading criteria
 // described by css-cascade [1], and provides a way to compare priorities
 // quickly by encoding all the information in a single integer.
@@ -78,7 +64,7 @@ inline wtf_size_t DecodeDeclarationIndex(uint32_t position) {
 // StyleCascade for each call to StyleCascade::Apply.
 //
 // [1] https://drafts.csswg.org/css-cascade/#cascading
-// [2] https://drafts.csswg.org/css-shadow/#shadow-cascading
+// [2] https://drafts.csswg.org/css-scoping/#shadow-cascading
 // [3] https://drafts.csswg.org/css-cascade/#style-attr
 // [4] https://drafts.csswg.org/css-cascade-5/#layer-ordering
 class CORE_EXPORT CascadePriority {
@@ -130,8 +116,8 @@ class CORE_EXPORT CascadePriority {
                         /* layer_order */ 0,
                         /* position */ 0) {}
 
-  // For an explanation of 'tree_order', see css-shadow:
-  // https://drafts.csswg.org/css-shadow/#shadow-cascading
+  // For an explanation of 'tree_order', see css-scoping:
+  // https://drafts.csswg.org/css-scoping/#shadow-cascading
   CascadePriority(CascadeOrigin origin,
                   bool important,
                   uint16_t tree_order,
@@ -165,15 +151,8 @@ class CORE_EXPORT CascadePriority {
                                       kOriginImportanceOffset);
   }
   bool HasOrigin() const { return GetOrigin() != CascadeOrigin::kNone; }
-  // The position consists of two 16-bit parts: the high part is the
-  // "rule index", i.e. the index of a MatchedProperties object within
-  // a MatchResult; the low part is the "declaration index", i.e. the index
-  // of this declaration within its rule.
   uint32_t GetPosition() const {
     return (low_bits_ & kPositionMask) >> kPositionOffset;
-  }
-  wtf_size_t GetRuleIndex() const {
-    return DecodeMatchedPropertiesIndex(GetPosition());
   }
   uint8_t GetGeneration() const { return low_bits_ & kGenerationMask; }
   bool IsInlineStyle() const { return (low_bits_ >> kIsInlineStyleOffset) & 1; }
@@ -218,6 +197,9 @@ class CORE_EXPORT CascadePriority {
   }
   bool operator==(const CascadePriority& o) const {
     return high_bits_ == o.high_bits_ && low_bits_ == o.low_bits_;
+  }
+  bool operator!=(const CascadePriority& o) const {
+    return high_bits_ != o.high_bits_ || low_bits_ != o.low_bits_;
   }
 
  private:

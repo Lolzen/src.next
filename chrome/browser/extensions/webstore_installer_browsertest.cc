@@ -11,22 +11,22 @@
 #include "base/run_loop.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/install_approval.h"
+#include "chrome/browser/extensions/permissions/scripting_permissions_modifier.h"
 #include "chrome/browser/extensions/webstore_installer_test.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/test/browser_test.h"
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/browser/install_approval.h"
-#include "extensions/browser/permissions/scripting_permissions_modifier.h"
 #include "extensions/browser/permissions_manager.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/extension_features.h"
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/extension_service.h"
+#include "extensions/browser/extension_system.h"
+#endif
 
 namespace extensions {
 
@@ -125,12 +125,12 @@ class WebstoreInstallerMV2BrowserTest : public WebstoreInstallerBrowserTest {
 
   // The manifest used by the test installer must match `kCrxFilename` manifest
   // in the test directory.
-  base::DictValue GetManifest() {
-    return base::DictValue()
+  base::Value::Dict GetManifest() {
+    return base::Value::Dict()
         .Set("name", "Installer Extension")
         .Set("manifest_version", 2)
         .Set("version", "1.0")
-        .Set("permissions", base::ListValue().Append("tabs"));
+        .Set("permissions", base::Value::List().Append("tabs"));
   }
 };
 
@@ -162,8 +162,11 @@ IN_PROC_BROWSER_TEST_F(WebstoreInstallerMV2BrowserTest, WebstoreInstall) {
   ASSERT_TRUE(registry->enabled_extensions().GetByID(kTestExtensionId));
 }
 
+// TODO(crbug.com/398299722): Port to desktop Android when
+// ExtensionService::OnExtensionInstalled() moves out of ExtensionService.
+#if BUILDFLAG(ENABLE_EXTENSIONS)
 IN_PROC_BROWSER_TEST_F(WebstoreInstallerMV2BrowserTest, SimultaneousInstall) {
-  base::DictValue manifest = GetManifest();
+  base::Value::Dict manifest = GetManifest();
 
   content::WebContents* active_web_contents = GetActiveWebContents();
   ASSERT_TRUE(active_web_contents);
@@ -210,6 +213,7 @@ IN_PROC_BROWSER_TEST_F(WebstoreInstallerMV2BrowserTest, SimultaneousInstall) {
   // Extension ends up as disabled because of permissions.
   ASSERT_TRUE(registry->disabled_extensions().GetByID(kTestExtensionId));
 }
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 class WebstoreInstallerWithWithholdingUIBrowserTest
     : public WebstoreInstallerBrowserTest,
@@ -228,12 +232,12 @@ class WebstoreInstallerWithWithholdingUIBrowserTest
 
   // Th manifest used by the test installer must match
   // `kCrxWithPermissionsFilename` manifest in the test directory.
-  base::DictValue GetManifest() {
-    return base::DictValue()
+  base::Value::Dict GetManifest() {
+    return base::Value::Dict()
         .Set("name", "Installer Extension")
         .Set("manifest_version", 3)
         .Set("version", "1.0")
-        .Set("host_permissions", base::ListValue().Append("<all_urls>"));
+        .Set("host_permissions", base::Value::List().Append("<all_urls>"));
   }
 
  private:
@@ -249,7 +253,7 @@ IN_PROC_BROWSER_TEST_P(WebstoreInstallerWithWithholdingUIBrowserTest,
   content::WebContents* active_web_contents = GetActiveWebContents();
   ASSERT_TRUE(active_web_contents);
 
-  // Create an approval that withholds permissions when the checkbox is not
+  // Create an approval that withhelds permissions when the checkbox is not
   // selected.
   std::unique_ptr<InstallApproval> approval =
       InstallApproval::CreateWithNoInstallPrompt(

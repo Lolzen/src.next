@@ -4,11 +4,11 @@
 
 package org.chromium.chrome.browser;
 
-import static org.chromium.build.NullUtil.assertNonNull;
-
 import android.app.Activity;
 
-import org.chromium.build.annotations.NullMarked;
+import androidx.annotation.VisibleForTesting;
+
+import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
 import org.chromium.chrome.browser.tabmodel.MismatchedIndicesHandler;
@@ -16,8 +16,11 @@ import org.chromium.chrome.browser.tabmodel.MismatchedIndicesHandler;
 import java.util.function.LongSupplier;
 
 /** Implementation of MismatchedIndicesHandler used by {@link ChromeTabbedActivity}. */
-@NullMarked
 public class TabbedMismatchedIndicesHandler implements MismatchedIndicesHandler {
+    @VisibleForTesting
+    public static final String HISTOGRAM_MISMATCHED_INDICES_ACTIVITY_CREATION_TIME_DELTA =
+            "Android.MultiWindowMode.MismatchedIndices.ActivityCreationTimeDelta";
+
     private final LongSupplier mOnCreateTimestampMsSupplier;
     private final boolean mSkipIndexReassignment;
 
@@ -47,14 +50,15 @@ public class TabbedMismatchedIndicesHandler implements MismatchedIndicesHandler 
         // index. Save the tab state first to align with the current flow of execution when the
         // store is destroyed.
         var tabModelOrchestrator =
-                assertNonNull(
-                        tabbedActivityAtRequestedIndex.getTabModelOrchestratorSupplier().get());
+                tabbedActivityAtRequestedIndex.getTabModelOrchestratorSupplier().get();
         // If the two activities launched within a short span, simply destroy the persistent store
         // instance of the activity at the requested index, assuming no changes have been made to
         // the tab state during this time.
         long onCreateTimeDeltaMs =
                 mOnCreateTimestampMsSupplier.getAsLong()
                         - tabbedActivityAtRequestedIndex.getOnCreateTimestampMs();
+        RecordHistogram.recordTimesHistogram(
+                HISTOGRAM_MISMATCHED_INDICES_ACTIVITY_CREATION_TIME_DELTA, onCreateTimeDeltaMs);
         boolean shouldSaveState =
                 tabbedActivityAtRequestedIndex.getLifecycleDispatcher().getCurrentActivityState()
                         < ActivityLifecycleDispatcher.ActivityState.STOPPED_WITH_NATIVE;

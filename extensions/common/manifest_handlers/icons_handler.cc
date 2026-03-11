@@ -7,12 +7,11 @@
 #include <memory>
 #include <vector>
 
+#include "base/files/file_util.h"
 #include "base/lazy_instance.h"
-#include "base/strings/escape.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/file_util.h"
@@ -22,8 +21,6 @@
 #include "extensions/common/manifest_handlers/icon_variants_handler.h"
 #include "extensions/strings/grit/extensions_strings.h"
 #include "ui/gfx/geometry/size.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -69,13 +66,12 @@ GURL IconsInfo::GetIconURL(const Extension* extension,
                            ExtensionIconVariant::ColorScheme color_scheme) {
   const std::string& path =
       GetIcons(*extension, color_scheme).Get(size_in_px, match_type);
-  return path.empty() ? GURL()
-                      : extension->GetResourceURL(base::EscapePath(path));
+  return path.empty() ? GURL() : extension->GetResourceURL(path);
 }
 
 bool IconsHandler::Parse(Extension* extension, std::u16string* error) {
   std::unique_ptr<IconsInfo> icons_info(new IconsInfo);
-  const base::DictValue* icons_dict =
+  const base::Value::Dict* icons_dict =
       extension->manifest()->available_values().FindDict(keys::kIcons);
   if (!icons_dict) {
     *error = manifest_errors::kInvalidIcons;
@@ -84,7 +80,7 @@ bool IconsHandler::Parse(Extension* extension, std::u16string* error) {
 
   std::vector<std::string> warnings;
   if (!manifest_handler_helpers::LoadIconsFromDictionary(
-          *extension, *icons_dict, &icons_info->icons, error, &warnings)) {
+          *icons_dict, &icons_info->icons, error, &warnings)) {
     return false;
   }
   for (const auto& warning : warnings) {
@@ -95,14 +91,13 @@ bool IconsHandler::Parse(Extension* extension, std::u16string* error) {
   return true;
 }
 
-bool IconsHandler::Validate(const Extension& extension,
+bool IconsHandler::Validate(const Extension* extension,
                             std::string* error,
                             std::vector<InstallWarning>* warnings) const {
   // Analyze the icons for visibility using the default toolbar color, since
   // the majority of Chrome users don't modify their theme.
-  return file_util::ValidateExtensionIconSet(IconsInfo::GetIcons(&extension),
-                                             &extension, manifest_keys::kIcons,
-                                             error);
+  return file_util::ValidateExtensionIconSet(
+      IconsInfo::GetIcons(extension), extension, manifest_keys::kIcons, error);
 }
 
 base::span<const char* const> IconsHandler::Keys() const {

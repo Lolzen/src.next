@@ -162,8 +162,4 @@ CSSFontSelector* PagePopupController::CreateCSSFontSelector(
   return controller->popup_client_->CreateCSSFontSelector(popup_document);
 }
 
-void PagePopupController::debugLog(const String& message) {
-  LOG(ERROR) << message;
-}
-
 }  // namespace blink

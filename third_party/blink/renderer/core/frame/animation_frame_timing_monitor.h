@@ -5,8 +5,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_ANIMATION_FRAME_TIMING_MONITOR_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_ANIMATION_FRAME_TIMING_MONITOR_H_
 
-#include <variant>
-
 #include "base/task/sequence_manager/task_time_observer.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
@@ -21,11 +19,6 @@ class TimeTicks;
 }
 
 namespace blink {
-
-// When enabled, long-animation-frame events will always include the sourceURL,
-// regardless of protocol. This is useful during development when using `file:`
-// URLs or custom protocols defined by embedders.
-CORE_EXPORT BASE_DECLARE_FEATURE(kAlwaysLogLOAFURL);
 
 class LocalFrame;
 
@@ -81,7 +74,7 @@ class CORE_EXPORT AnimationFrameTimingMonitor final
                          bool resolving,
                          const char* class_like,
                          std::variant<const char*, String> property_like,
-                         LazySourceLocation* location);
+                         SourceLocation* location);
   void Will(const probe::EvaluateScriptBlock&);
   void Did(const probe::EvaluateScriptBlock& probe_data) {
     PopScriptEntryPoint(&probe_data.script_state, &probe_data);
@@ -175,7 +168,6 @@ class CORE_EXPORT AnimationFrameTimingMonitor final
   base::TimeTicks current_task_start_;
   base::TimeDelta total_blocking_time_excluding_longest_task_;
   base::TimeDelta longest_task_duration_;
-  base::TimeDelta render_style_duration_;
   bool did_pause_ = false;
   bool did_see_ui_events_ = false;
   WeakMember<LocalFrame> frame_handling_input_;

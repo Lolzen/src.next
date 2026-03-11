@@ -4,30 +4,28 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
+import androidx.annotation.NonNull;
+
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tasks.tab_management.ArchivedTabsDialogCoordinator.ArchiveDelegate;
 import org.chromium.chrome.tab_ui.R;
-import org.chromium.components.browser_ui.util.motion.MotionEventInfo;
 
 import java.util.List;
 
 /** Restore all archived tabs action for the {@link TabListEditorMenu}. */
-@NullMarked
 public class TabListEditorRestoreAllArchivedTabsAction extends TabListEditorAction {
-    private final ArchivedTabsDialogCoordinator.ArchiveDelegate mArchiveDelegate;
+    private final @NonNull ArchivedTabsDialogCoordinator.ArchiveDelegate mArchiveDelegate;
 
     /**
      * Create an action for restoring archived tabs.
      *
      * @param archiveDelegate delegate which supports archive operations.
      */
-    public static TabListEditorAction createAction(ArchiveDelegate archiveDelegate) {
+    public static TabListEditorAction createAction(@NonNull ArchiveDelegate archiveDelegate) {
         return new TabListEditorRestoreAllArchivedTabsAction(archiveDelegate);
     }
 
-    private TabListEditorRestoreAllArchivedTabsAction(ArchiveDelegate archiveDelegate) {
+    private TabListEditorRestoreAllArchivedTabsAction(@NonNull ArchiveDelegate archiveDelegate) {
         super(
                 R.id.tab_list_editor_restore_all_archived_tabs_menu_item,
                 ShowMode.MENU_ONLY,
@@ -46,15 +44,12 @@ public class TabListEditorRestoreAllArchivedTabsAction extends TabListEditorActi
     }
 
     @Override
-    public void onSelectionStateChange(List<TabListEditorItemSelectionId> itemIds) {
-        setEnabledAndItemCount(true, itemIds.size());
+    public void onSelectionStateChange(List<Integer> tabIds) {
+        setEnabledAndItemCount(true, tabIds.size());
     }
 
     @Override
-    public boolean performAction(
-            List<Tab> tabs,
-            List<String> tabGroupSyncIds,
-            @Nullable MotionEventInfo triggeringMotion) {
+    public boolean performAction(List<Tab> tabs) {
         mArchiveDelegate.restoreAllArchivedTabs();
         return true;
     }

@@ -7,30 +7,28 @@ package org.chromium.chrome.browser.tasks.tab_management;
 import android.graphics.drawable.Drawable;
 import android.util.Size;
 
+import androidx.annotation.Nullable;
+
 import org.chromium.base.Callback;
 import org.chromium.base.CallbackController;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.tab_ui.ThumbnailProvider;
-import org.chromium.chrome.browser.tab_ui.ThumbnailProvider.MultiThumbnailMetadata;
 
 /**
  * The object to set to {@link TabProperties#THUMBNAIL_FETCHER} for the TabGridViewBinder to obtain
  * the thumbnail asynchronously.
  */
-@NullMarked
 public class ThumbnailFetcher {
     private final ThumbnailProvider mThumbnailProvider;
-    private final MultiThumbnailMetadata mMultiThumbnailMetadata;
+    private final int mTabId;
     private @Nullable CallbackController mCurrentCallbackController;
 
     /**
      * @param thumbnailProvider The mechanism to send callbacks to to provide thumbnails.
-     * @param metadata The metadata of the tab or group to fetch a thumbnail for.
+     * @param tabId The ID of the tab to fetch a thumbnail for.
      */
-    ThumbnailFetcher(ThumbnailProvider thumbnailProvider, MultiThumbnailMetadata metadata) {
+    ThumbnailFetcher(ThumbnailProvider thumbnailProvider, int tabId) {
         mThumbnailProvider = thumbnailProvider;
-        mMultiThumbnailMetadata = metadata;
+        mTabId = tabId;
     }
 
     /**
@@ -40,12 +38,9 @@ public class ThumbnailFetcher {
      * @param isSelected Whether the tab is currently selected.
      * @param callback The callback to invoke with the resultant drawable.
      */
-    void fetch(Size thumbnailSize, boolean isSelected, Callback<@Nullable Drawable> callback) {
+    void fetch(Size thumbnailSize, boolean isSelected, Callback<Drawable> callback) {
         mThumbnailProvider.getTabThumbnailWithCallback(
-                mMultiThumbnailMetadata,
-                thumbnailSize,
-                isSelected,
-                createCancelableCallback(callback));
+                mTabId, thumbnailSize, isSelected, createCancelableCallback(callback));
     }
 
     /** Cancel any ongoing fetches. */
@@ -56,9 +51,7 @@ public class ThumbnailFetcher {
         }
     }
 
-    @SuppressWarnings("NullAway")
-    private Callback<@Nullable Drawable> createCancelableCallback(
-            Callback<@Nullable Drawable> callback) {
+    private Callback<Drawable> createCancelableCallback(Callback<Drawable> callback) {
         cancel();
         mCurrentCallbackController = new CallbackController();
         return mCurrentCallbackController.makeCancelable(callback);

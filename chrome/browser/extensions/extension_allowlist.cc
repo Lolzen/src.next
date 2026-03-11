@@ -15,11 +15,8 @@
 #include "extensions/browser/allowlist_state.h"
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_features.h"
 #include "extensions/common/extension_id.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -162,7 +159,7 @@ void ExtensionAllowlist::SetExtensionAllowlistAcknowledgeState(
 
 void ExtensionAllowlist::PerformActionBasedOnOmahaAttributes(
     const ExtensionId& extension_id,
-    const base::DictValue& attributes) {
+    const base::Value::Dict& attributes) {
   const base::Value* allowlist_value = attributes.Find("_esbAllowlist");
 
   ReportExtensionAllowlistOmahaAttribute(allowlist_value);
@@ -251,7 +248,8 @@ void ExtensionAllowlist::OnExtensionInstalled(const ExtensionId& extension_id,
 
 void ExtensionAllowlist::SetAllowlistEnforcementFields() {
   if (safe_browsing::IsEnhancedProtectionEnabled(*profile_->GetPrefs())) {
-    warnings_enabled_ = true;
+    warnings_enabled_ = base::FeatureList::IsEnabled(
+        extensions_features::kSafeBrowsingCrxAllowlistShowWarnings);
     should_auto_disable_extensions_ = base::FeatureList::IsEnabled(
         extensions_features::kSafeBrowsingCrxAllowlistAutoDisable);
   } else {

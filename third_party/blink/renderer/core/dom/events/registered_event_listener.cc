@@ -37,8 +37,7 @@ RegisteredEventListener::RegisteredEventListener()
       blocked_event_warning_emitted_(false),
       passive_forced_for_document_target_(false),
       passive_specified_(false),
-      removed_(false),
-      animation_trigger_(false) {}
+      removed_(false) {}
 
 RegisteredEventListener::RegisteredEventListener(
     EventListener* listener,
@@ -51,8 +50,7 @@ RegisteredEventListener::RegisteredEventListener(
       passive_forced_for_document_target_(
           options->PassiveForcedForDocumentTarget()),
       passive_specified_(options->PassiveSpecified()),
-      removed_(false),
-      animation_trigger_(options->IsAnimationTrigger()) {}
+      removed_(false) {}
 
 void RegisteredEventListener::Trace(Visitor* visitor) const {
   visitor->Trace(callback_);
@@ -66,7 +64,6 @@ AddEventListenerOptionsResolved* RegisteredEventListener::Options() const {
       passive_forced_for_document_target_);
   result->setOnce(once_);
   result->SetPassiveSpecified(passive_specified_);
-  result->SetAnimationTrigger(animation_trigger_);
   return result;
 }
 
@@ -74,12 +71,14 @@ void RegisteredEventListener::SetCallback(EventListener* listener) {
   callback_ = listener;
 }
 
-bool RegisteredEventListener::Matches(const EventListener* listener,
-                                      const OptionsForMatching& options) const {
+bool RegisteredEventListener::Matches(
+    const EventListener* listener,
+    const EventListenerOptions* options) const {
   // Equality is soley based on the listener and useCapture flags.
   DCHECK(callback_);
   DCHECK(listener);
-  return callback_->Matches(*listener) && options == GetOptionsForMatching();
+  return callback_->Matches(*listener) &&
+         static_cast<bool>(use_capture_) == options->capture();
 }
 
 bool RegisteredEventListener::ShouldFire(const Event& event) const {

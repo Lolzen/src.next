@@ -32,6 +32,7 @@
 #include "base/dcheck_is_on.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/task/delay_policy.h"
 #include "base/task/delayed_task_handle.h"
 #include "base/task/single_thread_task_runner.h"
@@ -109,7 +110,7 @@ class PLATFORM_EXPORT TimerBase {
   virtual void Fired() = 0;
 
   virtual base::OnceClosure BindTimerClosure() {
-    return BindOnce(&TimerBase::RunInternal, Unretained(this));
+    return WTF::BindOnce(&TimerBase::RunInternal, WTF::Unretained(this));
   }
 
   void RunInternal();
@@ -144,7 +145,7 @@ class TaskRunnerTimer : public TimerBase {
                   TimerFiredClass* o,
                   TimerFiredFunction f)
       : TimerBase(std::move(web_task_runner)), object_(o), function_(f) {
-    static_assert(!IsGarbageCollectedTypeV<TimerFiredClass>,
+    static_assert(!WTF::IsGarbageCollectedType<TimerFiredClass>::value,
                   "Use HeapTaskRunnerTimer with garbage-collected types.");
   }
 
@@ -173,7 +174,7 @@ class HeapTaskRunnerTimer final : public TimerBase {
         object_(object),
         function_(function) {
     static_assert(
-        IsGarbageCollectedTypeV<TimerFiredClass>,
+        WTF::IsGarbageCollectedType<TimerFiredClass>::value,
         "HeapTaskRunnerTimer can only be used with garbage-collected types.");
   }
 
@@ -185,9 +186,9 @@ class HeapTaskRunnerTimer final : public TimerBase {
   void Fired() final { (object_->*function_)(this); }
 
   base::OnceClosure BindTimerClosure() final {
-    return blink::BindOnce(&HeapTaskRunnerTimer::RunInternalTrampoline,
-                           blink::Unretained(this),
-                           WrapWeakPersistent(object_.Get()));
+    return WTF::BindOnce(&HeapTaskRunnerTimer::RunInternalTrampoline,
+                         WTF::Unretained(this),
+                         WrapWeakPersistent(object_.Get()));
   }
 
  private:

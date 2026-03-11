@@ -11,9 +11,9 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/extensions/chrome_manifest_url_handlers.h"
 #include "chrome/common/url_constants.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
@@ -23,16 +23,11 @@
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "extensions/browser/extension_creator.h"
-#include "extensions/browser/test_extension_registry_observer.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/manifest_handlers/chrome_url_overrides_handler.h"
 #include "extensions/test/extension_test_message_listener.h"
 #include "extensions/test/result_catcher.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using content::WebContents;
 
@@ -48,10 +43,10 @@ class ExtensionOverrideTest : public ExtensionApiTest {
 
   bool CheckHistoryOverridesContainsNoDupes() {
     // There should be no duplicate entries in the preferences.
-    const base::DictValue& overrides =
+    const base::Value::Dict& overrides =
         profile()->GetPrefs()->GetDict(ExtensionWebUI::kExtensionURLOverrides);
 
-    const base::ListValue* values = overrides.FindList("history");
+    const base::Value::List* values = overrides.FindList("history");
     if (!values)
       return false;
 
@@ -60,11 +55,11 @@ class ExtensionOverrideTest : public ExtensionApiTest {
       if (!val.is_dict()) {
         return false;
       }
-      const base::DictValue& dict = val.GetDict();
+      const base::Value::Dict& dict = val.GetDict();
       const std::string* entry = dict.FindString("entry");
-      if (!entry || !seen_overrides.insert(*entry).second) {
+      if (!entry || seen_overrides.count(*entry) != 0)
         return false;
-      }
+      seen_overrides.insert(*entry);
     }
 
     return true;
@@ -75,199 +70,34 @@ class ExtensionOverrideTest : public ExtensionApiTest {
   testing::AssertionResult ExtensionControlsPage(
       content::WebContents* web_contents,
       const std::string& extension_id) {
-    if (!web_contents->GetController().GetLastCommittedEntry()) {
+    if (!web_contents->GetController().GetLastCommittedEntry())
       return testing::AssertionFailure() << "No last committed entry.";
-    }
     // We can't just use WebContents::GetLastCommittedURL() here because
-    // trickiness makes the WebContents think that it committed chrome://newtab
-    // when dealing with the new tab page.
+    // trickiness makes it think that it committed chrome://newtab.
     GURL gurl = web_contents->GetController().GetLastCommittedEntry()->GetURL();
-    if (!gurl.SchemeIs(kExtensionScheme)) {
+    if (!gurl.SchemeIs(kExtensionScheme))
       return testing::AssertionFailure() << gurl;
-    }
-    if (gurl.host() != extension_id) {
+    if (gurl.host_piece() != extension_id)
       return testing::AssertionFailure() << gurl;
-    }
-    return testing::AssertionSuccess();
-  }
-
-  // Returns AssertionSuccess() if the given |web_contents| is not being
-  // actively controlled by any extension.
-  testing::AssertionResult ExtensionDoesNotControlPage(
-      content::WebContents* web_contents) {
-    if (!web_contents->GetController().GetLastCommittedEntry()) {
-      return testing::AssertionFailure() << "No last committed entry.";
-    }
-    // We can't just use WebContents::GetLastCommittedURL() here because
-    // trickiness makes the WebContents think that it committed chrome://newtab
-    // when dealing with the new tab page.
-    GURL gurl = web_contents->GetController().GetLastCommittedEntry()->GetURL();
-    if (gurl.SchemeIs(kExtensionScheme)) {
-      return testing::AssertionFailure() << gurl;
-    }
     return testing::AssertionSuccess();
   }
 
   base::FilePath data_dir() {
     return test_data_dir_.AppendASCII("override");
   }
-
-  // Enables the extension with the given ID in incognito, waits for it to
-  // reload and returns it.
-  scoped_refptr<const Extension> EnableExtensionInIncognito(
-      const ExtensionId& extension_id) {
-    // Allowing in incognito requires a reload of the extension, so we have to
-    // wait for it.
-    TestExtensionRegistryObserver observer(ExtensionRegistry::Get(profile()),
-                                           extension_id);
-    util::SetIsIncognitoEnabled(extension_id, profile(), true);
-    scoped_refptr<const Extension> extension =
-        observer.WaitForExtensionLoaded();
-    EXPECT_TRUE(extension);
-    return extension;
-  }
 };
 
-// Test for overriding the new tab page with an extension with "incognito":
-// "spanning" (default if the "incognito" manifest key is unspecified).
+// Basic test for overriding the NTP.
 IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideNewTab) {
-  scoped_refptr<const Extension> extension =
-      LoadExtension(data_dir().AppendASCII("newtab"));
+  const Extension* extension = LoadExtension(data_dir().AppendASCII("newtab"));
   {
     // Navigate to the new tab page.  The overridden new tab page
     // will call chrome.test.sendMessage('controlled by first').
     ExtensionTestMessageListener listener;
-    auto* web_contents = GetActiveWebContents();
-    ASSERT_TRUE(NavigateToURL(web_contents, GURL("chrome://newtab/")));
-    EXPECT_TRUE(ExtensionControlsPage(web_contents, extension->id()));
+    ASSERT_TRUE(NavigateToURL(GURL("chrome://newtab/")));
+    EXPECT_TRUE(ExtensionControlsPage(GetActiveWebContents(), extension->id()));
     EXPECT_TRUE(listener.WaitUntilSatisfied());
     EXPECT_EQ("controlled by first", listener.message());
-  }
-  {
-    // Navigate an incognito tab to the new tab page, first without enabling the
-    // extension in incognito. We should get the default new tab page.
-    auto* incognito_web_contents =
-        PlatformOpenURLOffTheRecord(profile(), GURL("chrome://newtab/"));
-    EXPECT_TRUE(ExtensionDoesNotControlPage(incognito_web_contents));
-
-    // Now enable the extension in incognito mode.
-    extension = EnableExtensionInIncognito(extension->id());
-
-    // Even after enabling in incognito, the extension still shouldn't override
-    // the new tab page.
-    ASSERT_TRUE(
-        NavigateToURL(incognito_web_contents, GURL("chrome://newtab/")));
-    EXPECT_TRUE(ExtensionDoesNotControlPage(incognito_web_contents));
-  }
-}
-
-// Test for overriding the new tab page with an "incognito": "split" extension.
-IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideNewTabSplitMode) {
-  scoped_refptr<const Extension> extension =
-      LoadExtension(data_dir().AppendASCII("newtab_split_mode"));
-  {
-    // Navigate to the new tab page.  The overridden new tab page
-    // will call chrome.test.notifyPass().
-    ResultCatcher catcher;
-    auto* web_contents = GetActiveWebContents();
-    ASSERT_TRUE(NavigateToURL(web_contents, GURL("chrome://newtab/")));
-    EXPECT_TRUE(ExtensionControlsPage(web_contents, extension->id()));
-    ASSERT_TRUE(catcher.GetNextResult());
-  }
-  {
-    // Navigate an incognito tab to the new tab page, first without enabling the
-    // extension in incognito. We should get the default new tab page.
-    auto* incognito_web_contents =
-        PlatformOpenURLOffTheRecord(profile(), GURL("chrome://newtab/"));
-    EXPECT_TRUE(ExtensionDoesNotControlPage(incognito_web_contents));
-
-    // Now enable the extension in incognito mode.
-    extension = EnableExtensionInIncognito(extension->id());
-
-    // Even after enabling in incognito the extension should still not be able
-    // to override the new tab page. Normally "incognito": "split" extensions
-    // can override incognito chrome pages if they are enabled in incognito, but
-    // we never allow the new tab page to be overridden in incognito since we
-    // need to ensure users see details about what incognito is (and isn't).
-    ASSERT_TRUE(
-        NavigateToURL(incognito_web_contents, GURL("chrome://newtab/")));
-    EXPECT_TRUE(ExtensionDoesNotControlPage(incognito_web_contents));
-  }
-}
-
-// Test for overriding the bookmarks page with an extension with "incognito":
-// "spanning" (default if "incognito" is unspecified).
-IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideBookmarks) {
-  scoped_refptr<const Extension> extension =
-      LoadExtension(data_dir().AppendASCII("bookmarks"));
-  {
-    // Navigate to the bookmarks page. The overridden page will call
-    // chrome.test.notifyPass().
-    ResultCatcher catcher;
-    auto* web_contents = GetActiveWebContents();
-    ASSERT_TRUE(NavigateToURL(web_contents, GURL("chrome://bookmarks/")));
-    EXPECT_TRUE(ExtensionControlsPage(web_contents, extension->id()));
-    ASSERT_TRUE(catcher.GetNextResult());
-  }
-  {
-    // Navigate an incognito tab to the bookmarks, first without enabling the
-    // extension in incognito. We should get the default bookmarks page.
-    auto* incognito_web_contents =
-        PlatformOpenURLOffTheRecord(profile(), GURL("chrome://bookmarks/"));
-    EXPECT_TRUE(ExtensionDoesNotControlPage(incognito_web_contents));
-
-    // Now enable the extension in incognito mode.
-    extension = EnableExtensionInIncognito(extension->id());
-
-    // Even after enabling in incognito, the extension still shouldn't override
-    // the bookmarks page, as only "incognito": "split" extensions can override
-    // incognito chrome pages.
-#if BUILDFLAG(IS_ANDROID)
-    // This is a bit strange, but we actually expect this NavigateToURL call to
-    // fail on Android for the bookmarks page if it is not being overridden by
-    // an extension. Instead it is swapped out with a Android NativePage, so the
-    // web contents doesn't finish the navigation like NavigateToUrl expects.
-    ASSERT_FALSE(
-        NavigateToURL(incognito_web_contents, GURL("chrome://bookmarks/")));
-#else
-    ASSERT_TRUE(
-        NavigateToURL(incognito_web_contents, GURL("chrome://bookmarks/")));
-#endif  // BUILDFLAG(IS_ANDROID)
-    EXPECT_TRUE(ExtensionDoesNotControlPage(incognito_web_contents));
-  }
-}
-
-// Test for overriding the Bookmarks page with an "incognito": "split"
-// extension.
-IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideBookmarksSplitMode) {
-  scoped_refptr<const Extension> extension =
-      LoadExtension(data_dir().AppendASCII("bookmarks_split_mode"));
-  {
-    // Navigate to the bookmarks page. The overridden page will call
-    // chrome.test.notifyPass().
-    ResultCatcher catcher;
-    auto* web_contents = GetActiveWebContents();
-    ASSERT_TRUE(NavigateToURL(web_contents, GURL("chrome://bookmarks/")));
-    EXPECT_TRUE(ExtensionControlsPage(web_contents, extension->id()));
-    ASSERT_TRUE(catcher.GetNextResult());
-  }
-  {
-    // Navigate an incognito tab to the bookmarks page, first without enabling
-    // the extension in incognito. We should get the default bookmarks page.
-    auto* incognito_web_contents =
-        PlatformOpenURLOffTheRecord(profile(), GURL("chrome://bookmarks/"));
-    EXPECT_TRUE(ExtensionDoesNotControlPage(incognito_web_contents));
-
-    // Now enable the extension in incognito mode.
-    extension = EnableExtensionInIncognito(extension->id());
-
-    // After enabling in incognito the extension will be able to override the
-    // bookmarks page. The overridden page will call chrome.test.notifyPass().
-    ResultCatcher catcher;
-    ASSERT_TRUE(
-        NavigateToURL(incognito_web_contents, GURL("chrome://bookmarks/")));
-    EXPECT_TRUE(ExtensionControlsPage(incognito_web_contents, extension->id()));
-    ASSERT_TRUE(catcher.GetNextResult());
   }
 }
 
@@ -296,14 +126,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideNewTabMultiple) {
   const std::string extension2_id =
       InstallExtensionWithPermissionsGranted(extension2_path, 1)->id();
 
-  auto* web_contents = GetActiveWebContents();
-
   {
     // Navigate to the new tab page. Last extension installed wins, so
     // the new tab page should be controlled by the second extension.
     ExtensionTestMessageListener listener;
-    ASSERT_TRUE(NavigateToURL(web_contents, GURL("chrome://newtab/")));
-    EXPECT_TRUE(ExtensionControlsPage(web_contents, extension2_id));
+    ASSERT_TRUE(NavigateToURL(GURL("chrome://newtab/")));
+    EXPECT_TRUE(ExtensionControlsPage(GetActiveWebContents(), extension2_id));
     EXPECT_TRUE(listener.WaitUntilSatisfied());
     EXPECT_EQ("controlled by second", listener.message());
   }
@@ -315,8 +143,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideNewTabMultiple) {
   {
     // The page should still be controlled by the second extension.
     ExtensionTestMessageListener listener;
-    ASSERT_TRUE(NavigateToURL(web_contents, GURL("chrome://newtab/")));
-    EXPECT_TRUE(ExtensionControlsPage(web_contents, extension2_id));
+    ASSERT_TRUE(NavigateToURL(GURL("chrome://newtab/")));
+    EXPECT_TRUE(ExtensionControlsPage(GetActiveWebContents(), extension2_id));
     EXPECT_TRUE(listener.WaitUntilSatisfied());
     EXPECT_EQ("controlled by second", listener.message());
   }
@@ -341,8 +169,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideNewTabMultiple) {
   {
     // The page should still be controlled by the second extension.
     ExtensionTestMessageListener listener;
-    ASSERT_TRUE(NavigateToURL(web_contents, GURL("chrome://newtab/")));
-    EXPECT_TRUE(ExtensionControlsPage(web_contents, extension2_id));
+    ASSERT_TRUE(NavigateToURL(GURL("chrome://newtab/")));
+    EXPECT_TRUE(ExtensionControlsPage(GetActiveWebContents(), extension2_id));
     EXPECT_TRUE(listener.WaitUntilSatisfied());
     EXPECT_EQ("controlled by second", listener.message());
   }
@@ -353,29 +181,37 @@ IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideNewTabMultiple) {
 
   {
     ExtensionTestMessageListener listener;
-    ASSERT_TRUE(NavigateToURL(web_contents, GURL("chrome://newtab/")));
-    EXPECT_TRUE(ExtensionControlsPage(web_contents, extension1_id));
+    ASSERT_TRUE(NavigateToURL(GURL("chrome://newtab/")));
+    EXPECT_TRUE(ExtensionControlsPage(GetActiveWebContents(), extension1_id));
     EXPECT_TRUE(listener.WaitUntilSatisfied());
     EXPECT_EQ("controlled by first upgrade", listener.message());
   }
 }
 
+// TODO(crbug.com/412462104): Flaky on Android. Crashes with a sequence checker
+// assert from ~UnpackedInstaller.
+#if BUILDFLAG(IS_ANDROID)
+#define MAYBE_OverridingExtensionUnloadedWithPageOpen \
+  DISABLED_OverridingExtensionUnloadedWithPageOpen
+#else
+#define MAYBE_OverridingExtensionUnloadedWithPageOpen \
+  OverridingExtensionUnloadedWithPageOpen
+#endif
 // Test that unloading an extension overriding the page reloads the page with
 // the proper url.
 IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest,
-                       OverridingExtensionUnloadedWithPageOpen) {
+                       MAYBE_OverridingExtensionUnloadedWithPageOpen) {
   // Prefer IDs because loading/unloading invalidates the extension ptrs.
   const std::string extension1_id =
       LoadExtension(data_dir().AppendASCII("newtab"))->id();
   const std::string extension2_id =
       LoadExtension(data_dir().AppendASCII("newtab2"))->id();
-  auto* web_contents = GetActiveWebContents();
   {
     // Navigate to the new tab page. Last extension installed wins, so
     // the new tab page should be controlled by the second extension.
     ExtensionTestMessageListener listener;
-    ASSERT_TRUE(NavigateToURL(web_contents, GURL("chrome://newtab/")));
-    EXPECT_TRUE(ExtensionControlsPage(web_contents, extension2_id));
+    ASSERT_TRUE(NavigateToURL(GURL("chrome://newtab/")));
+    EXPECT_TRUE(ExtensionControlsPage(GetActiveWebContents(), extension2_id));
     EXPECT_TRUE(listener.WaitUntilSatisfied());
     EXPECT_EQ("controlled by second", listener.message());
   }
@@ -387,12 +223,25 @@ IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest,
     UnloadExtension(extension2_id);
     EXPECT_TRUE(listener.WaitUntilSatisfied());
     EXPECT_EQ("controlled by first", listener.message());
-    EXPECT_TRUE(ExtensionControlsPage(web_contents, extension1_id));
+    EXPECT_TRUE(ExtensionControlsPage(GetActiveWebContents(), extension1_id));
   }
 
   UnloadExtension(extension1_id);
-  EXPECT_TRUE(content::WaitForLoadStop(web_contents));
-  EXPECT_FALSE(ExtensionControlsPage(web_contents, extension1_id));
+  content::WebContents* active_tab = GetActiveWebContents();
+  EXPECT_TRUE(content::WaitForLoadStop(active_tab));
+  EXPECT_FALSE(ExtensionControlsPage(active_tab, extension1_id));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideNewTabIncognito) {
+  LoadExtension(data_dir().AppendASCII("newtab"));
+
+  // Navigate an incognito tab to the new tab page.  We should get the actual
+  // new tab page because we can't load chrome-extension URLs in incognito.
+  WebContents* tab =
+      PlatformOpenURLOffTheRecord(profile(), GURL("chrome://newtab/"));
+  ASSERT_TRUE(tab->GetController().GetVisibleEntry());
+  EXPECT_FALSE(tab->GetController().GetVisibleEntry()->GetURL().
+               SchemeIs(kExtensionScheme));
 }
 
 // Check that when an overridden new tab page has focus, a subframe navigation
@@ -415,8 +264,8 @@ IN_PROC_BROWSER_TEST_F(
   // Navigate to the new tab page.  The overridden new tab page
   // will call chrome.test.sendMessage('controlled by first').
   ExtensionTestMessageListener listener("controlled by first");
-  auto* contents = GetActiveWebContents();
-  ASSERT_TRUE(NavigateToURL(contents, GURL(chrome::kChromeUINewTabURL)));
+  ASSERT_TRUE(NavigateToURL(GURL(chrome::kChromeUINewTabURL)));
+  WebContents* contents = GetActiveWebContents();
   EXPECT_TRUE(ExtensionControlsPage(contents, extension->id()));
   EXPECT_TRUE(listener.WaitUntilSatisfied());
 
@@ -438,14 +287,20 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_TRUE(contents->GetRenderWidgetHostView()->HasFocus());
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, OverrideHistory) {
+// Times out consistently on Win, http://crbug.com/45173.
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_OverrideHistory DISABLED_OverrideHistory
+#else
+#define MAYBE_OverrideHistory OverrideHistory
+#endif  // BUILDFLAG(IS_WIN)
+
+IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, MAYBE_OverrideHistory) {
   ASSERT_TRUE(RunExtensionTest("override/history")) << message_;
   {
     ResultCatcher catcher;
     // Navigate to the history page.  The overridden history page
     // will call chrome.test.notifyPass() .
-    auto* web_contents = GetActiveWebContents();
-    ASSERT_TRUE(NavigateToURL(web_contents, GURL("chrome://history/")));
+    ASSERT_TRUE(NavigateToURL(GURL("chrome://history/")));
     ASSERT_TRUE(catcher.GetNextResult());
   }
 }
@@ -473,9 +328,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionOverrideTest, ShouldCleanUpDuplicateEntries) {
   // a preferences file without corresponding UnloadExtension() calls. This is
   // the same as the above test, except for that it is testing the case where
   // the file already contains dupes when an extension is loaded.
-  base::ListValue list;
+  base::Value::List list;
   for (size_t i = 0; i < 3; ++i) {
-    base::DictValue dict;
+    base::Value::Dict dict;
     dict.Set("entry", "http://www.google.com/");
     dict.Set("active", true);
     list.Append(std::move(dict));

@@ -30,7 +30,7 @@
 
 // https://dom.spec.whatwg.org/#interface-mutationobserver
 
-callback MutationCallback = undefined (sequence<MutationRecord> mutations,
+callback MutationCallback = void (sequence<MutationRecord> mutations,
                                   MutationObserver observer);
 
 [
@@ -40,7 +40,7 @@ callback MutationCallback = undefined (sequence<MutationRecord> mutations,
     LegacyWindowAlias_MeasureAs=PrefixedMutationObserverConstructor
 ] interface MutationObserver {
     [CallWith=ScriptState] constructor(MutationCallback callback);
-    [RaisesException] undefined observe(Node target, optional MutationObserverInit options = {});
-    undefined disconnect();
+    [RaisesException] void observe(Node target, optional MutationObserverInit options = {});
+    void disconnect();
     sequence<MutationRecord> takeRecords();
 };

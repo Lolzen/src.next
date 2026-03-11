@@ -25,14 +25,15 @@ import org.chromium.base.Log;
 import org.chromium.build.annotations.EnsuresNonNull;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
+import org.chromium.components.browser_ui.widget.text.VerticallyFixedEditText;
 import org.chromium.components.omnibox.OmniboxFeatures;
-import org.chromium.ui.accessibility.AccessibilityState;
 import org.chromium.ui.text.EmptyTextWatcher;
-import org.chromium.ui.widget.EditTextWithLeading;
+
+import java.util.Optional;
 
 /** An {@link EditText} that shows autocomplete text at the end. */
 @NullMarked
-public class AutocompleteEditText extends EditTextWithLeading
+public class AutocompleteEditText extends VerticallyFixedEditText
         implements AutocompleteEditTextModelBase.Delegate {
     private static final String TAG = "AutocompleteEdit";
     private static final boolean DEBUG = OmniboxFeatures.sDiagInputConnection.getValue();
@@ -85,7 +86,7 @@ public class AutocompleteEditText extends EditTextWithLeading
                 });
     }
 
-    @VisibleForTesting
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     public String sanitizeTextForPaste(String s) {
         return mNativeInitialized ? OmniboxViewUtil.sanitizeTextForPaste(s) : s;
     }
@@ -126,16 +127,7 @@ public class AutocompleteEditText extends EditTextWithLeading
      * @return The user text without the autocomplete text.
      */
     public String getTextWithoutAutocomplete() {
-        // Return the current Text value when the content is requested before the InputConnection is
-        // created. This may happen when the user triggers ACTION_WEB_SEARCH, calling up the Omnibox
-        // for the selected text.
-        // When the InputConnection is empty we're guaranteed that there's no autocompletion
-        // available.
-        if (mModel == null) {
-            CharSequence result = getText();
-            if (TextUtils.isEmpty(result)) return "";
-            return result.toString();
-        }
+        if (mModel == null) return "";
         return mModel.getTextWithoutAutocomplete();
     }
 
@@ -143,16 +135,7 @@ public class AutocompleteEditText extends EditTextWithLeading
      * @return Text that includes autocomplete.
      */
     public String getTextWithAutocomplete() {
-        // Return the current Text value when the content is requested before the InputConnection is
-        // created. This may happen when the user triggers ACTION_WEB_SEARCH, calling up the Omnibox
-        // for the selected text.
-        // When the InputConnection is empty we're guaranteed that there's no autocompletion
-        // available.
-        if (mModel == null) {
-            CharSequence result = getText();
-            if (TextUtils.isEmpty(result)) return "";
-            return result.toString();
-        }
+        if (mModel == null) return "";
         return mModel.getTextWithAutocomplete();
     }
 
@@ -161,8 +144,8 @@ public class AutocompleteEditText extends EditTextWithLeading
      *     match.
      */
     @VisibleForTesting
-    public @Nullable String getAdditionalText() {
-        if (mModel == null) return null;
+    public Optional<String> getAdditionalText() {
+        if (mModel == null) return Optional.empty();
         return mModel.getAdditionalText();
     }
 
@@ -235,18 +218,15 @@ public class AutocompleteEditText extends EditTextWithLeading
      * @param inlineAutocompleteText The suggested autocompletion for the user's text.
      * @param additionalText This string is displayed adjacent to the omnibox if this match is the
      *     default. Will usually be URL when autocompleting a title, and empty otherwise.
-     * @param siteSearchLabel The site search label to be shown.
      */
     public void setAutocompleteText(
             CharSequence userText,
             @Nullable CharSequence inlineAutocompleteText,
-            @Nullable String additionalText,
-            @Nullable String siteSearchLabel) {
+            Optional<String> additionalText) {
         boolean emptyAutocomplete = TextUtils.isEmpty(inlineAutocompleteText);
         if (!emptyAutocomplete) mDisableTextScrollingFromAutocomplete = true;
         if (mModel != null) {
-            mModel.setAutocompleteText(
-                    userText, inlineAutocompleteText, additionalText, siteSearchLabel);
+            mModel.setAutocompleteText(userText, inlineAutocompleteText, additionalText);
         }
     }
 
@@ -289,13 +269,6 @@ public class AutocompleteEditText extends EditTextWithLeading
             return;
         }
         super.sendAccessibilityEventUnchecked(event);
-    }
-
-    @Override
-    public void sendAccessibilityEvent(AccessibilityEvent event) {
-        if (AccessibilityState.isTouchExplorationEnabled()) {
-            sendAccessibilityEventUnchecked(event);
-        }
     }
 
     @Override
@@ -389,9 +362,6 @@ public class AutocompleteEditText extends EditTextWithLeading
                         getContext().getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
         return defaultIme == null ? "" : defaultIme;
     }
-
-    @Override
-    public void setInputIsMultilineEligible(boolean isMultilineEligible) {}
 
     /* package */ void setModelForTesting(AutocompleteEditTextModelBase model) {
         mModel = model;

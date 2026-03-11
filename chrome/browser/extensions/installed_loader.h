@@ -56,14 +56,13 @@ class InstalledLoader {
   void LoadAllExtensions(Profile* profile);
 
   // Record a histogram using the PermissionMessage enum values for each
-  // permission in `extension`. Meant to be called only for profiles where users
-  // can install extensions, specifically profiles that can have non-component
-  // extensions installed.
+  // permission in |e|.
   // NOTE: If this is ever called with high frequency, the implementation may
   // need to be made more efficient.
-  static void RecordPermissionMessagesHistogram(const Extension* extension,
-                                                const char* histogram,
-                                                Profile* profile);
+  static void RecordPermissionMessagesHistogram(
+      const Extension* extension,
+      const char* histogram,
+      bool log_user_profile_histograms);
 
   // Allows tests to verify metrics without needing to go through
   // LoadAllExtensions().
@@ -77,10 +76,11 @@ class InstalledLoader {
   // extension that is already installed.
   int GetCreationFlags(const ExtensionInfo* info);
 
-  // Records metrics related to the loaded extensions. Meant to be called only
-  // for profiles where users can install extensions, specifically profiles that
-  // can have non-component extensions installed.
-  void RecordExtensionsMetrics(Profile* profile);
+  // Records metrics related to the loaded extensions.
+  // `is_user_profile` indicates that this is a profile where users can install
+  // extensions, specifically profiles that can have non-component extensions
+  // installed. This causes incremented histograms to emit.
+  void RecordExtensionsMetrics(Profile* profile, bool is_user_profile);
 
   // Handles a load request for a corrupted extension.
   void HandleCorruptExtension(const Extension& extension,

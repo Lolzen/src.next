@@ -63,7 +63,7 @@
 //
 // UNSUPPORTED:
 //
-// * Destroying or clearing the CallbackList during callback notification.
+// * Destroying the CallbackList during callback notification.
 //
 // This is possible to support, but not currently necessary.
 
@@ -132,6 +132,10 @@ class CallbackListBase {
   using CallbackType =
       typename CallbackListTraits<CallbackListImpl>::CallbackType;
 
+  // TODO(crbug.com/40139093): Update references to use this directly and by
+  // value, then remove.
+  using Subscription = CallbackListSubscription;
+
   CallbackListBase() = default;
   CallbackListBase(const CallbackListBase&) = delete;
   CallbackListBase& operator=(const CallbackListBase&) = delete;
@@ -139,21 +143,6 @@ class CallbackListBase {
   ~CallbackListBase() {
     // Destroying the list during iteration is unsupported and will cause a UAF.
     CHECK(!iterating_);
-  }
-
-  // Remove all callbacks. Must not be called while iterating.
-  void Clear() {
-    CHECK(!iterating_);
-    if (empty()) {
-      return;
-    }
-    // Invalidate `Subscription` callbacks, because they reference iterators
-    // that are about to be invalid.
-    weak_ptr_factory_.InvalidateWeakPtrs();
-    callbacks_.clear();
-    if (removal_callback_) {
-      removal_callback_.Run();  // May delete |this|!
-    }
   }
 
   // Registers |cb| for future notifications. Returns a CallbackListSubscription
@@ -250,7 +239,7 @@ class CallbackListBase {
     // that were executed above have all been removed regardless of whether
     // they're counted in |erased_callbacks_|.
     if (removal_callback_ &&
-        (erased_callbacks || is_instantiation<CallbackType, OnceCallback>)) {
+        (erased_callbacks || is_instantiation<OnceCallback, CallbackType>)) {
       removal_callback_.Run();  // May delete |this|!
     }
   }

@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 
+#include "base/hash/md5.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/rand_util.h"
@@ -376,7 +377,8 @@ class HttpAuthHandlerDigest::DigestContext {
     uint8_t md_value[EVP_MAX_MD_SIZE] = {};
     unsigned int md_len = sizeof(md_value);
     CHECK(EVP_DigestFinal_ex(md_ctx_.get(), md_value, &md_len));
-    return base::HexEncodeLower(base::span(md_value).first(out_len_));
+    return base::ToLowerASCII(
+        base::HexEncode(base::span(md_value).first(out_len_)));
   }
 
  private:

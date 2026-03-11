@@ -14,22 +14,20 @@ import org.jni_zero.NativeMethods;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.omnibox.OmniboxMetrics;
-import org.chromium.chrome.browser.omnibox.fusebox.ComposeboxQueryControllerBridge;
+import org.chromium.chrome.browser.omnibox.suggestions.action.OmniboxAnswerAction;
 import org.chromium.chrome.browser.omnibox.voice.VoiceRecognitionHandler.VoiceResult;
-import org.chromium.chrome.browser.preloading.PreloadingFeatureMap;
 import org.chromium.chrome.browser.profiles.Profile;
-import org.chromium.components.omnibox.AutocompleteInput;
+import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.components.omnibox.AutocompleteMatch;
 import org.chromium.components.omnibox.AutocompleteResult;
 import org.chromium.components.omnibox.AutocompleteResult.VerificationPoint;
-import org.chromium.components.omnibox.OmniboxFeatures;
-import org.chromium.components.omnibox.action.OmniboxAction;
 import org.chromium.content_public.browser.NavigationHandle;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.url.GURL;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -54,7 +52,7 @@ public class AutocompleteController {
 
     private final Set<OnSuggestionsReceivedListener> mListeners = new HashSet<>();
     private long mNativeController;
-    private @Nullable AutocompleteResult mAutocompleteResult;
+    private Optional<AutocompleteResult> mAutocompleteResult = Optional.empty();
 
     /** Listener for receiving OmniboxSuggestions. */
     public interface OnSuggestionsReceivedListener {
@@ -97,59 +95,47 @@ public class AutocompleteController {
     /**
      * Starts querying for omnibox suggestions for a given text.
      *
-     * @param input The AutocompleteInput describing current input context.
+     * @param url The URL of the current tab, used to suggest query refinements.
+     * @param pageClassification The page classification of the current tab.
+     * @param text The text to query autocomplete suggestions for.
      * @param cursorPosition The position of the cursor within the text. Set to -1 if the cursor is
      *     not focused on the text.
      * @param preventInlineAutocomplete Whether autocomplete suggestions should be prevented.
      */
     @VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
     public void start(
-            AutocompleteInput input, int cursorPosition, boolean preventInlineAutocomplete) {
+            GURL url,
+            int pageClassification,
+            String text,
+            int cursorPosition,
+            boolean preventInlineAutocomplete) {
         if (mNativeController == 0) return;
 
         AutocompleteControllerJni.get()
                 .start(
                         mNativeController,
-                        input.getUserText(),
+                        text,
                         cursorPosition,
                         null,
-                        input.getPageUrl().getSpec(),
-                        input.getPageClassification(),
-                        input.getToolMode(),
+                        url.getSpec(),
+                        pageClassification,
                         preventInlineAutocomplete,
-                        OmniboxFeatures.sOmniboxSiteSearch.isEnabled(),
-                        input.allowExactKeywordMatch(),
+                        false,
+                        false,
                         true);
-    }
-
-    /**
-     * Kicks off loading a prewarm page.
-     *
-     * @param webContents The {@link WebContents} for the current tab.
-     */
-    public void startPrewarm(@Nullable WebContents webContents) {
-        if (mNativeController == 0) return;
-        AutocompleteControllerJni.get().startPrewarm(mNativeController, webContents);
     }
 
     /**
      * Issue a prefetch request for zero prefix suggestions. Prefetch is a fire-and-forget operation
      * that yields no results.
      *
-     * @param input The AutocompleteInput containing page URL and classification.
-     * @param webContents The WebContents for the current tab.
+     * @param url The URL of the current tab, used to suggest query refinements.
+     * @param pageClassification The page classification of the current tab.
      */
-    public void startPrefetch(AutocompleteInput input, @Nullable WebContents webContents) {
+    void startPrefetch(GURL url, int pageClassification) {
         if (mNativeController == 0) return;
-        if (PreloadingFeatureMap.getInstance().shouldPrewarmOnZeroSuggest()) {
-            startPrewarm(webContents);
-        }
         AutocompleteControllerJni.get()
-                .startPrefetch(
-                        mNativeController,
-                        input.getPageUrl().getSpec(),
-                        input.getPageClassification(),
-                        webContents);
+                .startPrefetch(mNativeController, url.getSpec(), pageClassification);
     }
 
     /**
@@ -173,24 +159,23 @@ public class AutocompleteController {
     /**
      * Starts a query for suggestions before any input is available from the user.
      *
-     * @param input The AutocompleteInput describing current input context.
+     * @param omniboxText The text displayed in the omnibox.
+     * @param url The url of the currently loaded web page.
+     * @param pageClassification The page classification of the current tab.
+     * @param title The title of the currently loaded web page.
      */
-    public void startZeroSuggest(AutocompleteInput input) {
+    public void startZeroSuggest(
+            String omniboxText, GURL url, int pageClassification, String title) {
         if (mNativeController == 0) return;
 
         AutocompleteControllerJni.get()
                 .onOmniboxFocused(
-                        mNativeController,
-                        input.getUserText(),
-                        input.getPageUrl().getSpec(),
-                        input.getPageClassification(),
-                        input.getToolMode(),
-                        input.getPageTitle());
+                        mNativeController, omniboxText, url.getSpec(), pageClassification, title);
     }
 
     /**
      * Stops generating autocomplete suggestions for the currently specified text from {@link
-     * #start(AutocompleteInput, int, boolean)}.
+     * #start(Profile,String, String, boolean)}.
      *
      * @param clear Whether to clear the most recent autocomplete results. When true, the {@link
      *     #onSuggestionsReceived(AutocompleteResult, String)} will be called with an empty result
@@ -217,9 +202,9 @@ public class AutocompleteController {
         // Skip suggestions from cache.
         OmniboxMetrics.recordUsedSuggestionFromCache(match.getNativeObjectRef() == 0L);
         if (match.getNativeObjectRef() == 0L) return false;
-        return mAutocompleteResult != null
-                && mAutocompleteResult.verifyCoherency(
-                        AutocompleteResult.NO_SUGGESTION_INDEX, reason);
+        return mAutocompleteResult
+                .map(res -> res.verifyCoherency(AutocompleteResult.NO_SUGGESTION_INDEX, reason))
+                .orElse(false);
     }
 
     /**
@@ -258,7 +243,7 @@ public class AutocompleteController {
     @CalledByNative
     @VisibleForTesting
     public void onSuggestionsReceived(AutocompleteResult autocompleteResult, boolean isFinal) {
-        mAutocompleteResult = autocompleteResult;
+        mAutocompleteResult = Optional.of(autocompleteResult);
 
         // Notify callbacks of suggestions.
         for (OnSuggestionsReceivedListener listener : mListeners) {
@@ -294,8 +279,7 @@ public class AutocompleteController {
             int pageClassification,
             long elapsedTimeSinceModified,
             int completedLength,
-            @Nullable WebContents webContents,
-            @Nullable OmniboxAction action) {
+            @Nullable WebContents webContents) {
         if (mNativeController == 0) return;
         if (!hasValidNativeObjectRef(match, VerificationPoint.SELECT_MATCH)) return;
 
@@ -309,8 +293,7 @@ public class AutocompleteController {
                         pageClassification,
                         elapsedTimeSinceModified,
                         completedLength,
-                        webContents,
-                        action != null ? action.getNativeInstance() : 0);
+                        webContents);
     }
 
     /**
@@ -346,13 +329,6 @@ public class AutocompleteController {
         return AutocompleteControllerJni.get()
                 .onSuggestionTouchDown(
                         mNativeController, match.getNativeObjectRef(), matchIndex, webContents);
-    }
-
-    public void setComposeboxQueryControllerBridge(
-            @Nullable ComposeboxQueryControllerBridge bridge) {
-        AutocompleteControllerJni.get()
-                .setComposeboxQueryControllerBridge(
-                        mNativeController, bridge == null ? 0L : bridge.getNativeInstance());
     }
 
     /**
@@ -394,6 +370,41 @@ public class AutocompleteController {
     }
 
     /**
+     * Returns the final url for navigating to the SRP for the given answer action. The returned URL
+     * is augmented with the final searchbox stats.
+     */
+    @Nullable
+    GURL getAnswerActionDestinationURL(
+            AutocompleteMatch match,
+            long elapsedTimeSinceInputChange,
+            OmniboxAnswerAction answerAction) {
+        if (mNativeController == 0) return null;
+        assert hasValidNativeObjectRef(match, VerificationPoint.UPDATE_MATCH);
+        if (!hasValidNativeObjectRef(match, VerificationPoint.UPDATE_MATCH)) return null;
+
+        return AutocompleteControllerJni.get()
+                .getAnswerActionDestinationURL(
+                        mNativeController,
+                        match.getNativeObjectRef(),
+                        elapsedTimeSinceInputChange,
+                        answerAction.getNativeInstance());
+    }
+
+    /**
+     * Retrieves matching tab for suggestion at specific index.
+     *
+     * @param match the AutocompleteMatch to retrieve Tab info for
+     * @return tab that hosts matching URL
+     */
+    @Nullable
+    Tab getMatchingTabForSuggestion(AutocompleteMatch match) {
+        if (mNativeController == 0) return null;
+        if (!hasValidNativeObjectRef(match, VerificationPoint.GET_MATCHING_TAB)) return null;
+        return AutocompleteControllerJni.get()
+                .getMatchingTabForSuggestion(mNativeController, match.getNativeObjectRef());
+    }
+
+    /**
      * Pass the UI specific measurement information to Native code to aid Adaptive Suggestions.
      *
      * @param dropdownHeightWithKeyboardActive the height of visible part of the suggestions
@@ -415,8 +426,9 @@ public class AutocompleteController {
      * @return An existing (if one is available) or new (otherwise) instance of the
      *     AutocompleteController associated with the supplied profile.
      */
-    public static AutocompleteController getForProfile(Profile profile) {
-        return AutocompleteControllerJni.get().getForProfile(profile);
+    public static Optional<AutocompleteController> getForProfile(Profile profile) {
+        return Optional.ofNullable(
+                profile == null ? null : AutocompleteControllerJni.get().getForProfile(profile));
     }
 
     @VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
@@ -428,8 +440,7 @@ public class AutocompleteController {
                 int cursorPosition,
                 @Nullable String desiredTld,
                 String currentUrl,
-                @JniType("metrics::OmniboxEventProto::PageClassification") int pageClassification,
-                @JniType("omnibox::ToolMode") int toolMode,
+                int pageClassification,
                 boolean preventInlineAutocomplete,
                 boolean preferKeyword,
                 boolean allowExactKeywordMatch,
@@ -447,11 +458,10 @@ public class AutocompleteController {
                 int matchIndex,
                 int disposition,
                 String currentPageUrl,
-                @JniType("metrics::OmniboxEventProto::PageClassification") int pageClassification,
+                int pageClassification,
                 long elapsedTimeSinceModified,
                 int completedLength,
-                @Nullable WebContents webContents,
-                long nativeOmniboxAction);
+                @Nullable WebContents webContents);
 
         boolean onSuggestionTouchDown(
                 long nativeAutocompleteControllerAndroid,
@@ -463,8 +473,7 @@ public class AutocompleteController {
                 long nativeAutocompleteControllerAndroid,
                 String omniboxText,
                 String currentUrl,
-                @JniType("metrics::OmniboxEventProto::PageClassification") int pageClassification,
-                @JniType("omnibox::ToolMode") int toolMode,
+                int pageClassification,
                 String currentTitle);
 
         void deleteMatchElement(
@@ -479,9 +488,14 @@ public class AutocompleteController {
                 long nativeAutocompleteMatch,
                 long elapsedTimeSinceInputChange);
 
-        void setComposeboxQueryControllerBridge(
+        GURL getAnswerActionDestinationURL(
                 long nativeAutocompleteControllerAndroid,
-                long nativeComposeboxQueryControllerBridge);
+                long nativeAutocompleteMatch,
+                long elapsedTimeSinceInputChange,
+                long nativeAnswerAction);
+
+        Tab getMatchingTabForSuggestion(
+                long nativeAutocompleteControllerAndroid, long nativeAutocompleteMatch);
 
         void setVoiceMatches(
                 long nativeAutocompleteControllerAndroid,
@@ -492,8 +506,7 @@ public class AutocompleteController {
         void startPrefetch(
                 long nativeAutocompleteControllerAndroid,
                 String currentUrl,
-                @JniType("metrics::OmniboxEventProto::PageClassification") int pageClassification,
-                @Nullable WebContents webContents);
+                int pageClassification);
 
         // Create a navigation observser.
         void createNavigationObserver(
@@ -507,10 +520,6 @@ public class AutocompleteController {
                 long nativeAutocompleteControllerAndroid,
                 @Px int dropdownHeightWithKeyboardActive,
                 @Px int suggestionHeight);
-
-        // Start prewarming a tab.
-        void startPrewarm(
-                long nativeAutocompleteControllerAndroid, @Nullable WebContents webContents);
 
         /** Acquire an instance of AutocompleteController associated with the supplied profile. */
         AutocompleteController getForProfile(@JniType("Profile*") Profile profile);

@@ -39,10 +39,9 @@ class METRICS_EXPORT SourceIdObj {
     // the max threshold.
     NAVIGATION_ID = 1,
     // Source ID used by AppLaunchEventLogger::Log and
-    // AppPlatformMetrics::GetSourceId, DesktopWebAppUkmRecorder and
-    // WebInstallServiceImpl. They will be kept in memory as long as the
-    // associated app is still running and the number of sources are within the
-    // max threshold.
+    // AppPlatformMetrics::GetSourceId and DesktopWebAppUkmRecorder. They will
+    // be kept in memory as long as the associated app is still running and the
+    // number of sources are within the max threshold.
     APP_ID = 2,
     // Source ID for background events that don't have an open tab but the
     // associated URL is still present in the browsing history. A new source of
@@ -117,8 +116,12 @@ class METRICS_EXPORT SourceIdObj {
   constexpr SourceIdObj& operator=(const SourceIdObj& other) = default;
 
   // Allow identity comparisons.
-  friend constexpr bool operator==(const SourceIdObj&,
-                                   const SourceIdObj&) = default;
+  constexpr bool operator==(SourceIdObj other) const {
+    return value_ == other.value_;
+  }
+  constexpr bool operator!=(SourceIdObj other) const {
+    return value_ != other.value_;
+  }
 
   // Extract the Type of the SourceId.
   Type GetType() const;

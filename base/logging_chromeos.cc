@@ -13,7 +13,6 @@
 #include "base/logging.h"
 
 #include <errno.h>
-#include <sys/time.h>
 
 #include <iomanip>
 #include <string_view>

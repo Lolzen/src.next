@@ -10,7 +10,7 @@ import org.chromium.build.annotations.NullMarked;
 import org.chromium.components.browser_ui.site_settings.AutoDarkMetrics;
 import org.chromium.components.browser_ui.site_settings.AutoDarkMetrics.AutoDarkSettingsChangeSource;
 import org.chromium.components.browser_ui.site_settings.WebsitePreferenceBridge;
-import org.chromium.components.content_settings.ContentSetting;
+import org.chromium.components.content_settings.ContentSettingValues;
 import org.chromium.components.content_settings.ContentSettingsType;
 import org.chromium.components.ukm.UkmRecorder;
 import org.chromium.content_public.browser.BrowserContextHandle;
@@ -31,11 +31,11 @@ public class WebContentsDarkModeController {
      * @return Whether auto dark mode is enable for a given URL.
      */
     public static boolean isEnabledForUrl(BrowserContextHandle browserContextHandle, GURL url) {
-        @ContentSetting
+        @ContentSettingValues
         int contentSetting =
                 WebsitePreferenceBridge.getContentSetting(
                         browserContextHandle, ContentSettingsType.AUTO_DARK_WEB_CONTENT, url, url);
-        return contentSetting != ContentSetting.BLOCK;
+        return contentSetting != ContentSettingValues.BLOCK;
     }
 
     /**
@@ -51,10 +51,11 @@ public class WebContentsDarkModeController {
         // enabled. If it is enabled, the default content setting should be ALLOW.
         assert WebsitePreferenceBridge.getDefaultContentSetting(
                         browserContextHandle, ContentSettingsType.AUTO_DARK_WEB_CONTENT)
-                == ContentSetting.ALLOW;
+                == ContentSettingValues.ALLOW;
 
-        @ContentSetting
-        int contentSettingValue = enabled ? ContentSetting.DEFAULT : ContentSetting.BLOCK;
+        @ContentSettingValues
+        int contentSettingValue =
+                enabled ? ContentSettingValues.DEFAULT : ContentSettingValues.BLOCK;
 
         WebsitePreferenceBridge.setContentSettingDefaultScope(
                 browserContextHandle,

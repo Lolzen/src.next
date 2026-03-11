@@ -20,7 +20,7 @@ namespace blink {
 namespace {
 
 using ClientHintToWebFeatureMap =
-    HashMap<network::mojom::WebClientHintsType, WebFeature>;
+    WTF::HashMap<network::mojom::WebClientHintsType, WebFeature>;
 
 ClientHintToWebFeatureMap MakeClientHintToWebFeatureMap() {
   // Mapping from WebClientHintsType to WebFeature. The ordering should match

@@ -151,7 +151,7 @@ class CORE_EXPORT AttributionSrcLoader
   std::optional<attribution_reporting::SuitableOrigin>
   ReportingOriginForUrlIfValid(const KURL& url,
                                HTMLElement* element,
-                               const String& request_url,
+                               const WTF::String& request_url,
                                std::optional<uint64_t> request_id,
                                bool log_issues = true);
 

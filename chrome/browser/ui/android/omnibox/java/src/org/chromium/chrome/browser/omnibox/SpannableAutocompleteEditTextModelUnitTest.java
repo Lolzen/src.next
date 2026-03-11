@@ -34,6 +34,7 @@ import org.chromium.base.ContextUtils;
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.chrome.browser.omnibox.test.R;
 
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** Unit tests for {@link SpannableAutocompleteEditTextModel}. */
@@ -138,7 +139,7 @@ public class SpannableAutocompleteEditTextModelUnitTest {
 
     @Test
     public void dispatchKeyEvent_processAutocompleteKeysWhenAutocompletionIsAvailable() {
-        mCurrentState.setAutocompleteText("google.com");
+        mCurrentState.setAutocompleteText(Optional.of("google.com"));
 
         confirmAutocompletionAppliedWithKey(KeyEvent.KEYCODE_DPAD_RIGHT);
         // Enter is forwarded to the delegate for handling which is what "bypassed" checks.
@@ -149,7 +150,7 @@ public class SpannableAutocompleteEditTextModelUnitTest {
 
     @Test
     public void dispatchKeyEvent_passAutocompleteKeysWhenAutocompletionIsNotAvailable() {
-        mCurrentState.setAutocompleteText(null);
+        mCurrentState.setAutocompleteText(Optional.empty());
 
         confirmAutocompletionBypassed(KeyEvent.KEYCODE_DPAD_RIGHT);
         confirmAutocompletionBypassed(KeyEvent.KEYCODE_ENTER);
@@ -160,7 +161,7 @@ public class SpannableAutocompleteEditTextModelUnitTest {
     @Test
     public void dispatchKeyEvent_handleForwardDel() {
         mCurrentState.setUserText("goo");
-        mCurrentState.setAutocompleteText("gle.com");
+        mCurrentState.setAutocompleteText(Optional.of("gle.com"));
         assertEquals("google.com", mCurrentState.getText()); // Verify full state constructed.
 
         // The delete key doesn't get sent to our delegate when in autocomplete mode so

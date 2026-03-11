@@ -14,54 +14,12 @@
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_creator.h"
 #include "extensions/browser/extension_file_task_runner.h"
-#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/constants.h"
 #include "ui/base/l10n/l10n_util.h"
-
-#if BUILDFLAG(IS_ANDROID)
-#include "chrome/browser/ui/android/extensions/extension_util_bridge.h"
-#endif  // BUILDFLAG(IS_ANDROID)
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using content::BrowserThread;
 
 namespace extensions {
-
-namespace {
-struct CrxAndKeyFiles {
-  base::FilePath crx;
-  base::FilePath key;
-};
-
-std::optional<CrxAndKeyFiles> GetCrxAndKeyFilePaths(
-    const base::FilePath& root_directory,
-    const base::FilePath& key_file) {
-  bool create_key_file = key_file.empty();
-
-#if BUILDFLAG(IS_ANDROID)
-  if (root_directory.IsVirtualDocumentPath()) {
-    std::vector<std::string> file_extensions{kExtensionFileExtension};
-    if (create_key_file) {
-      file_extensions.push_back(kExtensionKeyFileExtension);
-    }
-    std::optional<std::vector<base::FilePath>> crx_key_files =
-        GetOrCreateEmptyFilesUnderDownloads(root_directory, file_extensions);
-    if (!crx_key_files) {
-      return std::nullopt;
-    }
-    return CrxAndKeyFiles{(*crx_key_files)[0], create_key_file
-                                                   ? (*crx_key_files)[1]
-                                                   : base::FilePath()};
-  }
-#endif  // BUILDFLAG(IS_ANDROID)
-  return CrxAndKeyFiles{
-      root_directory.AddExtension(kExtensionFileExtension),
-      create_key_file ? root_directory.AddExtension(kExtensionKeyFileExtension)
-                      : base::FilePath(),
-  };
-}
-}  // namespace
 
 PackExtensionJob::PackExtensionJob(Client* client,
                                    const base::FilePath& root_directory,
@@ -76,7 +34,7 @@ PackExtensionJob::PackExtensionJob(Client* client,
 PackExtensionJob::~PackExtensionJob() = default;
 
 void PackExtensionJob::Start() {
-  if (run_mode_ == RunMode::kAsynchronous) {
+  if (run_mode_ == RunMode::ASYNCHRONOUS) {
     scoped_refptr<base::SequencedTaskRunner> task_runner =
         base::SequencedTaskRunner::GetCurrentDefault();
     GetExtensionFileTaskRunner()->PostTask(
@@ -85,29 +43,27 @@ void PackExtensionJob::Start() {
                        // See class level comments for why Unretained is safe.
                        base::Unretained(this), std::move(task_runner)));
   } else {
-    DCHECK_EQ(RunMode::kSynchronous, run_mode_);
+    DCHECK_EQ(RunMode::SYNCHRONOUS, run_mode_);
     Run(nullptr);
   }
 }
 
 void PackExtensionJob::Run(
     scoped_refptr<base::SequencedTaskRunner> async_reply_task_runner) {
-  DCHECK_EQ(!!async_reply_task_runner, run_mode_ == RunMode::kAsynchronous)
+  DCHECK_EQ(!!async_reply_task_runner, run_mode_ == RunMode::ASYNCHRONOUS)
       << "Provide task runner iff we are running in asynchronous mode.";
+  auto crx_file_out = std::make_unique<base::FilePath>(
+      root_directory_.AddExtension(kExtensionFileExtension));
 
-  std::optional<CrxAndKeyFiles> files =
-      GetCrxAndKeyFilePaths(root_directory_, key_file_);
-  if (!files) {
-    ReportFailureOnClientSequence(u"Failed to create files under Downloads",
-                                  ExtensionCreator::ErrorType::kOtherError);
+  auto key_file_out = std::make_unique<base::FilePath>();
+  if (key_file_.empty()) {
+    *key_file_out = root_directory_.AddExtension(kExtensionKeyFileExtension);
   }
-  auto crx_file_out = std::make_unique<base::FilePath>(std::move(files->crx));
-  auto key_file_out = std::make_unique<base::FilePath>(std::move(files->key));
 
   ExtensionCreator creator;
   if (creator.Run(root_directory_, *crx_file_out, key_file_, *key_file_out,
                   run_flags_)) {
-    if (run_mode_ == RunMode::kAsynchronous) {
+    if (run_mode_ == RunMode::ASYNCHRONOUS) {
       async_reply_task_runner->PostTask(
           FROM_HERE,
           base::BindOnce(&PackExtensionJob::ReportSuccessOnClientSequence,
@@ -120,7 +76,7 @@ void PackExtensionJob::Run(
                                     std::move(key_file_out));
     }
   } else {
-    if (run_mode_ == RunMode::kAsynchronous) {
+    if (run_mode_ == RunMode::ASYNCHRONOUS) {
       async_reply_task_runner->PostTask(
           FROM_HERE,
           base::BindOnce(&PackExtensionJob::ReportFailureOnClientSequence,
@@ -128,7 +84,7 @@ void PackExtensionJob::Run(
                          base::Unretained(this), creator.error_message(),
                          creator.error_type()));
     } else {
-      DCHECK_EQ(RunMode::kSynchronous, run_mode_);
+      DCHECK_EQ(RunMode::SYNCHRONOUS, run_mode_);
       ReportFailureOnClientSequence(creator.error_message(),
                                     creator.error_type());
     }
@@ -144,7 +100,7 @@ void PackExtensionJob::ReportSuccessOnClientSequence(
 }
 
 void PackExtensionJob::ReportFailureOnClientSequence(
-    const std::u16string& error,
+    const std::string& error,
     ExtensionCreator::ErrorType error_type) {
   DCHECK(client_);
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);

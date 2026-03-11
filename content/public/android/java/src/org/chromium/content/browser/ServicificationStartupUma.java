@@ -40,7 +40,7 @@ public class ServicificationStartupUma {
     }
 
     // Caches the pending commits before the native is initialized.
-    private final int[] mPendingCommits = new int[ServicificationStartup.NUM_ENTRIES];
+    private int[] mPendingCommits = new int[ServicificationStartup.NUM_ENTRIES];
     private boolean mIsNativeInitialized;
 
     private static final ServicificationStartupUma sInstance = new ServicificationStartupUma();

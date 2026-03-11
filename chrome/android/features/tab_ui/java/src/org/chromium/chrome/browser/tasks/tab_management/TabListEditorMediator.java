@@ -4,7 +4,6 @@
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
 import static org.chromium.chrome.browser.tasks.tab_management.TabListEditorActionProperties.DESTROYABLE;
 
 import android.content.Context;
@@ -12,20 +11,17 @@ import android.content.res.ColorStateList;
 import android.view.View;
 
 import androidx.annotation.ColorInt;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
-import org.chromium.base.Callback;
 import org.chromium.base.ValueChangedCallback;
 import org.chromium.base.lifetime.Destroyable;
-import org.chromium.base.supplier.NonNullObservableSupplier;
-import org.chromium.base.supplier.NullableObservableSupplier;
-import org.chromium.base.supplier.ObservableSuppliers;
-import org.chromium.base.supplier.SettableNonNullObservableSupplier;
-import org.chromium.build.annotations.Initializer;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
-import org.chromium.chrome.browser.chrome_item_picker.TabItemPickerCoordinator.ItemPickerSelectionHandler;
+import org.chromium.base.supplier.ObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplierImpl;
+import org.chromium.chrome.R;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabCreationState;
+import org.chromium.chrome.browser.tab.TabId;
 import org.chromium.chrome.browser.tab.TabLaunchType;
 import org.chromium.chrome.browser.tab.TabSelectionType;
 import org.chromium.chrome.browser.tab_ui.RecyclerViewPosition;
@@ -41,9 +37,7 @@ import org.chromium.components.browser_ui.desktop_windowing.AppHeaderState;
 import org.chromium.components.browser_ui.desktop_windowing.DesktopWindowStateManager;
 import org.chromium.components.browser_ui.desktop_windowing.DesktopWindowStateManager.AppHeaderObserver;
 import org.chromium.components.browser_ui.widget.selectable_list.SelectionDelegate;
-import org.chromium.components.browser_ui.widget.selectable_list.SelectionDelegate.SelectionObserver;
 import org.chromium.ui.modelutil.ListModelChangeProcessor;
-import org.chromium.ui.modelutil.MVCListAdapter;
 import org.chromium.ui.modelutil.PropertyKey;
 import org.chromium.ui.modelutil.PropertyListModel;
 import org.chromium.ui.modelutil.PropertyModel;
@@ -52,79 +46,62 @@ import org.chromium.ui.util.TokenHolder;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 
 /**
  * This class is the mediator that contains all business logic for TabListEditor component. It is
  * also responsible for resetting the selectable tab grid based on visibility property.
  */
-@NullMarked
 class TabListEditorMediator
         implements TabListEditorCoordinator.TabListEditorController,
                 TabListEditorAction.ActionDelegate,
                 AppHeaderObserver {
     private final Context mContext;
-    private final NullableObservableSupplier<TabGroupModelFilter>
+    private final @NonNull ObservableSupplier<TabGroupModelFilter>
             mCurrentTabGroupModelFilterSupplier;
-    private final Callback<@Nullable TabGroupModelFilter> mOnTabGroupModelFilterChanged =
+    private final @NonNull ValueChangedCallback<TabGroupModelFilter> mOnTabGroupModelFilterChanged =
             new ValueChangedCallback<>(this::onTabGroupModelFilterChanged);
     private final PropertyModel mModel;
-    private final SelectionDelegate<TabListEditorItemSelectionId> mSelectionDelegate;
+    private final SelectionDelegate<Integer> mSelectionDelegate;
     private final boolean mActionOnRelatedTabs;
     private final TabModelObserver mTabModelObserver;
-    private final SettableNonNullObservableSupplier<Boolean> mBackPressChangedSupplier =
-            ObservableSuppliers.createNonNull(false);
-
+    private final ObservableSupplierImpl<Boolean> mBackPressChangedSupplier =
+            new ObservableSupplierImpl<>();
     private final List<Tab> mVisibleTabs = new ArrayList<>();
     private final List<String> mVisibleTabGroups = new ArrayList<>();
     private final TabListEditorLayout mTabListEditorLayout;
     private final @Nullable DesktopWindowStateManager mDesktopWindowStateManager;
     private final @CreationMode int mCreationMode;
-    private final SelectionObserver<TabListEditorItemSelectionId> mSelectionObserver;
 
-    private TabListCoordinator mTabListCoordinator;
-    private TabListEditorCoordinator.ResetHandler mResetHandler;
+    private @Nullable TabListCoordinator mTabListCoordinator;
+    private @Nullable TabListEditorCoordinator.ResetHandler mResetHandler;
     private @Nullable PropertyListModel<PropertyModel, PropertyKey> mActionListModel;
-    private final SnackbarManager mSnackbarManager;
-    private final @Nullable BottomSheetController mBottomSheetController;
+    private ListModelChangeProcessor mActionChangeProcessor;
+    private TabListEditorMenu mTabListEditorMenu;
+    private SnackbarManager mSnackbarManager;
+    private BottomSheetController mBottomSheetController;
     private TabListEditorToolbar mTabListEditorToolbar;
-    private TabListEditorCoordinator.@Nullable NavigationProvider mNavigationProvider;
+    private TabListEditorCoordinator.NavigationProvider mNavigationProvider;
     private @TabActionState int mTabActionState;
-    private @Nullable LifecycleObserver mLifecycleObserver;
+    private LifecycleObserver mLifecycleObserver;
     private int mSnackbarOverrideToken;
-    private @Nullable ItemPickerSelectionHandler mSelectionHandler;
-    private Set<TabListEditorItemSelectionId> mInitialSelectedTabIds = new HashSet<>();
 
     private final View.OnClickListener mNavigationClickListener =
             new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    assumeNonNull(mNavigationProvider);
                     mNavigationProvider.goBack();
-                }
-            };
-
-    private final View.OnClickListener mDoneButtonClickHandler =
-            new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    assumeNonNull(mSelectionHandler);
-
-                    List<TabListEditorItemSelectionId> selectedItems =
-                            new ArrayList<>(mSelectionDelegate.getSelectedItems());
-                    mSelectionHandler.finishSelection(selectedItems);
                 }
             };
 
     TabListEditorMediator(
             Context context,
-            NullableObservableSupplier<TabGroupModelFilter> currentTabGroupModelFilterSupplier,
+            @NonNull ObservableSupplier<TabGroupModelFilter> currentTabGroupModelFilterSupplier,
             PropertyModel model,
-            SelectionDelegate<TabListEditorItemSelectionId> selectionDelegate,
+            SelectionDelegate<Integer> selectionDelegate,
             boolean actionOnRelatedTabs,
             SnackbarManager snackbarManager,
-            @Nullable BottomSheetController bottomSheetController,
+            BottomSheetController bottomSheetController,
             TabListEditorLayout tabListEditorLayout,
             @TabActionState int initialTabActionState,
             @Nullable DesktopWindowStateManager desktopWindowStateManager,
@@ -146,7 +123,7 @@ class TabListEditorMediator
                     @Override
                     public void didAddTab(
                             Tab tab,
-                            @TabLaunchType int type,
+                            int type,
                             @TabCreationState int creationState,
                             boolean markedForSelection) {
                         TabGroupModelFilter filter = mCurrentTabGroupModelFilterSupplier.get();
@@ -160,7 +137,6 @@ class TabListEditorMediator
                                 || type == TabLaunchType.FROM_REPARENTING
                                 || type == TabLaunchType.FROM_REPARENTING_BACKGROUND
                                 || type == TabLaunchType.FROM_STARTUP) {
-                            assumeNonNull(mNavigationProvider);
                             mNavigationProvider.goBack();
                         }
                     }
@@ -168,36 +144,23 @@ class TabListEditorMediator
                     @Override
                     public void willCloseTab(Tab tab, boolean didCloseAlone) {
                         if (mTabActionState != TabProperties.TabActionState.CLOSABLE) {
-                            assumeNonNull(mNavigationProvider);
                             mNavigationProvider.goBack();
                         }
                     }
 
+                    // TODO(crbug.com/40945153): Revisit after adding the inactive tab model for
+                    // using a custom click handler when selecting tabs.
                     @Override
                     public void didSelectTab(Tab tab, @TabSelectionType int type, int lastId) {
                         if (mTabActionState == TabProperties.TabActionState.CLOSABLE
                                 && type == TabSelectionType.FROM_USER) {
-                            assumeNonNull(mNavigationProvider);
                             mNavigationProvider.goBack();
                         }
                     }
                 };
 
-        mSelectionObserver =
-                new SelectionDelegate.SelectionObserver<>() {
-                    @Override
-                    public void onSelectionStateChange(
-                            List<TabListEditorItemSelectionId> selectedItems) {
-                        // Synchronizes the visual properties of each tab model with the current
-                        // state of the selection delegate to update checkmarks.
-                        updateModelsFromSelection(selectedItems);
-                        updateToolbar();
-                    }
-                };
-        mSelectionDelegate.addObserver(mSelectionObserver);
-
-        mCurrentTabGroupModelFilterSupplier.addSyncObserverAndCallIfNonNull(
-                mOnTabGroupModelFilterChanged);
+        mOnTabGroupModelFilterChanged.onResult(
+                mCurrentTabGroupModelFilterSupplier.addObserver(mOnTabGroupModelFilterChanged));
 
         mBackPressChangedSupplier.set(isEditorVisible());
         mModel.addObserver(
@@ -219,45 +182,10 @@ class TabListEditorMediator
         return mModel.get(TabListEditorProperties.IS_VISIBLE);
     }
 
-    private void updateToolbar() {
-        if (mCreationMode != CreationMode.ITEM_PICKER) {
-            mModel.set(TabListEditorProperties.DONE_BUTTON_VISIBILITY, false);
-            return;
-        }
-        mModel.set(TabListEditorProperties.DONE_BUTTON_VISIBILITY, true);
-
-        Set<TabListEditorItemSelectionId> currentSelection = mSelectionDelegate.getSelectedItems();
-        boolean hasSelectionChanged = !Objects.equals(mInitialSelectedTabIds, currentSelection);
-        mModel.set(TabListEditorProperties.IS_DONE_BUTTON_ENABLED, hasSelectionChanged);
-    }
-
-    private void updateModelsFromSelection(List<TabListEditorItemSelectionId> selectedItems) {
-        // If the creation mode is not ITEM_PICKER, the deselection logic is not applied for
-        // performance optimization.
-        if (mCreationMode != CreationMode.ITEM_PICKER) return;
-
-        TabListModel listModel = mTabListCoordinator.getTabListModel();
-        if (listModel == null) return;
-
-        Set<TabListEditorItemSelectionId> selectedSet = new HashSet<>(selectedItems);
-        for (MVCListAdapter.ListItem item : listModel) {
-            PropertyModel model = item.model;
-            // This check ensures that we are filtering out tab groups and messages.
-            if (model.containsKey(TabProperties.TAB_ID)) {
-                int tabId = model.get(TabProperties.TAB_ID);
-                // Because the check above ensures that the model contains a TAB_ID, and
-                // TabListModel maintains a strict 1:1 mapping of TabModel to tab-type items, these
-                // IDs are guaranteed to not be INVALID_TAB_ID.
-                var itemId = TabListEditorItemSelectionId.createTabId(tabId);
-                model.set(TabProperties.IS_SELECTED, selectedSet.contains(itemId));
-            }
-        }
-    }
-
     private void updateColors(boolean isIncognito) {
         @ColorInt
         int primaryColor =
-                TabUiThemeProvider.getTabGroupDialogBackgroundColor(
+                TabUiThemeProvider.getTabGridDialogBackgroundColor(
                         mContext, isIncognito, mCreationMode);
         @ColorInt
         int toolbarBackgroundColor =
@@ -279,7 +207,6 @@ class TabListEditorMediator
         }
     }
 
-    @Initializer
     public void initializeWithTabListCoordinator(
             TabListCoordinator tabListCoordinator,
             TabListEditorCoordinator.ResetHandler resetHandler) {
@@ -287,14 +214,16 @@ class TabListEditorMediator
         mTabListEditorToolbar = mTabListEditorLayout.getToolbar();
         mResetHandler = resetHandler;
 
-        mModel.set(TabListEditorProperties.CREATION_MODE, mCreationMode);
-
         mModel.set(TabListEditorProperties.TOOLBAR_NAVIGATION_LISTENER, mNavigationClickListener);
-        mModel.set(TabListEditorProperties.DONE_BUTTON_CLICK_HANDLER, mDoneButtonClickHandler);
-        updateColors(
-                assumeNonNull(mCurrentTabGroupModelFilterSupplier.get())
-                        .getTabModel()
-                        .isIncognito());
+        if (mActionOnRelatedTabs) {
+            mModel.set(
+                    TabListEditorProperties.RELATED_TAB_COUNT_PROVIDER,
+                    (tabIdList) -> {
+                        return TabListEditorAction.getTabCountIncludingRelatedTabs(
+                                mCurrentTabGroupModelFilterSupplier.get(), tabIdList);
+                    });
+        }
+        updateColors(mCurrentTabGroupModelFilterSupplier.get().getTabModel().isIncognito());
     }
 
     /** {@link TabListEditorCoordinator.TabListEditorController} implementation. */
@@ -313,7 +242,6 @@ class TabListEditorMediator
         // We don't call TabListCoordinator#prepareTabSwitcherView, since not all the logic (e.g.
         // requiring one tab to be selected) is applicable here.
         mTabListCoordinator.prepareTabGridView();
-        mTabListCoordinator.attachEmptyView();
         mVisibleTabs.clear();
         mVisibleTabs.addAll(tabs);
         mVisibleTabGroups.clear();
@@ -321,16 +249,12 @@ class TabListEditorMediator
 
         mResetHandler.resetWithListOfTabs(
                 tabs, tabGroupSyncIds, recyclerViewPosition, /* quickMode= */ false);
-        mTabListEditorLayout.hideLoadingUi();
 
         mModel.set(TabListEditorProperties.IS_VISIBLE, true);
-
-        updateToolbar();
-
-        updateColors(
-                assumeNonNull(mCurrentTabGroupModelFilterSupplier.get())
-                        .getTabModel()
-                        .isIncognito());
+        mModel.set(
+                TabListEditorProperties.TOOLBAR_TITLE,
+                mContext.getString(R.string.tab_selection_editor_toolbar_select_tabs));
+        updateColors(mCurrentTabGroupModelFilterSupplier.get().getTabModel().isIncognito());
     }
 
     @Override
@@ -338,13 +262,16 @@ class TabListEditorMediator
         // Deferred initialization.
         if (mActionListModel == null) {
             mActionListModel = new PropertyListModel<>();
-            TabListEditorMenu menu =
-                    new TabListEditorMenu(mContext, mTabListEditorToolbar.getActionViewLayout());
-            mSelectionDelegate.addObserver(menu);
-            ListModelChangeProcessor actionChangeProcessor =
+            mTabListEditorMenu =
+                    new TabListEditorMenu(
+                            mContext, mTabListEditorToolbar.getActionViewLayout());
+            mSelectionDelegate.addObserver(mTabListEditorMenu);
+            mActionChangeProcessor =
                     new ListModelChangeProcessor(
-                            mActionListModel, menu, new TabListEditorMenuAdapter());
-            mActionListModel.addObserver(actionChangeProcessor);
+                            mActionListModel,
+                            mTabListEditorMenu,
+                            new TabListEditorMenuAdapter());
+            mActionListModel.addObserver(mActionChangeProcessor);
         }
 
         runListDestroyables();
@@ -358,16 +285,12 @@ class TabListEditorMediator
             mActionListModel.add(action.getPropertyModel());
         }
 
-        updateColors(
-                assumeNonNull(mCurrentTabGroupModelFilterSupplier.get())
-                        .getTabModel()
-                        .isIncognito());
+        updateColors(mCurrentTabGroupModelFilterSupplier.get().getTabModel().isIncognito());
     }
 
     @Override
     public boolean handleBackPressed() {
         if (!isEditorVisible()) return false;
-        assumeNonNull(mNavigationProvider);
         mNavigationProvider.goBack();
         return true;
     }
@@ -375,7 +298,6 @@ class TabListEditorMediator
     @Override
     public @BackPressResult int handleBackPress() {
         int result = isEditorVisible() ? BackPressResult.SUCCESS : BackPressResult.FAILURE;
-        assumeNonNull(mNavigationProvider);
         mNavigationProvider.goBack();
         return result;
     }
@@ -386,7 +308,7 @@ class TabListEditorMediator
     }
 
     @Override
-    public NonNullObservableSupplier<Boolean> getHandleBackPressChangedSupplier() {
+    public ObservableSupplier<Boolean> getHandleBackPressChangedSupplier() {
         return mBackPressChangedSupplier;
     }
 
@@ -417,16 +339,13 @@ class TabListEditorMediator
         mTabListCoordinator.cleanupTabGridView();
         mVisibleTabs.clear();
         mVisibleTabGroups.clear();
-
-        if (mCreationMode != CreationMode.ITEM_PICKER) {
-            mResetHandler.resetWithListOfTabs(
-                    /* tabs= */ null,
-                    /* tabGroupSyncIds= */ null,
-                    /* recyclerViewPosition= */ null,
-                    /* quickMode= */ false);
-            mModel.set(TabListEditorProperties.IS_VISIBLE, false);
-            mResetHandler.postHiding();
-        }
+        mResetHandler.resetWithListOfTabs(
+                /* tabs= */ null,
+                /* tabGroupSyncIds= */ null,
+                /* recyclerViewPosition= */ null,
+                /* quickMode= */ false);
+        mModel.set(TabListEditorProperties.IS_VISIBLE, false);
+        mResetHandler.postHiding();
         if (mLifecycleObserver != null) mLifecycleObserver.didHide();
     }
 
@@ -447,7 +366,7 @@ class TabListEditorMediator
 
     @Override
     public void setNavigationProvider(
-            TabListEditorCoordinator.NavigationProvider navigationProvider) {
+            @NonNull TabListEditorCoordinator.NavigationProvider navigationProvider) {
         assert navigationProvider != null;
         mNavigationProvider = navigationProvider;
     }
@@ -459,24 +378,26 @@ class TabListEditorMediator
     }
 
     @Override
-    public void setLifecycleObserver(@Nullable LifecycleObserver lifecycleObserver) {
+    public void setLifecycleObserver(LifecycleObserver lifecycleObserver) {
         mLifecycleObserver = lifecycleObserver;
     }
 
     @Override
     public void selectAll() {
-        Set<TabListEditorItemSelectionId> selectedItemIds = mSelectionDelegate.getSelectedItems();
+        // TODO(crbug.com/412786011): Update this logic to select visible tab groups once the
+        // selection delegate for the TabListEditor supports synced tab groups.
+        Set<@TabId Integer> selectedTabIds = mSelectionDelegate.getSelectedItems();
         for (Tab tab : mVisibleTabs) {
-            selectedItemIds.add(TabListEditorItemSelectionId.createTabId(tab.getId()));
+            selectedTabIds.add(tab.getId());
         }
-        selectTabs(selectedItemIds);
+        selectTabs(selectedTabIds);
     }
 
     @Override
     public void deselectAll() {
-        Set<TabListEditorItemSelectionId> selectedItemIds = mSelectionDelegate.getSelectedItems();
-        selectedItemIds.clear();
-        mSelectionDelegate.setSelectedItems(selectedItemIds);
+        Set<Integer> selectedTabIds = mSelectionDelegate.getSelectedItems();
+        selectedTabIds.clear();
+        mSelectionDelegate.setSelectedItems(selectedTabIds);
         mResetHandler.resetWithListOfTabs(
                 mVisibleTabs,
                 mVisibleTabGroups.isEmpty() ? null : mVisibleTabGroups,
@@ -486,8 +407,9 @@ class TabListEditorMediator
 
     @Override
     public boolean areAllTabsSelected() {
-        Set<TabListEditorItemSelectionId> selectedItemIds = mSelectionDelegate.getSelectedItems();
-        return selectedItemIds.size() == mVisibleTabs.size();
+        // TODO(crbug.com/412786011): Update this logic to include visible tab groups.
+        Set<Integer> selectedTabIds = mSelectionDelegate.getSelectedItems();
+        return selectedTabIds.size() == mVisibleTabs.size();
     }
 
     @Override
@@ -496,7 +418,7 @@ class TabListEditorMediator
     }
 
     @Override
-    public @Nullable BottomSheetController getBottomSheetController() {
+    public BottomSheetController getBottomSheetController() {
         return mBottomSheetController;
     }
 
@@ -507,10 +429,10 @@ class TabListEditorMediator
     }
 
     @Override
-    public void selectTabs(Set<TabListEditorItemSelectionId> itemIds) {
+    public void selectTabs(Set<@TabId Integer> tabIds) {
         // Protects selection delegate from immutable sets.
-        Set<TabListEditorItemSelectionId> itemIdsModifiable = new HashSet<>(itemIds);
-        mSelectionDelegate.setSelectedItems(itemIdsModifiable);
+        Set<@TabId Integer> tabIdsModifiable = new HashSet<>(tabIds);
+        mSelectionDelegate.setSelectedItems(tabIdsModifiable);
         mResetHandler.resetWithListOfTabs(
                 mVisibleTabs,
                 mVisibleTabGroups.isEmpty() ? null : mVisibleTabGroups,
@@ -518,29 +440,16 @@ class TabListEditorMediator
                 /* quickMode= */ true);
     }
 
-    @Override
-    public void preselectTabs(Set<TabListEditorItemSelectionId> itemIds) {
-        mInitialSelectedTabIds = itemIds;
-        selectTabs(itemIds);
-    }
-
     /** Destroy any members that needs clean up. */
     public void destroy() {
         runListDestroyables();
 
-        removeTabGroupModelFilterObserver(assumeNonNull(mCurrentTabGroupModelFilterSupplier.get()));
+        removeTabGroupModelFilterObserver(mCurrentTabGroupModelFilterSupplier.get());
         mCurrentTabGroupModelFilterSupplier.removeObserver(mOnTabGroupModelFilterChanged);
-
-        mSelectionDelegate.removeObserver(mSelectionObserver);
 
         if (mDesktopWindowStateManager != null) {
             mDesktopWindowStateManager.removeObserver(this);
         }
-    }
-
-    @Override
-    public void setSelectionHandler(ItemPickerSelectionHandler selectionHandler) {
-        mSelectionHandler = selectionHandler;
     }
 
     private void runListDestroyables() {

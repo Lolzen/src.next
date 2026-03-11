@@ -65,7 +65,6 @@ RedirectInfo RedirectInfo::ComputeRedirectInfo(
     RedirectInfo::FirstPartyURLPolicy original_first_party_url_policy,
     ReferrerPolicy original_referrer_policy,
     const std::string& original_referrer,
-    const std::optional<url::Origin>& original_initiator,
     int http_status_code,
     const GURL& new_location,
     const std::optional<std::string>& referrer_policy_header,
@@ -74,7 +73,6 @@ RedirectInfo RedirectInfo::ComputeRedirectInfo(
     bool is_signed_exchange_fallback_redirect) {
   RedirectInfo redirect_info;
 
-  redirect_info.original_initiator = original_initiator;
   redirect_info.status_code = http_status_code;
 
   // The request method may change, depending on the status code.
@@ -93,7 +91,7 @@ RedirectInfo RedirectInfo::ComputeRedirectInfo(
     GURL::Replacements replacements;
     // Reference the |ref| directly out of the original URL to avoid a
     // malloc.
-    replacements.SetRefStr(original_url.ref());
+    replacements.SetRefStr(original_url.ref_piece());
     redirect_info.new_url = new_location.ReplaceComponents(replacements);
   } else {
     redirect_info.new_url = new_location;

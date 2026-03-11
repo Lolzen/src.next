@@ -21,6 +21,7 @@ SkColor GetColorWithBrightness(int target_brightness) {
 
 TEST(DarkModeColorClassifierTest, ApplyFilterToDarkForegroundOnly) {
   DarkModeSettings settings;
+  settings.mode = DarkModeInversionAlgorithm::kSimpleInvertForTesting;
   settings.foreground_brightness_threshold = 200;
   auto classifier =
       DarkModeColorClassifier::MakeForegroundColorClassifier(settings);
@@ -50,6 +51,7 @@ TEST(DarkModeColorClassifierTest, ApplyFilterToDarkForegroundOnly) {
 
 TEST(DarkModeColorClassifierTest, ApplyFilterToLightBackgroundElementsOnly) {
   DarkModeSettings settings;
+  settings.mode = DarkModeInversionAlgorithm::kSimpleInvertForTesting;
   settings.background_brightness_threshold = 200;
   auto classifier =
       DarkModeColorClassifier::MakeBackgroundColorClassifier(settings);

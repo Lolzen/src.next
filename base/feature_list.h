@@ -22,13 +22,10 @@
 #include "base/dcheck_is_on.h"
 #include "base/feature_list_buildflags.h"
 #include "base/gtest_prod_util.h"
+#include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/synchronization/lock.h"
 #include "build/build_config.h"
-
-#if BUILDFLAG(ENABLE_BANNED_BASE_FEATURE_PREFIX)
-#include "base/logging.h"
-#endif
 
 namespace base {
 
@@ -69,46 +66,13 @@ enum FeatureState {
 
 // Provides a definition for `kFeature` with `name` and `default_state`, e.g.
 //
-// This macro can be used in two ways:
-//
-// 1. With two arguments, to define a feature whose name is derived from the C++
-//    identifier. This form is preferred, as it avoids repeating the feature
-//    name and helps prevent typos.
-//
-//      BASE_FEATURE(kMyFeature, base::FEATURE_DISABLED_BY_DEFAULT);
-//
-//    This is equivalent to:
-//
-//      BASE_FEATURE(kMyFeature, "MyFeature",
-//                   base::FEATURE_DISABLED_BY_DEFAULT);
-//
-// 2. With three arguments, to explicitly specify the C++ identifier and the
-//    name of the feature. This form should be used only if the feature needs
-//    to have a C++ identifier that does not match the feature name, which
-//    should be rare.
-//
-//      BASE_FEATURE(kMyFeature, "MyFeatureName",
-//                   base::FEATURE_DISABLED_BY_DEFAULT);
+//   BASE_FEATURE(kMyFeature, "MyFeature", base::FEATURE_DISABLED_BY_DEFAULT);
 //
 // Features should *not* be defined in header files; do not use this macro in
 // header files.
-#define BASE_FEATURE_INTERNAL_3_ARGS(feature, name, default_state) \
-  constinit const base::Feature feature(                           \
+#define BASE_FEATURE(feature, name, default_state) \
+  constinit const base::Feature feature(           \
       name, default_state, base::internal::FeatureMacroHandshake::kSecret)
-
-#define BASE_FEATURE_INTERNAL_2_ARGS(feature, default_state)              \
-  constinit const base::Feature feature(                                  \
-      []() {                                                              \
-        static_assert(#feature[0] == 'k');                                \
-        static constexpr base::internal::StringStorage storage(#feature); \
-        return storage.storage.data();                                    \
-      }(),                                                                \
-      default_state, base::internal::FeatureMacroHandshake::kSecret)
-
-#define GET_BASE_FEATURE_MACRO(_1, _2, _3, NAME, ...) NAME
-#define BASE_FEATURE(...)                                            \
-  GET_BASE_FEATURE_MACRO(__VA_ARGS__, BASE_FEATURE_INTERNAL_3_ARGS,  \
-                         BASE_FEATURE_INTERNAL_2_ARGS)(__VA_ARGS__)
 
 // Provides a forward declaration for `feature_object_name` in a header file,
 // e.g.
@@ -180,32 +144,11 @@ enum FeatureState {
       &field_trial_params_internal::                                   \
           GetFeatureParamWithCacheFor##feature_object_name)
 
-namespace internal {
 // Secret handshake to (try to) ensure all places that construct a base::Feature
 // go through the helper `BASE_FEATURE()` macro above.
+namespace internal {
 enum class FeatureMacroHandshake { kSecret };
-
-// Storage class for feature name. This is needed so we store the feature name
-// "MyFeature" instead of the feature identifier name "kMyFeature" in .rodata.
-template <size_t N>
-struct StringStorage {
-  explicit constexpr StringStorage(base::span<const char, N + 1> feature) {
-    static_assert(N > 2, "Feature name cannot be too short.");
-    for (size_t i = 0; i < N; ++i) {
-      storage[i] = feature[i + 1];
-    }
-  }
-
-  std::array<char, N> storage;
-};
-
-// Deduce how much storage is needed for a given string literal. `feature`
-// includes space for a NUL terminator; `StringStorage` also needs storage
-// for the NUL terminator but drops the first character.
-template <size_t N>
-StringStorage(const char (&feature)[N]) -> StringStorage<N - 1>;
-
-}  // namespace internal
+}
 
 // The Feature struct is used to define the default state for a feature. There
 // must only ever be one struct instance for a given feature name—generally
@@ -423,20 +366,19 @@ class BASE_EXPORT FeatureList {
 
   // Returns true if the state of |feature_name| has been overridden (regardless
   // of whether the overridden value is the same as the default value) for any
-  // reason (e.g. command line or field trial). Note: This will return true even
-  // when a feature is overridden with OVERRIDE_USE_DEFAULT (default group).
-  bool IsFeatureOverridden(std::string_view feature_name) const;
+  // reason (e.g. command line or field trial).
+  bool IsFeatureOverridden(const std::string& feature_name) const;
 
   // Returns true if the state of |feature_name| has been overridden via
   // |InitFromCommandLine()|. This includes features explicitly
   // disabled/enabled with --disable-features and --enable-features, as well as
   // any extra feature overrides that depend on command line switches.
   bool IsFeatureOverriddenFromCommandLine(
-      std::string_view feature_name) const;
+      const std::string& feature_name) const;
 
   // Returns true if the state |feature_name| has been overridden by
   // |InitFromCommandLine()| and the state matches |state|.
-  bool IsFeatureOverriddenFromCommandLine(std::string_view feature_name,
+  bool IsFeatureOverriddenFromCommandLine(const std::string& feature_name,
                                           OverrideState state) const;
 
   // Associates a field trial for reporting purposes corresponding to the

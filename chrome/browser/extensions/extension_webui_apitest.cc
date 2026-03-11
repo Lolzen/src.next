@@ -13,6 +13,7 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -66,9 +67,11 @@ class ExtensionWebUITest : public ExtensionApiTest {
     }
 
     // Run the test.
-    auto* web_contents = GetActiveWebContents();
-    EXPECT_TRUE(NavigateToURL(web_contents, page_url));
-    content::RenderFrameHost* webui = web_contents->GetPrimaryMainFrame();
+    EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
+    content::RenderFrameHost* webui = browser()
+                                          ->tab_strip_model()
+                                          ->GetActiveWebContents()
+                                          ->GetPrimaryMainFrame();
     if (!webui)
       return testing::AssertionFailure() << "Failed to navigate to WebUI";
     bool actual_result = content::EvalJs(webui, script).ExtractBool();
@@ -107,7 +110,7 @@ class ExtensionWebUIEmbeddedOptionsTest
     ExtensionWebUITest::SetUpOnMainThread();
     test_guest_view_manager_ =
         test_guest_view_manager_factory_.GetOrCreateTestGuestViewManager(
-            profile(),
+            browser()->profile(),
             ExtensionsAPIClient::Get()->CreateGuestViewManagerDelegate());
   }
 
@@ -122,7 +125,8 @@ class ExtensionWebUIEmbeddedOptionsTest
   content::RenderFrameHost* OpenExtensionOptions(const Extension* extension) {
     EXPECT_TRUE(ui_test_utils::NavigateToURL(
         browser(), GURL(chrome::kChromeUIExtensionsURL)));
-    content::WebContents* webui = GetActiveWebContents();
+    content::WebContents* webui =
+        browser()->tab_strip_model()->GetActiveWebContents();
 
     EXPECT_EQ(0U, test_guest_view_manager_->num_guests_created());
 
@@ -433,8 +437,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebUIListenersTest, MultipleURLListeners) {
   // These could be different WebUI URLs.
   GURL test_url("chrome://webui-test/extension_webui_listeners_test.html");
 
-  content::WebContents* web_contents = GetActiveWebContents();
-  EXPECT_TRUE(NavigateToURL(web_contents, test_url));
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(), test_url));
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
   content::RenderFrameHost* main_frame = web_contents->GetPrimaryMainFrame();
   EventRouter* event_router = EventRouter::Get(profile());
   EXPECT_FALSE(event_router->HasEventListener("test.onMessage"));

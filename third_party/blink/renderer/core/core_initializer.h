@@ -68,7 +68,6 @@ class WebLocalFrameClient;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
 class WebMediaPlayerSource;
-class WorkerGlobalScope;
 
 class CORE_EXPORT CoreInitializer {
   USING_FAST_MALLOC(CoreInitializer);
@@ -111,8 +110,6 @@ class CORE_EXPORT CoreInitializer {
                                          InspectorDOMAgent*,
                                          InspectedFrames*,
                                          Page*) const = 0;
-  virtual void InitWorkerInspectorAgentSession(DevToolsSession*,
-                                               WorkerGlobalScope*) const = 0;
 
   virtual void OnClearWindowObjectInMainWorld(Document&,
                                               const Settings&) const = 0;

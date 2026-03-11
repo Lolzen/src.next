@@ -25,7 +25,6 @@ namespace blink {
 
 class BackgroundImageGeometry;
 class BoxBackgroundPaintContext;
-struct BorderShapeReferenceRects;
 class ComputedStyle;
 class ContouredRect;
 class Document;
@@ -34,7 +33,6 @@ class GraphicsContext;
 class ImageResourceObserver;
 class LayoutBox;
 class Node;
-struct BorderShapeReferenceRects;
 struct PaintInfo;
 struct PhysicalRect;
 
@@ -76,7 +74,6 @@ class BoxPainterBase {
       const PaintInfo&,
       const PhysicalRect&,
       const ComputedStyle&,
-      std::optional<BorderShapeReferenceRects> border_shape_rects,
       PhysicalBoxSides sides_to_include = PhysicalBoxSides(),
       bool background_is_skipped = true);
 
@@ -84,7 +81,6 @@ class BoxPainterBase {
       const PaintInfo&,
       const PhysicalRect&,
       const ComputedStyle&,
-      std::optional<BorderShapeReferenceRects> border_shape_rects,
       PhysicalBoxSides sides_to_include = PhysicalBoxSides());
 
   static void PaintInsetBoxShadowWithInnerRect(const PaintInfo&,
@@ -99,20 +95,18 @@ class BoxPainterBase {
       const PhysicalRect&,
       const ComputedStyle&,
       BackgroundBleedAvoidance = kBackgroundBleedNone,
-      PhysicalBoxSides sides_to_include = PhysicalBoxSides(),
-      const BorderShapeReferenceRects* border_shape_rects = nullptr);
+      PhysicalBoxSides sides_to_include = PhysicalBoxSides());
 
   static bool ShouldForceWhiteBackgroundForPrintEconomy(const Document&,
                                                         const ComputedStyle&);
 
-  // Analyzes the fill layers to determine painting requirements.
-  // Returns a pair containing:
-  //  - bool: True if the layers require an isolation group (a separate buffer)
-  //    due to non-associative blending modes.
-  //  - const FillLayer*: The last layer to be painted. Subsequent layers are
-  //    occluded and can be culled. This will be the last layer in the list
-  //    if no occlusion occurs.
-  std::pair<bool, const FillLayer*> AnalyzeFillLayersForPainting(
+  typedef Vector<const FillLayer*, 8> FillLayerOcclusionOutputList;
+  // Returns true if the result fill layers have non-associative blending or
+  // compositing mode.  (i.e. The rendering will be different without creating
+  // isolation group by context.saveLayer().) Note that the output list will be
+  // in top-bottom order.
+  bool CalculateFillLayerOcclusionCulling(
+      FillLayerOcclusionOutputList& reversed_paint_list,
       const FillLayer&);
 
   static bool ShouldSkipPaintUnderInvalidationChecking(const LayoutBox&);
@@ -182,11 +176,6 @@ class BoxPainterBase {
       const ContouredRect&,
       const ComputedStyle&,
       PhysicalBoxSides sides_to_include = PhysicalBoxSides());
-  static void PaintInsetBoxShadowForBorderShape(
-      const PaintInfo&,
-      const PhysicalRect&,
-      const ComputedStyle&,
-      std::optional<BorderShapeReferenceRects> border_shape_rects);
 
  private:
   const Document& document_;

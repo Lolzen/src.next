@@ -97,7 +97,7 @@ int LoadBasicRequestOnUIThread(
       network::SimpleURLLoader::Create(std::move(request),
                                        TRAFFIC_ANNOTATION_FOR_TESTS);
   simple_loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
-      url_loader_factory, simple_loader_helper.GetCallback());
+      url_loader_factory, simple_loader_helper.GetCallbackDeprecated());
   simple_loader_helper.WaitForCallback();
   return simple_loader->NetError();
 }
@@ -404,10 +404,9 @@ IN_PROC_BROWSER_TEST_F(NetworkServiceRestartBrowserTest,
   // Flush the interface to make sure the error notification was received.
   partition->FlushNetworkInterfaceForTesting();
 
-  // |partition->GetNetworkContext()| should return a valid pointer after crash.
-  // TODO(crbug.org/478890190): We probably need to add an identifier to
-  // NetworkContext to verify that "new" network context is created.
-  EXPECT_NE(nullptr, partition->GetNetworkContext());
+  // |partition->GetNetworkContext()| should return a valid new pointer after
+  // crash.
+  EXPECT_NE(old_network_context, partition->GetNetworkContext());
   EXPECT_EQ(net::OK,
             LoadBasicRequest(partition->GetNetworkContext(), GetTestURL()));
 }
@@ -559,6 +558,8 @@ IN_PROC_BROWSER_TEST_F(NetworkServiceRestartBrowserTest, BrowserUIFactory) {
 // it's called after the StoragePartition is deleted.
 IN_PROC_BROWSER_TEST_F(NetworkServiceRestartBrowserTest,
                        BrowserUIFactoryAfterStoragePartitionGone) {
+  if (IsInProcessNetworkService())
+    return;
   base::ScopedAllowBlockingForTesting allow_blocking;
   std::unique_ptr<ShellBrowserContext> browser_context =
       std::make_unique<ShellBrowserContext>(true);
@@ -568,15 +569,6 @@ IN_PROC_BROWSER_TEST_F(NetworkServiceRestartBrowserTest,
 
   EXPECT_EQ(net::OK, LoadBasicRequestOnUIThread(factory.get(), GetTestURL()));
 
-  // Reset partition's URLLoaderFactories. If not called, `factory` will not
-  // notice its underlying URLLoaderFactory Mojo pipe has been closed, so it
-  // will just reuse its old pipe. This both results in the test not testing
-  // what it's intended to check, and makes the test flaky, because the
-  // SimpleURLLoader may hang, possibly because Mojo can fail to send pipe
-  // disconnect messages when the pipe that other pipes are being sent over is
-  // closed before the pipe reach their destination.
-  partition->ResetURLLoaderFactories();
-  partition = nullptr;
   browser_context.reset();
 
   EXPECT_EQ(net::ERR_FAILED,
@@ -1111,13 +1103,12 @@ IN_PROC_BROWSER_TEST_F(NetworkServiceRestartBrowserTest,
 
   // Revoke network access for the generated nonce.
   base::UnguessableToken nonce = base::UnguessableToken::Create();
-  partition->RevokeNetworkForNoncesInNetworkContext({{nonce, {}}},
-                                                    base::DoNothing());
+  partition->RevokeNetworkForNoncesInNetworkContext({nonce}, base::DoNothing());
 
   // Make a get request, which should be blocked.
   network::mojom::URLLoaderFactoryParamsPtr params =
       network::mojom::URLLoaderFactoryParams::New();
-  params->process_id = network::OriginatingProcess::browser();
+  params->process_id = network::mojom::kBrowserProcessId;
   params->is_orb_enabled = false;
   params->isolation_info = net::IsolationInfo::CreateTransient(nonce);
 
@@ -1136,18 +1127,16 @@ IN_PROC_BROWSER_TEST_F(NetworkServiceRestartBrowserTest,
   // Flush the interface to make sure the error notification was received.
   partition->FlushNetworkInterfaceForTesting();
 
-  // |partition->GetNetworkContext()| should return a valid pointer after crash.
-  // The revoked nonces should be restored in the new NetworkContext.
-  // TODO(crbug.org/478890190): We probably need to add an identifier to
-  // NetworkContext to verify that "new" network context is created.
+  // |partition->GetNetworkContext()| should return a valid new pointer after
+  // crash. The revoked nonces should be restored in the new NetworkContext.
   network::mojom::NetworkContext* new_network_context =
       partition->GetNetworkContext();
-  EXPECT_NE(nullptr, new_network_context);
+  EXPECT_NE(old_network_context, new_network_context);
 
   // Make another get request, which should still be blocked.
   network::mojom::URLLoaderFactoryParamsPtr new_params =
       network::mojom::URLLoaderFactoryParams::New();
-  new_params->process_id = network::OriginatingProcess::browser();
+  new_params->process_id = network::mojom::kBrowserProcessId;
   new_params->is_orb_enabled = false;
   new_params->isolation_info = net::IsolationInfo::CreateTransient(nonce);
 

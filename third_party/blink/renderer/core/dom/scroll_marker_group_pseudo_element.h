@@ -9,12 +9,11 @@
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/scroll_marker_group_data.h"
 #include "third_party/blink/renderer/core/dom/scroll_marker_pseudo_element.h"
-#include "third_party/blink/renderer/core/style/scroll_marker_group.h"
 
 namespace blink {
 
-// Represents ::scroll-marker-group pseudo-element and manages
-// implicit focus group, formed by ::scroll-marker pseudo-elements.
+// Represents ::scroll-marker-group pseudo element and manages
+// implicit focus group, formed by ::scroll-marker pseudo elements.
 // This focus group is needed to cycle through its element with
 // arrow keys.
 class ScrollMarkerGroupPseudoElement : public PseudoElement {
@@ -29,13 +28,9 @@ class ScrollMarkerGroupPseudoElement : public PseudoElement {
   void RemoveFromFocusGroup(ScrollMarkerPseudoElement& scroll_marker);
   void ClearFocusGroup();
   // Set selected scroll marker. Returns true if the selected marker changed.
-  CORE_EXPORT void SetSelected(ScrollMarkerPseudoElement& scroll_marker,
+  CORE_EXPORT bool SetSelected(ScrollMarkerPseudoElement& scroll_marker,
                                bool apply_snap_alignment = true);
   ScrollMarkerPseudoElement* Selected() const;
-
-  ScrollMarkerPseudoElement* First() const;
-  ScrollMarkerPseudoElement* Last() const;
-
   void ActivateNextScrollMarker();
   void ActivatePrevScrollMarker();
   CORE_EXPORT void ActivateScrollMarker(
@@ -56,13 +51,8 @@ class ScrollMarkerGroupPseudoElement : public PseudoElement {
 
   void ScrollSelectedIntoView(bool apply_snap_alignment);
 
-  Node* InnerNodeForHitTesting() final { return this; }
-
-  // Returns the mode of scroll-marker-group property of the originating
-  // element.
-  CORE_EXPORT ScrollMarkerGroup::ScrollMarkerMode ScrollMarkerGroupMode() const;
-
  private:
+
   ScrollMarkerPseudoElement* FindNextScrollMarker(const Element* current);
   ScrollMarkerPseudoElement* FindPreviousScrollMarker(const Element* current);
 

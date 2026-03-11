@@ -47,10 +47,9 @@ void ScreenMetricsEmulator::DisableAndApply() {
 }
 
 void ScreenMetricsEmulator::ChangeEmulationParams(
-    const DeviceEmulationParams& params,
-    const mojom::blink::DeviceEmulationCacheBehavior& cache_behavior) {
+    const DeviceEmulationParams& params) {
   emulation_params_ = params;
-  Apply(cache_behavior);
+  Apply();
 }
 
 gfx::Point ScreenMetricsEmulator::ViewRectOrigin() {
@@ -62,8 +61,7 @@ gfx::Point ScreenMetricsEmulator::ViewRectOrigin() {
   return widget_pos;
 }
 
-void ScreenMetricsEmulator::Apply(
-    const mojom::blink::DeviceEmulationCacheBehavior& cache_behavior) {
+void ScreenMetricsEmulator::Apply() {
   // The WidgetScreenRect gets derived from the widget size of the main frame
   // widget, not from the original WidgetScreenRect.
   gfx::Size widget_size = original_widget_size_dips_;
@@ -140,7 +138,7 @@ void ScreenMetricsEmulator::Apply(
   modified_emulation_params.device_scale_factor =
       original_screen_info.device_scale_factor;
   frame_widget_->SetScreenMetricsEmulationParameters(
-      true, std::move(modified_emulation_params), cache_behavior);
+      true, std::move(modified_emulation_params));
 
   frame_widget_->SetScreenRects(gfx::Rect(widget_pos, widget_size),
                                 gfx::Rect(window_pos, window_size));

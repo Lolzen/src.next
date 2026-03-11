@@ -49,6 +49,7 @@
 
 #include "base/types/optional_util.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/renderer/core/layout/layout_multi_column_flow_thread.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
@@ -150,14 +151,8 @@ struct PaintLayerStackingNode::HighestLayers {
     // A negative z-index child will not cause reparent of overlay scrollbars
     // because the ancestor scroller either has auto z-index which is above
     // the child or has negative z-index which is a stacking context.
-    if (!layer.GetLayoutObject().IsStacked() || style.EffectiveZIndex() < 0) {
+    if (!layer.GetLayoutObject().IsStacked() || style.EffectiveZIndex() < 0)
       return;
-    }
-
-    // We should not consider layers that have been omitted from z-order lists.
-    if (!layer.IsZOrderListVisible()) {
-      return;
-    }
 
     UpdateOrderForSubtreeHighestLayers(GetLayerType(layer), &layer);
   }
@@ -183,13 +178,13 @@ struct PaintLayerStackingNode::HighestLayers {
   }
 };
 
-static LayoutObject* ChildOfFlexboxOrGridOrGridLanesParentOrGrandparent(
+static LayoutObject* ChildOfFlexboxOrGridParentOrGrandparent(
     const PaintLayer* layer) {
   LayoutObject* parent = layer->GetLayoutObject().Parent();
   if (!parent) {
     return nullptr;
   }
-  if (parent->IsFlexibleBox() || parent->IsLayoutGridOrGridLanes()) {
+  if (parent->IsFlexibleBox() || parent->IsLayoutGrid()) {
     return &layer->GetLayoutObject();
   }
 
@@ -197,7 +192,7 @@ static LayoutObject* ChildOfFlexboxOrGridOrGridLanesParentOrGrandparent(
   if (!grandparent) {
     return nullptr;
   }
-  if (grandparent->IsFlexibleBox() || grandparent->IsLayoutGridOrGridLanes()) {
+  if (grandparent->IsFlexibleBox() || grandparent->IsLayoutGrid()) {
     return parent;
   }
   return nullptr;
@@ -206,10 +201,9 @@ static LayoutObject* ChildOfFlexboxOrGridOrGridLanesParentOrGrandparent(
 static bool OrderLessThan(const PaintLayer* first, const PaintLayer* second) {
   // TODO(chrishtr): make this work for arbitrary ancestors, not just parent
   // and grandparent.
-  LayoutObject* first_ancestor =
-      ChildOfFlexboxOrGridOrGridLanesParentOrGrandparent(first);
+  LayoutObject* first_ancestor = ChildOfFlexboxOrGridParentOrGrandparent(first);
   LayoutObject* second_ancestor =
-      ChildOfFlexboxOrGridOrGridLanesParentOrGrandparent(second);
+      ChildOfFlexboxOrGridParentOrGrandparent(second);
   if (!first_ancestor || !second_ancestor) {
     return false;
   }
@@ -243,7 +237,7 @@ static bool ChildrenMayBeAffectedByOrder(const PaintLayer& layer) {
     return false;
   }
   for (; child; child = child->NextSibling()) {
-    auto* ancestor = ChildOfFlexboxOrGridOrGridLanesParentOrGrandparent(child);
+    auto* ancestor = ChildOfFlexboxOrGridParentOrGrandparent(child);
     // This is the only case where `OrderLessThan` can return true;
     if (ancestor && ancestor->StyleRef().Order()) {
       return true;
@@ -260,7 +254,8 @@ static void ForAllChildrenSortedByOrder(
     base::FunctionRef<void(PaintLayer&)> function) {
   // Optimization: `order` is relatively rare and we can avoid needing to
   // create and sort the vector of children in most cases.
-  if (!ChildrenMayBeAffectedByOrder(layer)) {
+  if (RuntimeEnabledFeatures::PaintLayerUpdateOptimizationsEnabled() &&
+      !ChildrenMayBeAffectedByOrder(layer)) {
     for (auto* child = layer.FirstChild(); child;
          child = child->NextSibling()) {
       function(*child);
@@ -302,6 +297,12 @@ void PaintLayerStackingNode::RebuildZOrderLists() {
   // order.
   if (layer_->IsRootLayer()) {
     LayoutBlockFlow* root_block = layer_->GetLayoutObject().View();
+    // If the viewport is paginated, everything (including "top-layer" elements)
+    // gets redirected to the flow thread. So that's where we have to look, in
+    // that case.
+    if (LayoutBlockFlow* multi_column_flow_thread =
+            root_block->MultiColumnFlowThread())
+      root_block = multi_column_flow_thread;
     for (LayoutObject* child = root_block->FirstChild(); child;
          child = child->NextSibling()) {
       if (child->IsInTopOrViewTransitionLayer() && child->IsStacked()) {
@@ -327,7 +328,8 @@ void PaintLayerStackingNode::CollectLayers(PaintLayer& paint_layer,
   const auto& style = object.StyleRef();
 
   if (object.IsStacked()) {
-    if (paint_layer.IsZOrderListVisible()) {
+    if (!RuntimeEnabledFeatures::PaintLayerUpdateOptimizationsEnabled() ||
+        paint_layer.IsZOrderListVisible()) {
       auto& list =
           style.EffectiveZIndex() >= 0 ? pos_z_order_list_ : neg_z_order_list_;
       list.push_back(paint_layer);

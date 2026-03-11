@@ -15,7 +15,6 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "components/omnibox/browser/autocomplete_classifier.h"
 #include "components/omnibox/browser/autocomplete_controller.h"
-#include "components/omnibox/browser/autocomplete_controller_config.h"
 #include "extensions/buildflags/buildflags.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -43,9 +42,7 @@ std::unique_ptr<KeyedService> AutocompleteClassifierFactory::BuildInstanceFor(
   return std::make_unique<AutocompleteClassifier>(
       std::make_unique<AutocompleteController>(
           std::make_unique<ChromeAutocompleteProviderClient>(profile),
-          AutocompleteControllerConfig{
-              .provider_types =
-                  AutocompleteClassifier::DefaultOmniboxProviders()}),
+          AutocompleteClassifier::DefaultOmniboxProviders()),
       std::make_unique<ChromeAutocompleteSchemeClassifier>(profile));
 }
 

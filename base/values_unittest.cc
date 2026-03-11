@@ -2,17 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "base/values.h"
 
 #include <stddef.h>
 
 #include <algorithm>
-#include <array>
 #include <functional>
 #include <iterator>
 #include <limits>
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -21,15 +24,19 @@
 #include <vector>
 
 #include "base/bits.h"
-#include "base/compiler_specific.h"
 #include "base/containers/adapters.h"
-#include "base/containers/span.h"
+#include "base/containers/contains.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/gtest_util.h"
 #include "build/build_config.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/perfetto/include/perfetto/test/traced_value_test_support.h"
+
+#if BUILDFLAG(ENABLE_BASE_TRACING)
+#include <optional>
+
+#include "third_party/perfetto/include/perfetto/test/traced_value_test_support.h"  // no-presubmit-check nogncheck
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
 namespace base {
 
@@ -174,12 +181,12 @@ TEST(ValuesTest, ConstructBinary) {
 }
 
 TEST(ValuesTest, ConstructDict) {
-  DictValue value;
+  Value::Dict value;
   EXPECT_EQ(Value::Type::DICT, Value(std::move(value)).type());
 }
 
 TEST(ValuesTest, ConstructDictFromValueDict) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("foo", "bar");
   {
     Value value(dict.Clone());
@@ -200,23 +207,23 @@ TEST(ValuesTest, ConstructDictFromValueDict) {
 }
 
 TEST(ValuesTest, ConstructList) {
-  Value value(ListValue{});
+  Value value(Value::List{});
   EXPECT_EQ(Value::Type::LIST, value.type());
 }
 
 TEST(ValuesTest, UseTestingEachOnValueList) {
-  ListValue list;
+  Value::List list;
   list.Append(true);
   list.Append(true);
 
-  // This will only work if `ListValue::value_type` is defined.
+  // This will only work if `Value::List::value_type` is defined.
   EXPECT_THAT(list, testing::Each(testing::ResultOf(
                         [](const Value& value) { return value.GetBool(); },
                         testing::Eq(true))));
 }
 
 TEST(ValuesTest, ConstructListFromValueList) {
-  ListValue list;
+  Value::List list;
   list.Append("foo");
   {
     Value value(list.Clone());
@@ -324,7 +331,7 @@ TEST(ValuesTest, CopyBinary) {
 }
 
 TEST(ValuesTest, CopyDictionary) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("Int", 123);
   Value value(std::move(dict));
 
@@ -337,7 +344,7 @@ TEST(ValuesTest, CopyDictionary) {
 }
 
 TEST(ValuesTest, CopyList) {
-  ListValue list;
+  Value::List list;
   list.Append(123);
   Value value(std::move(list));
 
@@ -426,7 +433,7 @@ TEST(ValuesTest, MoveBinary) {
 }
 
 TEST(ValuesTest, MoveConstructDictionary) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("Int", 123);
 
   Value value(std::move(dict));
@@ -436,7 +443,7 @@ TEST(ValuesTest, MoveConstructDictionary) {
 }
 
 TEST(ValuesTest, MoveAssignDictionary) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("Int", 123);
 
   Value blank;
@@ -450,14 +457,14 @@ TEST(ValuesTest, ConstructDictWithIterators) {
   values.emplace_back("Int", 123);
 
   Value blank;
-  blank = Value(DictValue(std::make_move_iterator(values.begin()),
-                          std::make_move_iterator(values.end())));
+  blank = Value(Value::Dict(std::make_move_iterator(values.begin()),
+                            std::make_move_iterator(values.end())));
   EXPECT_EQ(Value::Type::DICT, blank.type());
   EXPECT_EQ(123, blank.GetDict().Find("Int")->GetInt());
 }
 
 TEST(ValuesTest, MoveList) {
-  ListValue list;
+  Value::List list;
   list.Append(123);
   Value value(list.Clone());
   Value moved_value(std::move(value));
@@ -471,7 +478,7 @@ TEST(ValuesTest, MoveList) {
 }
 
 TEST(ValuesTest, Append) {
-  ListValue list;
+  Value::List list;
   list.Append(true);
   EXPECT_TRUE(list.back().is_bool());
 
@@ -501,16 +508,16 @@ TEST(ValuesTest, Append) {
   list.Append(Value());
   EXPECT_TRUE(list.back().is_none());
 
-  list.Append(DictValue());
+  list.Append(Value::Dict());
   EXPECT_TRUE(list.back().is_dict());
 
-  list.Append(ListValue());
+  list.Append(Value::List());
   EXPECT_TRUE(list.back().is_list());
 }
 
 TEST(ValuesTest, ListInsert) {
-  ListValue list;
-  const ListValue& const_list = list;
+  Value::List list;
+  const Value::List& const_list = list;
 
   auto iter = list.Insert(list.end(), Value(true));
   EXPECT_TRUE(list.begin() == iter);
@@ -526,7 +533,7 @@ TEST(ValuesTest, ListInsert) {
 }
 
 TEST(ValuesTest, ListResize) {
-  auto list = base::ListValue().Append("Hello world!");
+  auto list = base::Value::List().Append("Hello world!");
   EXPECT_EQ(list.size(), 1U);
 
   list.resize(2);
@@ -546,8 +553,8 @@ TEST(ValuesTest, ListResize) {
 }
 
 TEST(ValuesTest, ReverseIter) {
-  ListValue list;
-  const ListValue& const_list = list;
+  Value::List list;
+  const Value::List& const_list = list;
 
   list.Append(Value(true));
   list.Append(Value(123));
@@ -572,10 +579,10 @@ TEST(ValuesTest, ReverseIter) {
 // matchining values exist, return an existing dict, create a dict overwriting
 // a value of another type).
 TEST(ValuesTest, DictEnsureDict) {
-  DictValue root;
+  Value::Dict root;
 
   // This call should create a new nested dictionary.
-  DictValue* foo_dict = root.EnsureDict("foo");
+  Value::Dict* foo_dict = root.EnsureDict("foo");
   EXPECT_TRUE(foo_dict->empty());
   foo_dict->Set("a", "b");
 
@@ -587,7 +594,7 @@ TEST(ValuesTest, DictEnsureDict) {
 
   // Use EnsureDict() to overwrite an existing non-dictionary value.
   root.Set("bar", 3);
-  DictValue* bar_dict = root.EnsureDict("bar");
+  Value::Dict* bar_dict = root.EnsureDict("bar");
   EXPECT_TRUE(bar_dict->empty());
   bar_dict->Set("b", "c");
 
@@ -603,10 +610,10 @@ TEST(ValuesTest, DictEnsureDict) {
 // matchining value exists, return an existing list, create a list overwriting
 // a value of another type).
 TEST(ValuesTest, DictEnsureList) {
-  DictValue root;
+  Value::Dict root;
 
   // This call should create a new list.
-  ListValue* foo_list = root.EnsureList("foo");
+  Value::List* foo_list = root.EnsureList("foo");
   EXPECT_TRUE(foo_list->empty());
   foo_list->Append("a");
 
@@ -618,7 +625,7 @@ TEST(ValuesTest, DictEnsureList) {
 
   // Use EnsureList() to overwrite an existing non-list value.
   root.Set("bar", 3);
-  ListValue* bar_list = root.EnsureList("bar");
+  Value::List* bar_list = root.EnsureList("bar");
   EXPECT_TRUE(bar_list->empty());
   bar_list->Append("b");
 
@@ -633,14 +640,14 @@ TEST(ValuesTest, DictEnsureList) {
 // list APIs. For now, most of the updated APIs are tested indirectly via the
 // legacy APIs that are largely backed by the updated APIs.
 TEST(ValuesTest, DictFindByDottedPath) {
-  DictValue dict;
+  Value::Dict dict;
 
   EXPECT_EQ(nullptr, dict.FindByDottedPath("a.b.c"));
 
-  DictValue& a_dict = dict.Set("a", DictValue())->GetDict();
+  Value::Dict& a_dict = dict.Set("a", Value::Dict())->GetDict();
   EXPECT_EQ(nullptr, dict.FindByDottedPath("a.b.c"));
 
-  DictValue& b_dict = a_dict.Set("b", DictValue())->GetDict();
+  Value::Dict& b_dict = a_dict.Set("b", Value::Dict())->GetDict();
   EXPECT_EQ(nullptr, dict.FindByDottedPath("a.b.c"));
 
   b_dict.Set("c", true);
@@ -650,16 +657,16 @@ TEST(ValuesTest, DictFindByDottedPath) {
 }
 
 TEST(ValuesTest, DictSetByDottedPath) {
-  DictValue dict;
+  Value::Dict dict;
 
   Value* c = dict.SetByDottedPath("a.b.c", Value());
   ASSERT_TRUE(c);
 
-  DictValue* a = dict.FindDict("a");
+  Value::Dict* a = dict.FindDict("a");
   ASSERT_TRUE(a);
   EXPECT_EQ(1U, a->size());
 
-  DictValue* b = a->FindDict("b");
+  Value::Dict* b = a->FindDict("b");
   ASSERT_TRUE(b);
   EXPECT_EQ(1U, b->size());
 
@@ -667,8 +674,8 @@ TEST(ValuesTest, DictSetByDottedPath) {
 }
 
 TEST(ValuesTest, RvalueDictSetByDottedPath) {
-  DictValue dict =
-      DictValue()
+  Value::Dict dict =
+      Value::Dict()
           .SetByDottedPath("nested.dictionary.null", Value())
           .SetByDottedPath("nested.dictionary.bool", false)
           .SetByDottedPath("nested.dictionary.int", 42)
@@ -679,16 +686,16 @@ TEST(ValuesTest, RvalueDictSetByDottedPath) {
                            std::string("std-value"))
           .SetByDottedPath("nested.dictionary.blob", Value::BlobStorage({1, 2}))
           .SetByDottedPath("nested.dictionary.list",
-                           ListValue().Append("value in list"))
+                           Value::List().Append("value in list"))
           .SetByDottedPath("nested.dictionary.dict",
-                           DictValue().Set("key", "value"));
+                           Value::Dict().Set("key", "value"));
 
-  DictValue expected =
-      DictValue()  //
+  Value::Dict expected =
+      Value::Dict()  //
           .Set("nested",
-               base::DictValue()  //
+               base::Value::Dict()  //
                    .Set("dictionary",
-                        base::DictValue()
+                        base::Value::Dict()
                             .Set("null", Value())
                             .Set("bool", false)
                             .Set("int", 42)
@@ -697,14 +704,14 @@ TEST(ValuesTest, RvalueDictSetByDottedPath) {
                             .Set("u16-string", u"u16-value")
                             .Set("std-string", std::string("std-value"))
                             .Set("blob", Value::BlobStorage({1, 2}))
-                            .Set("list", ListValue().Append("value in list"))
-                            .Set("dict", DictValue().Set("key", "value"))));
+                            .Set("list", Value::List().Append("value in list"))
+                            .Set("dict", Value::Dict().Set("key", "value"))));
 
   EXPECT_EQ(dict, expected);
 }
 
 TEST(ValuesTest, DictSetWithDottedKey) {
-  DictValue dict;
+  Value::Dict dict;
 
   Value* abc = dict.Set("a.b.c", Value());
   ASSERT_TRUE(abc);
@@ -717,8 +724,8 @@ TEST(ValuesTest, DictSetWithDottedKey) {
 }
 
 TEST(ValuesTest, ListFront) {
-  ListValue list;
-  const ListValue& const_list = list;
+  Value::List list;
+  const Value::List& const_list = list;
 
   list.Append(1);
   list.Append(2);
@@ -729,16 +736,16 @@ TEST(ValuesTest, ListFront) {
 }
 
 TEST(ValuesTest, ListFrontWhenEmpty) {
-  ListValue list;
-  const ListValue& const_list = list;
+  Value::List list;
+  const Value::List& const_list = list;
 
   EXPECT_CHECK_DEATH(list.front());
   EXPECT_CHECK_DEATH(const_list.front());
 }
 
 TEST(ValuesTest, ListBack) {
-  ListValue list;
-  const ListValue& const_list = list;
+  Value::List list;
+  const Value::List& const_list = list;
 
   list.Append(1);
   list.Append(2);
@@ -749,25 +756,25 @@ TEST(ValuesTest, ListBack) {
 }
 
 TEST(ValuesTest, ListBackWhenEmpty) {
-  ListValue list;
-  const ListValue& const_list = list;
+  Value::List list;
+  const Value::List& const_list = list;
 
   EXPECT_CHECK_DEATH(list.back());
   EXPECT_CHECK_DEATH(const_list.back());
 }
 
 TEST(ValuesTest, ListContains) {
-  ListValue list;
+  Value::List list;
   list.Append(false);
   list.Append(1);
   list.Append(2.3);
   list.Append("banana");
   Value::BlobStorage blob = {0xF, 0x0, 0x0, 0xB, 0xA, 0x2};
   list.Append(Value(blob));
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("foo", "bar");
   list.Append(dict.Clone());
-  ListValue list2;
+  Value::List list2;
   list2.Append(99);
   list.Append(list2.Clone());
 
@@ -786,12 +793,12 @@ TEST(ValuesTest, ListContains) {
   EXPECT_FALSE(list.contains(4.5));
   EXPECT_FALSE(list.contains("orange"));
   EXPECT_FALSE(list.contains(Value::BlobStorage({1, 2, 3})));
-  EXPECT_FALSE(list.contains(DictValue()));
+  EXPECT_FALSE(list.contains(Value::Dict()));
   EXPECT_FALSE(list.contains(list));
 }
 
 TEST(ValuesTest, ListErase) {
-  ListValue list;
+  Value::List list;
   list.Append(1);
   list.Append(2);
   list.Append(3);
@@ -805,7 +812,7 @@ TEST(ValuesTest, ListErase) {
 }
 
 TEST(ValuesTest, ListEraseRange) {
-  ListValue list;
+  Value::List list;
   list.Append(1);
   list.Append(2);
   list.Append(3);
@@ -838,7 +845,7 @@ TEST(ValuesTest, ListEraseRange) {
 }
 
 TEST(ValuesTest, ListEraseValue) {
-  ListValue list;
+  Value::List list;
   list.Append(1);
   list.Append(2);
   list.Append(2);
@@ -860,7 +867,7 @@ TEST(ValuesTest, ListEraseValue) {
 }
 
 TEST(ValuesTest, ListEraseIf) {
-  ListValue list;
+  Value::List list;
   list.Append(1);
   list.Append(2);
   list.Append(2);
@@ -877,7 +884,7 @@ TEST(ValuesTest, ListEraseIf) {
 }
 
 TEST(ValuesTest, ClearList) {
-  ListValue list;
+  Value::List list;
   list.Append(1);
   list.Append(2);
   list.Append(3);
@@ -895,7 +902,7 @@ TEST(ValuesTest, ClearList) {
 }
 
 TEST(ValuesTest, FindKey) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("foo", "bar");
   Value value(std::move(dict));
   EXPECT_NE(nullptr, value.GetDict().Find("foo"));
@@ -903,7 +910,7 @@ TEST(ValuesTest, FindKey) {
 }
 
 TEST(ValuesTest, FindKeyChangeValue) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("foo", "bar");
   Value* found = dict.Find("foo");
   ASSERT_NE(nullptr, found);
@@ -914,7 +921,7 @@ TEST(ValuesTest, FindKeyChangeValue) {
 }
 
 TEST(ValuesTest, FindKeyConst) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("foo", "bar");
   const Value value(std::move(dict));
   EXPECT_NE(nullptr, value.GetDict().Find("foo"));
@@ -922,15 +929,15 @@ TEST(ValuesTest, FindKeyConst) {
 }
 
 TEST(ValuesTest, FindBoolKey) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("null", Value());
   dict.Set("bool", false);
   dict.Set("int", 0);
   dict.Set("double", 0.0);
   dict.Set("string", std::string());
   dict.Set("blob", Value(Value::BlobStorage()));
-  dict.Set("list", ListValue());
-  dict.Set("dict", DictValue());
+  dict.Set("list", Value::List());
+  dict.Set("dict", Value::Dict());
 
   EXPECT_EQ(std::nullopt, dict.FindBool("null"));
   EXPECT_NE(std::nullopt, dict.FindBool("bool"));
@@ -943,15 +950,15 @@ TEST(ValuesTest, FindBoolKey) {
 }
 
 TEST(ValuesTest, FindIntKey) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("null", Value());
   dict.Set("bool", false);
   dict.Set("int", 0);
   dict.Set("double", 0.0);
   dict.Set("string", std::string());
   dict.Set("blob", Value(Value::BlobStorage()));
-  dict.Set("list", ListValue());
-  dict.Set("dict", DictValue());
+  dict.Set("list", Value::List());
+  dict.Set("dict", Value::Dict());
 
   EXPECT_EQ(std::nullopt, dict.FindInt("null"));
   EXPECT_EQ(std::nullopt, dict.FindInt("bool"));
@@ -964,15 +971,15 @@ TEST(ValuesTest, FindIntKey) {
 }
 
 TEST(ValuesTest, FindStringKey) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("null", Value());
   dict.Set("bool", false);
   dict.Set("int", 0);
   dict.Set("double", 0.0);
   dict.Set("string", std::string());
   dict.Set("blob", Value(Value::BlobStorage()));
-  dict.Set("list", ListValue());
-  dict.Set("dict", DictValue());
+  dict.Set("list", Value::List());
+  dict.Set("dict", Value::Dict());
 
   EXPECT_EQ(nullptr, dict.FindString("null"));
   EXPECT_EQ(nullptr, dict.FindString("bool"));
@@ -985,12 +992,12 @@ TEST(ValuesTest, FindStringKey) {
 }
 
 TEST(ValuesTest, MutableFindStringKey) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("string", "foo");
 
   *(dict.FindString("string")) = "bar";
 
-  DictValue expected_dict;
+  Value::Dict expected_dict;
   expected_dict.Set("string", "bar");
 
   EXPECT_EQ(expected_dict, dict);
@@ -1002,13 +1009,13 @@ TEST(ValuesTest, MutableFindStringKey) {
 
 TEST(ValuesTest, MutableFindBlobKey) {
   Value::BlobStorage original_blob = {0xF, 0x0, 0x0, 0xB, 0xA, 0x2};
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("blob", std::move(original_blob));
 
   Value::BlobStorage new_blob = {0x0, 0x3, 0x0};
   *(dict.FindBlob("blob")) = new_blob;
 
-  DictValue expected_dict;
+  Value::Dict expected_dict;
   expected_dict.Set("blob", std::move(new_blob));
 
   EXPECT_EQ(expected_dict, dict);
@@ -1019,15 +1026,15 @@ TEST(ValuesTest, MutableFindBlobKey) {
 }
 
 TEST(ValuesTest, FindDictKey) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("null", Value());
   dict.Set("bool", false);
   dict.Set("int", 0);
   dict.Set("double", 0.0);
   dict.Set("string", std::string());
   dict.Set("blob", Value(Value::BlobStorage()));
-  dict.Set("list", ListValue());
-  dict.Set("dict", DictValue());
+  dict.Set("list", Value::List());
+  dict.Set("dict", Value::Dict());
 
   EXPECT_EQ(nullptr, dict.FindDict("null"));
   EXPECT_EQ(nullptr, dict.FindDict("bool"));
@@ -1040,15 +1047,15 @@ TEST(ValuesTest, FindDictKey) {
 }
 
 TEST(ValuesTest, FindListKey) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("null", Value());
   dict.Set("bool", false);
   dict.Set("int", 0);
   dict.Set("double", 0.0);
   dict.Set("string", std::string());
   dict.Set("blob", Value(Value::BlobStorage()));
-  dict.Set("list", ListValue());
-  dict.Set("dict", DictValue());
+  dict.Set("list", Value::List());
+  dict.Set("dict", Value::Dict());
 
   EXPECT_EQ(nullptr, dict.FindList("null"));
   EXPECT_EQ(nullptr, dict.FindList("bool"));
@@ -1061,15 +1068,15 @@ TEST(ValuesTest, FindListKey) {
 }
 
 TEST(ValuesTest, FindBlob) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("null", Value());
   dict.Set("bool", false);
   dict.Set("int", 0);
   dict.Set("double", 0.0);
   dict.Set("string", std::string());
   dict.Set("blob", Value(Value::BlobStorage()));
-  dict.Set("list", ListValue());
-  dict.Set("dict", DictValue());
+  dict.Set("list", Value::List());
+  dict.Set("dict", Value::Dict());
 
   EXPECT_EQ(nullptr, dict.FindBlob("null"));
   EXPECT_EQ(nullptr, dict.FindBlob("bool"));
@@ -1082,17 +1089,17 @@ TEST(ValuesTest, FindBlob) {
 }
 
 TEST(ValuesTest, SetKey) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("null", Value());
   dict.Set("bool", false);
   dict.Set("int", 0);
   dict.Set("double", 0.0);
   dict.Set("string", std::string());
   dict.Set("blob", Value(Value::BlobStorage()));
-  dict.Set("list", ListValue());
-  dict.Set("dict", DictValue());
+  dict.Set("list", Value::List());
+  dict.Set("dict", Value::Dict());
 
-  DictValue dict2;
+  Value::Dict dict2;
   dict2.Set(std::string_view("null"), Value(Value::Type::NONE));
   dict2.Set(std::string_view("bool"), Value(Value::Type::BOOLEAN));
   dict2.Set(std::string("int"), Value(Value::Type::INTEGER));
@@ -1109,7 +1116,7 @@ TEST(ValuesTest, SetKey) {
 TEST(ValuesTest, SetBoolKey) {
   std::optional<bool> value;
 
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("true_key", true);
   dict.Set("false_key", false);
 
@@ -1128,7 +1135,7 @@ TEST(ValuesTest, SetBoolKey) {
 TEST(ValuesTest, SetIntKey) {
   std::optional<int> value;
 
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("one_key", 1);
   dict.Set("minus_one_key", -1);
 
@@ -1145,7 +1152,7 @@ TEST(ValuesTest, SetIntKey) {
 }
 
 TEST(ValuesTest, SetDoubleKey) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("one_key", 1.0);
   dict.Set("minus_one_key", -1.0);
   dict.Set("pi_key", 3.1415);
@@ -1169,7 +1176,7 @@ TEST(ValuesTest, SetDoubleKey) {
 }
 
 TEST(ValuesTest, SetStringKey) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("one_key", "one");
   dict.Set("hello_key", "hello world");
 
@@ -1196,19 +1203,19 @@ TEST(ValuesTest, SetStringKey) {
 }
 
 TEST(ValuesTest, RvalueSet) {
-  DictValue dict = DictValue()
-                       .Set("null", Value())
-                       .Set("bool", false)
-                       .Set("int", 42)
-                       .Set("double", 1.2)
-                       .Set("string", "value")
-                       .Set("u16-string", u"u16-value")
-                       .Set("std-string", std::string("std-value"))
-                       .Set("blob", Value::BlobStorage({1, 2}))
-                       .Set("list", ListValue().Append("value in list"))
-                       .Set("dict", DictValue().Set("key", "value"));
+  Value::Dict dict = Value::Dict()
+                         .Set("null", Value())
+                         .Set("bool", false)
+                         .Set("int", 42)
+                         .Set("double", 1.2)
+                         .Set("string", "value")
+                         .Set("u16-string", u"u16-value")
+                         .Set("std-string", std::string("std-value"))
+                         .Set("blob", Value::BlobStorage({1, 2}))
+                         .Set("list", Value::List().Append("value in list"))
+                         .Set("dict", Value::Dict().Set("key", "value"));
 
-  DictValue expected;
+  Value::Dict expected;
   expected.Set("null", Value());
   expected.Set("bool", false);
   expected.Set("int", 42);
@@ -1217,42 +1224,22 @@ TEST(ValuesTest, RvalueSet) {
   expected.Set("u16-string", u"u16-value");
   expected.Set("std-string", std::string("std-value"));
   expected.Set("blob", Value::BlobStorage({1, 2}));
-  ListValue nested_list;
+  Value::List nested_list;
   nested_list.Append("value in list");
   expected.Set("list", std::move(nested_list));
-  DictValue nested_dict;
+  Value::Dict nested_dict;
   nested_dict.Set("key", "value");
   expected.Set("dict", std::move(nested_dict));
 
   EXPECT_EQ(dict, expected);
 }
 
-TEST(ValuesTest, DictSetHintAtEnd) {
-  // Set values with keys not all in order, to validate correctness for both the
-  // "hint was correct" and "hint was incorrect" cases.
-  DictValue dict;
-  dict.Set_HintAtEnd("a", Value("a"));
-  dict.Set_HintAtEnd("b", Value("b"));
-  dict.Set_HintAtEnd("c", Value("c"));
-  dict.Set_HintAtEnd("e", Value("e"));
-  dict.Set_HintAtEnd("d", Value("d"));
-
-  DictValue expected;
-  expected.Set("a", Value("a"));
-  expected.Set("b", Value("b"));
-  expected.Set("c", Value("c"));
-  expected.Set("e", Value("e"));
-  expected.Set("d", Value("d"));
-
-  EXPECT_EQ(dict, expected);
-}
-
 TEST(ValuesTest, FindPath) {
   // Construct a dictionary path {root}.foo.bar = 123
-  DictValue foo;
+  Value::Dict foo;
   foo.Set("bar", Value(123));
 
-  DictValue root;
+  Value::Dict root;
   root.Set("foo", std::move(foo));
 
   // Double key, second not found.
@@ -1267,7 +1254,7 @@ TEST(ValuesTest, FindPath) {
 }
 
 TEST(ValuesTest, SetByDottedPath) {
-  DictValue root;
+  Value::Dict root;
 
   Value* inserted = root.SetByDottedPath("one.two", Value(123));
   Value* found = root.FindByDottedPath("one.two");
@@ -1296,7 +1283,7 @@ TEST(ValuesTest, SetByDottedPath) {
 }
 
 TEST(ValuesTest, SetBoolPath) {
-  DictValue root;
+  Value::Dict root;
   Value* inserted = root.SetByDottedPath("foo.bar", true);
   Value* found = root.FindByDottedPath("foo.bar");
   ASSERT_TRUE(found);
@@ -1316,7 +1303,7 @@ TEST(ValuesTest, SetBoolPath) {
 }
 
 TEST(ValuesTest, SetIntPath) {
-  DictValue root;
+  Value::Dict root;
   Value* inserted = root.SetByDottedPath("foo.bar", 123);
   Value* found = root.FindByDottedPath("foo.bar");
   ASSERT_TRUE(found);
@@ -1336,7 +1323,7 @@ TEST(ValuesTest, SetIntPath) {
 }
 
 TEST(ValuesTest, SetDoublePath) {
-  DictValue root;
+  Value::Dict root;
   Value* inserted = root.SetByDottedPath("foo.bar", 1.23);
   Value* found = root.FindByDottedPath("foo.bar");
   ASSERT_TRUE(found);
@@ -1356,7 +1343,7 @@ TEST(ValuesTest, SetDoublePath) {
 }
 
 TEST(ValuesTest, SetStringPath) {
-  DictValue root;
+  Value::Dict root;
   Value* inserted = root.SetByDottedPath("foo.bar", "hello world");
   Value* found = root.FindByDottedPath("foo.bar");
   ASSERT_TRUE(found);
@@ -1380,7 +1367,7 @@ TEST(ValuesTest, SetStringPath) {
 }
 
 TEST(ValuesTest, Remove) {
-  DictValue root;
+  Value::Dict root;
   root.Set("one", Value(123));
 
   // Removal of missing key should fail.
@@ -1394,7 +1381,7 @@ TEST(ValuesTest, Remove) {
 }
 
 TEST(ValuesTest, Extract) {
-  DictValue root;
+  Value::Dict root;
   root.Set("one", Value(123));
 
   // Extraction of missing key should fail.
@@ -1408,7 +1395,7 @@ TEST(ValuesTest, Extract) {
 }
 
 TEST(ValuesTest, RemoveByDottedPath) {
-  DictValue root;
+  Value::Dict root;
   root.SetByDottedPath("one.two.three", Value(123));
 
   // Removal of missing key should fail.
@@ -1434,7 +1421,7 @@ TEST(ValuesTest, RemoveByDottedPath) {
 }
 
 TEST(ValuesTest, ExtractByDottedPath) {
-  DictValue root;
+  Value::Dict root;
   root.SetByDottedPath("one.two.three", Value(123));
 
   // Extraction of missing key should fail.
@@ -1461,7 +1448,7 @@ TEST(ValuesTest, ExtractByDottedPath) {
 
 TEST(ValuesTest, Basic) {
   // Test basic dictionary getting/setting
-  DictValue settings;
+  Value::Dict settings;
   ASSERT_FALSE(settings.FindByDottedPath("global.homepage"));
 
   ASSERT_FALSE(settings.Find("global"));
@@ -1478,14 +1465,14 @@ TEST(ValuesTest, Basic) {
   // Test storing a dictionary in a list.
   ASSERT_FALSE(settings.FindByDottedPath("global.toolbar.bookmarks"));
 
-  ListValue new_toolbar_bookmarks;
+  Value::List new_toolbar_bookmarks;
   settings.SetByDottedPath("global.toolbar.bookmarks",
                            std::move(new_toolbar_bookmarks));
-  ListValue* toolbar_bookmarks =
+  Value::List* toolbar_bookmarks =
       settings.FindListByDottedPath("global.toolbar.bookmarks");
   ASSERT_TRUE(toolbar_bookmarks);
 
-  DictValue new_bookmark;
+  Value::Dict new_bookmark;
   new_bookmark.Set("name", Value("Froogle"));
   new_bookmark.Set("url", Value("http://froogle.com"));
   toolbar_bookmarks->Append(std::move(new_bookmark));
@@ -1505,7 +1492,7 @@ TEST(ValuesTest, Basic) {
 }
 
 TEST(ValuesTest, List) {
-  ListValue mixed_list;
+  Value::List mixed_list;
   mixed_list.Append(true);
   mixed_list.Append(42);
   mixed_list.Append(88.8);
@@ -1519,24 +1506,24 @@ TEST(ValuesTest, List) {
   EXPECT_EQ("foo", mixed_list[3]);
 
   // Try searching in the mixed list.
-  ASSERT_TRUE(std::ranges::contains(mixed_list, 42, &Value::GetIfInt));
-  ASSERT_FALSE(std::ranges::contains(mixed_list, false, &Value::GetIfBool));
+  ASSERT_TRUE(Contains(mixed_list, 42, &Value::GetIfInt));
+  ASSERT_FALSE(Contains(mixed_list, false, &Value::GetIfBool));
 }
 
 TEST(ValuesTest, RvalueAppend) {
-  ListValue list = ListValue()
-                       .Append(Value())
-                       .Append(false)
-                       .Append(42)
-                       .Append(1.2)
-                       .Append("value")
-                       .Append(u"u16-value")
-                       .Append(std::string("std-value"))
-                       .Append(Value::BlobStorage({1, 2}))
-                       .Append(ListValue().Append("value in list"))
-                       .Append(DictValue().Set("key", "value"));
+  Value::List list = Value::List()
+                         .Append(Value())
+                         .Append(false)
+                         .Append(42)
+                         .Append(1.2)
+                         .Append("value")
+                         .Append(u"u16-value")
+                         .Append(std::string("std-value"))
+                         .Append(Value::BlobStorage({1, 2}))
+                         .Append(Value::List().Append("value in list"))
+                         .Append(Value::Dict().Set("key", "value"));
 
-  ListValue expected;
+  Value::List expected;
   expected.Append(Value());
   expected.Append(false);
   expected.Append(42);
@@ -1545,10 +1532,10 @@ TEST(ValuesTest, RvalueAppend) {
   expected.Append(u"u16-value");
   expected.Append(std::string("std-value"));
   expected.Append(Value::BlobStorage({1, 2}));
-  ListValue nested_list;
+  Value::List nested_list;
   nested_list.Append("value in list");
   expected.Append(std::move(nested_list));
-  DictValue nested_dict;
+  Value::Dict nested_dict;
   nested_dict.Set("key", "value");
   expected.Append(std::move(nested_dict));
 
@@ -1556,8 +1543,8 @@ TEST(ValuesTest, RvalueAppend) {
 }
 
 TEST(ValuesTest, ListWithCapacity) {
-  ListValue list_with_capacity =
-      ListValue::with_capacity(3).Append(true).Append(42).Append(88.8);
+  Value::List list_with_capacity =
+      Value::List::with_capacity(3).Append(true).Append(42).Append(88.8);
 
   ASSERT_EQ(3u, list_with_capacity.size());
 }
@@ -1575,23 +1562,23 @@ TEST(ValuesTest, BinaryValue) {
   ASSERT_EQ(original_buffer, binary.GetBlob().data());
   ASSERT_EQ(15U, binary.GetBlob().size());
 
-  std::array<char, 42> stack_buffer;
-  std::fill(stack_buffer.begin(), stack_buffer.end(), '!');
-  binary = Value(Value::BlobStorage(stack_buffer.begin(), stack_buffer.end()));
+  char stack_buffer[42];
+  memset(stack_buffer, '!', 42);
+  binary = Value(Value::BlobStorage(stack_buffer, stack_buffer + 42));
   ASSERT_TRUE(binary.GetBlob().data());
-  ASSERT_NE(stack_buffer.data(),
+  ASSERT_NE(stack_buffer,
             reinterpret_cast<const char*>(binary.GetBlob().data()));
   ASSERT_EQ(42U, binary.GetBlob().size());
-  ASSERT_EQ(0, UNSAFE_TODO(memcmp(stack_buffer.data(), binary.GetBlob().data(),
-                                  binary.GetBlob().size())));
+  ASSERT_EQ(0, memcmp(stack_buffer, binary.GetBlob().data(),
+                      binary.GetBlob().size()));
 }
 
 TEST(ValuesTest, StringValue) {
   // Test overloaded StringValue constructor.
-  auto narrow_value = std::make_unique<Value>("narrow");
+  std::unique_ptr<Value> narrow_value(new Value("narrow"));
   ASSERT_TRUE(narrow_value.get());
   ASSERT_TRUE(narrow_value->is_string());
-  auto utf16_value = std::make_unique<Value>(u"utf16");
+  std::unique_ptr<Value> utf16_value(new Value(u"utf16"));
   ASSERT_TRUE(utf16_value.get());
   ASSERT_TRUE(utf16_value->is_string());
 
@@ -1604,7 +1591,7 @@ TEST(ValuesTest, StringValue) {
 
 TEST(ValuesTest, DictionaryDeletion) {
   std::string key = "test";
-  DictValue dict;
+  Value::Dict dict;
   dict.Set(key, Value());
   EXPECT_FALSE(dict.empty());
   EXPECT_EQ(1U, dict.size());
@@ -1616,47 +1603,47 @@ TEST(ValuesTest, DictionaryDeletion) {
 
 TEST(ValuesTest, DictionarySetReturnsPointer) {
   {
-    DictValue dict;
+    Value::Dict dict;
     Value* blank_ptr = dict.Set("foo.bar", Value());
     EXPECT_EQ(Value::Type::NONE, blank_ptr->type());
   }
 
   {
-    DictValue dict;
+    Value::Dict dict;
     Value* blank_ptr = dict.Set("foo.bar", Value());
     EXPECT_EQ(Value::Type::NONE, blank_ptr->type());
   }
 
   {
-    DictValue dict;
+    Value::Dict dict;
     Value* int_ptr = dict.Set("foo.bar", 42);
     EXPECT_EQ(Value::Type::INTEGER, int_ptr->type());
     EXPECT_EQ(42, int_ptr->GetInt());
   }
 
   {
-    DictValue dict;
+    Value::Dict dict;
     Value* string_ptr = dict.Set("foo.bar", "foo");
     EXPECT_EQ(Value::Type::STRING, string_ptr->type());
     EXPECT_EQ("foo", string_ptr->GetString());
   }
 
   {
-    DictValue dict;
+    Value::Dict dict;
     Value* string16_ptr = dict.Set("foo.bar", u"baz");
     EXPECT_EQ(Value::Type::STRING, string16_ptr->type());
     EXPECT_EQ("baz", string16_ptr->GetString());
   }
 
   {
-    DictValue dict;
-    Value* dict_ptr = dict.Set("foo.bar", DictValue());
+    Value::Dict dict;
+    Value* dict_ptr = dict.Set("foo.bar", Value::Dict());
     EXPECT_EQ(Value::Type::DICT, dict_ptr->type());
   }
 
   {
-    DictValue dict;
-    Value* list_ptr = dict.Set("foo.bar", ListValue());
+    Value::Dict dict;
+    Value* list_ptr = dict.Set("foo.bar", Value::List());
     EXPECT_EQ(Value::Type::LIST, list_ptr->type());
   }
 }
@@ -1670,12 +1657,12 @@ TEST(ValuesTest, Clone) {
   Value original_string16(u"hello16");
   Value original_binary(Value::BlobStorage(42, '!'));
 
-  ListValue list;
+  Value::List list;
   list.Append(0);
   list.Append(1);
   Value original_list(std::move(list));
 
-  Value original_dict(DictValue()
+  Value original_dict(Value::Dict()
                           .Set("null", original_null.Clone())
                           .Set("bool", original_bool.Clone())
                           .Set("int", original_int.Clone())
@@ -1686,7 +1673,7 @@ TEST(ValuesTest, Clone) {
                           .Set("list", original_list.Clone()));
 
   Value copy_value = original_dict.Clone();
-  const DictValue& copy_dict = copy_value.GetDict();
+  const Value::Dict& copy_dict = copy_value.GetDict();
   EXPECT_EQ(original_dict, copy_dict);
   EXPECT_EQ(original_null, *copy_dict.Find("null"));
   EXPECT_EQ(original_bool, *copy_dict.Find("bool"));
@@ -1731,45 +1718,45 @@ TEST(ValuesTest, PopulateAfterTakeBlob) {
 }
 
 TEST(ValuesTest, TakeDict) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("foo", 123);
   Value value(std::move(dict));
   Value clone = value.Clone();
 
-  DictValue taken = std::move(value).TakeDict();
+  Value::Dict taken = std::move(value).TakeDict();
   EXPECT_EQ(taken, clone);
 }
 
 // Check that the value can still be used after `TakeDict()` was called, as long
 // as a new value was assigned to it.
 TEST(ValuesTest, PopulateAfterTakeDict) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("foo", 123);
   Value value(std::move(dict));
-  DictValue taken = std::move(value).TakeDict();
+  Value::Dict taken = std::move(value).TakeDict();
 
   value = Value(false);
   EXPECT_EQ(value, Value(false));
 }
 
 TEST(ValuesTest, TakeList) {
-  ListValue list;
+  Value::List list;
   list.Append(true);
   list.Append(123);
   Value value(std::move(list));
   Value clone = value.Clone();
 
-  ListValue taken = std::move(value).TakeList();
+  Value::List taken = std::move(value).TakeList();
   EXPECT_EQ(taken, clone);
 }
 
 // Check that the value can still be used after `TakeList()` was called, as long
 // as a new value was assigned to it.
 TEST(ValuesTest, PopulateAfterTakeList) {
-  ListValue list;
+  Value::List list;
   list.Append("hello");
   Value value(std::move(list));
-  ListValue taken = std::move(value).TakeList();
+  Value::List taken = std::move(value).TakeList();
 
   value = Value(false);
   EXPECT_EQ(value, Value(false));
@@ -1785,17 +1772,17 @@ TEST(ValuesTest, SpecializedEquals) {
   values.emplace_back(2.0);
   values.emplace_back("hello");
   values.emplace_back("world");
-  base::DictValue dict;
+  base::Value::Dict dict;
   dict.Set("hello", "world");
   values.emplace_back(std::move(dict));
-  base::DictValue dict2;
+  base::Value::Dict dict2;
   dict2.Set("world", "hello");
   values.emplace_back(std::move(dict2));
-  base::ListValue list;
+  base::Value::List list;
   list.Append("hello");
   list.Append("world");
   values.emplace_back(std::move(list));
-  base::ListValue list2;
+  base::Value::List list2;
   list2.Append("world");
   list2.Append("hello");
   values.emplace_back(std::move(list2));
@@ -1864,7 +1851,7 @@ TEST(ValuesTest, Equals) {
   Value boolean(false);
   EXPECT_NE(*null1, boolean);
 
-  DictValue dv;
+  Value::Dict dv;
   dv.Set("a", false);
   dv.Set("b", 2);
   dv.Set("c", 2.5);
@@ -1872,13 +1859,13 @@ TEST(ValuesTest, Equals) {
   dv.Set("d2", u"http://google.com");
   dv.Set("e", Value());
 
-  DictValue copy = dv.Clone();
+  Value::Dict copy = dv.Clone();
   EXPECT_EQ(dv, copy);
 
-  ListValue list;
+  Value::List list;
   list.Append(Value());
   list.Append(Value(Value::Type::DICT));
-  ListValue list_copy(list.Clone());
+  Value::List list_copy(list.Clone());
 
   Value* list_weak = dv.Set("f", std::move(list));
   EXPECT_NE(dv, copy);
@@ -1958,8 +1945,8 @@ TEST(ValuesTest, Comparisons) {
   EXPECT_FALSE(binary1 >= binary2);
 
   // Test Empty List Values.
-  ListValue null_list1;
-  ListValue null_list2;
+  Value::List null_list1;
+  Value::List null_list2;
   EXPECT_EQ(null_list1, null_list2);
   EXPECT_FALSE(null_list1 != null_list2);
   EXPECT_FALSE(null_list1 < null_list2);
@@ -1968,8 +1955,8 @@ TEST(ValuesTest, Comparisons) {
   EXPECT_GE(null_list1, null_list2);
 
   // Test Non Empty List Values.
-  ListValue int_list1;
-  ListValue int_list2;
+  Value::List int_list1;
+  Value::List int_list2;
   int_list1.Append(1);
   int_list2.Append(2);
   EXPECT_FALSE(int_list1 == int_list2);
@@ -1980,8 +1967,8 @@ TEST(ValuesTest, Comparisons) {
   EXPECT_FALSE(int_list1 >= int_list2);
 
   // Test Empty Dict Values.
-  DictValue null_dict1;
-  DictValue null_dict2;
+  Value::Dict null_dict1;
+  Value::Dict null_dict2;
   EXPECT_EQ(null_dict1, null_dict2);
   EXPECT_FALSE(null_dict1 != null_dict2);
   EXPECT_FALSE(null_dict1 < null_dict2);
@@ -1990,8 +1977,8 @@ TEST(ValuesTest, Comparisons) {
   EXPECT_GE(null_dict1, null_dict2);
 
   // Test Non Empty Dict Values.
-  DictValue int_dict1;
-  DictValue int_dict2;
+  Value::Dict int_dict1;
+  Value::Dict int_dict2;
   int_dict1.Set("key", 1);
   int_dict2.Set("key", 2);
   EXPECT_FALSE(int_dict1 == int_dict2);
@@ -2024,18 +2011,18 @@ TEST(ValuesTest, Comparisons) {
 }
 
 TEST(ValuesTest, Merge) {
-  DictValue base;
+  Value::Dict base;
   base.Set("base_key", "base_key_value_base");
   base.Set("collide_key", "collide_key_value_base");
-  DictValue base_sub_dict;
+  Value::Dict base_sub_dict;
   base_sub_dict.Set("sub_base_key", "sub_base_key_value_base");
   base_sub_dict.Set("sub_collide_key", "sub_collide_key_value_base");
   base.Set("sub_dict_key", std::move(base_sub_dict));
 
-  DictValue merge;
+  Value::Dict merge;
   merge.Set("merge_key", "merge_key_value_merge");
   merge.Set("collide_key", "collide_key_value_merge");
-  DictValue merge_sub_dict;
+  Value::Dict merge_sub_dict;
   merge_sub_dict.Set("sub_merge_key", "sub_merge_key_value_merge");
   merge_sub_dict.Set("sub_collide_key", "sub_collide_key_value_merge");
   merge.Set("sub_dict_key", std::move(merge_sub_dict));
@@ -2053,7 +2040,7 @@ TEST(ValuesTest, Merge) {
   ASSERT_TRUE(merge_key_value);
   EXPECT_EQ("merge_key_value_merge", *merge_key_value);  // Merged in.
 
-  DictValue* res_sub_dict = base.FindDict("sub_dict_key");
+  Value::Dict* res_sub_dict = base.FindDict("sub_dict_key");
   ASSERT_TRUE(res_sub_dict);
   EXPECT_EQ(3U, res_sub_dict->size());
   const std::string* sub_base_key_value =
@@ -2072,15 +2059,15 @@ TEST(ValuesTest, Merge) {
 }
 
 TEST(ValuesTest, DictionaryIterator) {
-  DictValue dict;
-  for (DictValue::iterator it = dict.begin(); it != dict.end(); ++it) {
+  Value::Dict dict;
+  for (Value::Dict::iterator it = dict.begin(); it != dict.end(); ++it) {
     ADD_FAILURE();
   }
 
   Value value1("value1");
   dict.Set("key1", value1.Clone());
   bool seen1 = false;
-  for (DictValue::iterator it = dict.begin(); it != dict.end(); ++it) {
+  for (Value::Dict::iterator it = dict.begin(); it != dict.end(); ++it) {
     EXPECT_FALSE(seen1);
     EXPECT_EQ("key1", it->first);
     EXPECT_EQ(value1, it->second);
@@ -2091,7 +2078,7 @@ TEST(ValuesTest, DictionaryIterator) {
   Value value2("value2");
   dict.Set("key2", value2.Clone());
   bool seen2 = seen1 = false;
-  for (DictValue::iterator it = dict.begin(); it != dict.end(); ++it) {
+  for (Value::Dict::iterator it = dict.begin(); it != dict.end(); ++it) {
     if (it->first == "key1") {
       EXPECT_FALSE(seen1);
       EXPECT_EQ(value1, it->second);
@@ -2109,7 +2096,7 @@ TEST(ValuesTest, DictionaryIterator) {
 }
 
 TEST(ValuesTest, MutatingCopiedPairsInDictMutatesUnderlyingValues) {
-  DictValue dict;
+  Value::Dict dict;
   dict.Set("key", Value("initial value"));
 
   // Because the non-const dict iterates over <const std::string&, Value&>
@@ -2125,7 +2112,7 @@ TEST(ValuesTest, MutatingCopiedPairsInDictMutatesUnderlyingValues) {
 }
 
 TEST(ValuesTest, StdDictionaryIterator) {
-  DictValue dict;
+  Value::Dict dict;
   for (auto it = dict.begin(); it != dict.end(); ++it) {
     ADD_FAILURE();
   }
@@ -2182,12 +2169,12 @@ TEST(ValuesTest, FromToUniquePtrValue) {
 }
 
 TEST(ValuesTest, MutableFindStringPath) {
-  DictValue dict;
+  Value::Dict dict;
   dict.SetByDottedPath("foo.bar", "value");
 
   *(dict.FindStringByDottedPath("foo.bar")) = "new_value";
 
-  DictValue expected_dict;
+  Value::Dict expected_dict;
   expected_dict.SetByDottedPath("foo.bar", "new_value");
 
   EXPECT_EQ(expected_dict, dict);
@@ -2201,13 +2188,13 @@ TEST(ValuesTest, MutableGetString) {
 
 TEST(ValuesTest, MutableFindBlobPath) {
   Value::BlobStorage original_blob = {0xF, 0x0, 0x0, 0xB, 0xA, 0x2};
-  DictValue dict;
+  Value::Dict dict;
   dict.SetByDottedPath("foo.bar", std::move(original_blob));
 
   Value::BlobStorage new_blob = {0x0, 0x3, 0x0};
   *(dict.FindBlobByDottedPath("foo.bar")) = new_blob;
 
-  DictValue expected_dict;
+  Value::Dict expected_dict;
   expected_dict.SetByDottedPath("foo.bar", std::move(new_blob));
 
   EXPECT_EQ(expected_dict, dict);
@@ -2222,6 +2209,7 @@ TEST(ValuesTest, MutableGetBlob) {
   EXPECT_EQ(new_blob, value.GetBlob());
 }
 
+#if BUILDFLAG(ENABLE_BASE_TRACING)
 TEST(ValuesTest, TracingSupport) {
   EXPECT_EQ(perfetto::TracedValueToString(Value(false)), "false");
   EXPECT_EQ(perfetto::TracedValueToString(Value(1)), "1");
@@ -2229,7 +2217,7 @@ TEST(ValuesTest, TracingSupport) {
   EXPECT_EQ(perfetto::TracedValueToString(Value("value")), "value");
   EXPECT_EQ(perfetto::TracedValueToString(Value(Value::Type::NONE)), "<none>");
   {
-    ListValue list;
+    Value::List list;
     EXPECT_EQ(perfetto::TracedValueToString(list), "{}");
     list.Append(2);
     list.Append(3);
@@ -2237,7 +2225,7 @@ TEST(ValuesTest, TracingSupport) {
     EXPECT_EQ(perfetto::TracedValueToString(Value(std::move(list))), "[2,3]");
   }
   {
-    DictValue dict;
+    Value::Dict dict;
     EXPECT_EQ(perfetto::TracedValueToString(dict), "{}");
     dict.Set("key", "value");
     EXPECT_EQ(perfetto::TracedValueToString(dict), "{key:value}");
@@ -2245,6 +2233,7 @@ TEST(ValuesTest, TracingSupport) {
               "{key:value}");
   }
 }
+#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
 TEST(ValueViewTest, BasicConstruction) {
   {
@@ -2277,18 +2266,18 @@ TEST(ValueViewTest, BasicConstruction) {
               std::get<std::string_view>(v.data_view_for_test()));
   }
   {
-    DictValue dict;
+    Value::Dict dict;
     dict.Set("hello", "world");
     ValueView v = dict;
-    EXPECT_EQ(dict, std::get<std::reference_wrapper<const DictValue>>(
+    EXPECT_EQ(dict, std::get<std::reference_wrapper<const Value::Dict>>(
                         v.data_view_for_test()));
   }
   {
-    ListValue list;
+    Value::List list;
     list.Append("hello");
     list.Append("world");
     ValueView v = list;
-    EXPECT_EQ(list, std::get<std::reference_wrapper<const ListValue>>(
+    EXPECT_EQ(list, std::get<std::reference_wrapper<const Value::List>>(
                         v.data_view_for_test()));
   }
 }
@@ -2317,20 +2306,20 @@ TEST(ValueViewTest, ValueConstruction) {
               std::get<std::string_view>(v.data_view_for_test()));
   }
   {
-    DictValue dict;
+    Value::Dict dict;
     dict.Set("hello", "world");
     Value val(dict.Clone());
     ValueView v = val;
-    EXPECT_EQ(dict, std::get<std::reference_wrapper<const DictValue>>(
+    EXPECT_EQ(dict, std::get<std::reference_wrapper<const Value::Dict>>(
                         v.data_view_for_test()));
   }
   {
-    ListValue list;
+    Value::List list;
     list.Append("hello");
     list.Append("world");
     Value val(list.Clone());
     ValueView v = val;
-    EXPECT_EQ(list, std::get<std::reference_wrapper<const ListValue>>(
+    EXPECT_EQ(list, std::get<std::reference_wrapper<const Value::List>>(
                         v.data_view_for_test()));
   }
 }
@@ -2357,14 +2346,14 @@ TEST(ValueViewTest, ToValue) {
     EXPECT_EQ(val, to_val);
   }
   {
-    DictValue dict;
+    Value::Dict dict;
     dict.Set("hello", "world");
     Value val(dict.Clone());
     Value to_val = ValueView(val).ToValue();
     EXPECT_EQ(val, to_val);
   }
   {
-    ListValue list;
+    Value::List list;
     list.Append("hello");
     list.Append("world");
     Value val(list.Clone());

@@ -34,7 +34,6 @@
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
-#include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/execution_context/security_context.h"
@@ -145,7 +144,7 @@ void CSSSelectorWatch::UpdateSelectorMatches(
 static bool AllCompound(const StyleRule* style_rule) {
   for (const CSSSelector* selector = style_rule->FirstSelector(); selector;
        selector = CSSSelectorList::Next(*selector)) {
-    if (!selector->IsFullyCompound()) {
+    if (!selector->IsCompound()) {
       return false;
     }
   }

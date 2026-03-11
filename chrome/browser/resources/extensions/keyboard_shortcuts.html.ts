@@ -38,11 +38,10 @@ export function getHtml(this: KeyboardShortcutsElement) {
                   ?selected="${this.isChromeScopeSelected_(command)}">
                 $i18n{shortcutScopeInChrome}
               </option>
-              ${this.showGlobalScopeOption_ ? html`
-                <option value="${chrome.developerPrivate.CommandScope.GLOBAL}"
-                    ?selected="${this.isGlobalScopeSelected_(command)}">
-                  $i18n{shortcutScopeGlobal}
-                </option>` : ''}
+              <option value="${chrome.developerPrivate.CommandScope.GLOBAL}"
+                  ?selected="${this.isGlobalScopeSelected_(command)}">
+                $i18n{shortcutScopeGlobal}
+              </option>
             </select>
           </div>`)}
       </div>

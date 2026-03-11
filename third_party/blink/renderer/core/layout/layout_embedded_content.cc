@@ -105,7 +105,13 @@ const std::optional<PhysicalSize> LayoutEmbeddedContent::FrozenFrameSize()
 
 PhysicalNaturalSizingInfo LayoutEmbeddedContent::GetNaturalDimensions() const {
   NOT_DESTROYED();
-  return PhysicalNaturalSizingInfo::None();
+  // 300x150, no aspect ratio. (Should probably be none.)
+  PhysicalSize natural_size{LayoutUnit(kDefaultWidth),
+                            LayoutUnit(kDefaultHeight)};
+  natural_size.Scale(StyleRef().EffectiveZoom());
+  PhysicalNaturalSizingInfo sizing_info;
+  sizing_info.size = natural_size;
+  return sizing_info;
 }
 
 AffineTransform LayoutEmbeddedContent::EmbeddedContentTransform() const {
@@ -123,11 +129,6 @@ AffineTransform LayoutEmbeddedContent::EmbeddedContentTransform() const {
   translate_and_scale.Scale(replaced_rect.Width() / frozen_size->width,
                             replaced_rect.Height() / frozen_size->height);
   return translate_and_scale;
-}
-
-bool LayoutEmbeddedContent::ShowsUnavailablePluginIndicator() const {
-  NOT_DESTROYED();
-  return false;
 }
 
 PhysicalOffset LayoutEmbeddedContent::EmbeddedContentFromBorderBox(
@@ -306,12 +307,10 @@ bool LayoutEmbeddedContent::NodeAtPoint(
                                             accumulated_offset, phase);
 }
 
-void LayoutEmbeddedContent::StyleDidChange(
-    StyleDifference diff,
-    const ComputedStyle* old_style,
-    const StyleChangeContext& style_change_context) {
+void LayoutEmbeddedContent::StyleDidChange(StyleDifference diff,
+                                           const ComputedStyle* old_style) {
   NOT_DESTROYED();
-  LayoutReplaced::StyleDidChange(diff, old_style, style_change_context);
+  LayoutReplaced::StyleDidChange(diff, old_style);
   const ComputedStyle& new_style = StyleRef();
 
   if (Frame* frame = GetFrameOwnerElement()->ContentFrame())

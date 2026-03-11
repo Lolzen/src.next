@@ -6,17 +6,16 @@
 #define CHROME_BROWSER_EXTENSIONS_CHROME_CONTENT_BROWSER_CLIENT_EXTENSIONS_PART_H_
 
 #include <memory>
-#include <vector>
 
 #include "base/auto_reset.h"
+#include "base/feature_list.h"
 #include "base/gtest_prod_util.h"
 #include "chrome/browser/chrome_content_browser_client_parts.h"
-#include "extensions/buildflags/buildflags.h"
+#include "components/download/public/common/quarantine_connection.h"
+#include "content/public/browser/browser_or_resource_context.h"
 #include "services/network/public/mojom/network_context.mojom-forward.h"
 #include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
 #include "ui/base/page_transition_types.h"
-
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace content {
 class RenderFrameHost;
@@ -57,7 +56,7 @@ class ChromeContentBrowserClientExtensionsPart
   ~ChromeContentBrowserClientExtensionsPart() override;
 
   // Corresponds to the ChromeContentBrowserClient function of the same name.
-  static std::optional<GURL> GetEffectiveURL(Profile* profile, const GURL& url);
+  static GURL GetEffectiveURL(Profile* profile, const GURL& url);
   static bool ShouldCompareEffectiveURLsForSiteInstanceSelection(
       content::BrowserContext* browser_context,
       content::SiteInstance* candidate_site_instance,
@@ -151,6 +150,7 @@ class ChromeContentBrowserClientExtensionsPart
   void GetAdditionalFileSystemBackends(
       content::BrowserContext* browser_context,
       const base::FilePath& storage_partition_path,
+      download::QuarantineConnectionCallback quarantine_connection_callback,
       std::vector<std::unique_ptr<storage::FileSystemBackend>>*
           additional_backends) override;
   void AppendExtraRendererCommandLineSwitches(

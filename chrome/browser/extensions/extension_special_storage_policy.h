@@ -47,7 +47,7 @@ class ExtensionSpecialStoragePolicy : public storage::SpecialStoragePolicy {
   bool IsStorageSessionOnly(const GURL& origin) override;
   bool HasIsolatedStorage(const GURL& origin) override;
   bool HasSessionOnlyOrigins() override;
-  bool IsStoragePersistent(const GURL& origin) override;
+  bool IsStorageDurable(const GURL& origin) override;
 
   // Methods used by the ExtensionService to populate this class.
   void GrantRightsForExtension(const extensions::Extension* extension,
@@ -56,7 +56,7 @@ class ExtensionSpecialStoragePolicy : public storage::SpecialStoragePolicy {
                                 content::BrowserContext* context);
   void RevokeRightsForAllExtensions();
 
-  // Decides whether the storage for `extension`'s web extent needs protection.
+  // Decides whether the storage for |extension|'s web extent needs protection.
   bool NeedsProtection(const extensions::Extension* extension);
 
   // Returns the set of extensions protecting this origin. The caller does not

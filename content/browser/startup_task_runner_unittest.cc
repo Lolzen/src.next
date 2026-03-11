@@ -23,14 +23,13 @@ namespace {
 
 using testing::_;
 using testing::Assign;
+using testing::Invoke;
 
 int observer_calls = 0;
 int task_count = 0;
 int observer_result;
 
-void Observer(int result,
-              base::TimeDelta async_longest_blocking_duration,
-              base::TimeDelta async_total_duration) {
+void Observer(int result) {
   observer_calls++;
   observer_result = result;
 }
@@ -86,7 +85,7 @@ class MockTaskRunner {
 
 class TaskRunnerProxy : public base::SingleThreadTaskRunner {
  public:
-  explicit TaskRunnerProxy(MockTaskRunner* mock) : mock_(mock) {}
+  TaskRunnerProxy(MockTaskRunner* mock) : mock_(mock) {}
   bool RunsTasksInCurrentSequence() const override { return true; }
   bool PostDelayedTask(const base::Location& location,
                        base::OnceClosure closure,
@@ -110,12 +109,7 @@ class TaskRunnerProxy : public base::SingleThreadTaskRunner {
   base::OnceClosure last_task_;
 };
 
-class StartupTaskRunnerSynchronousTest
-    : public StartupTaskRunnerTest,
-      public testing::WithParamInterface<bool> {};
-
-TEST_P(StartupTaskRunnerSynchronousTest, RunAllTasksNow) {
-  const bool was_posted = GetParam();
+TEST_F(StartupTaskRunnerTest, SynchronousExecution) {
   MockTaskRunner mock_runner;
   scoped_refptr<TaskRunnerProxy> proxy = new TaskRunnerProxy(&mock_runner);
 
@@ -134,7 +128,7 @@ TEST_P(StartupTaskRunnerSynchronousTest, RunAllTasksNow) {
 
   // Nothing should run until we tell them to.
   EXPECT_EQ(GetLastTask(), 0);
-  runner.RunAllTasksNow(was_posted);
+  runner.RunAllTasksNow();
 
   // On an immediate StartupTaskRunner the tasks should now all have run.
   EXPECT_EQ(GetLastTask(), 2);
@@ -153,10 +147,6 @@ TEST_P(StartupTaskRunnerSynchronousTest, RunAllTasksNow) {
   EXPECT_EQ(observer_calls, 1);
 }
 
-INSTANTIATE_TEST_SUITE_P(StartupTaskRunnerTest,
-                         StartupTaskRunnerSynchronousTest,
-                         testing::Bool());
-
 TEST_F(StartupTaskRunnerTest, NullObserver) {
   MockTaskRunner mock_runner;
   scoped_refptr<TaskRunnerProxy> proxy = new TaskRunnerProxy(&mock_runner);
@@ -164,8 +154,7 @@ TEST_F(StartupTaskRunnerTest, NullObserver) {
   EXPECT_CALL(mock_runner, PostDelayedTask(_, _)).Times(0);
   EXPECT_CALL(mock_runner, PostNonNestableDelayedTask(_, _)).Times(0);
 
-  StartupTaskRunner runner(
-      base::OnceCallback<void(int, base::TimeDelta, base::TimeDelta)>(), proxy);
+  StartupTaskRunner runner(base::OnceCallback<void(int)>(), proxy);
 
   StartupTask task1 =
       base::BindOnce(&StartupTaskRunnerTest::Task1, base::Unretained(this));
@@ -177,7 +166,7 @@ TEST_F(StartupTaskRunnerTest, NullObserver) {
 
   // Nothing should run until we tell them to.
   EXPECT_EQ(GetLastTask(), 0);
-  runner.RunAllTasksNow(/*was_posted=*/false);
+  runner.RunAllTasksNow();
 
   // On an immediate StartupTaskRunner the tasks should now all have run.
   EXPECT_EQ(GetLastTask(), 2);
@@ -212,7 +201,7 @@ TEST_F(StartupTaskRunnerTest, SynchronousExecutionFailedTask) {
 
   // Nothing should run until we tell them to.
   EXPECT_EQ(GetLastTask(), 0);
-  runner.RunAllTasksNow(/*was_posted=*/false);
+  runner.RunAllTasksNow();
 
   // Only the first task should have run, since it failed
   EXPECT_EQ(GetLastTask(), 3);
@@ -270,7 +259,7 @@ TEST_F(StartupTaskRunnerTest, AsynchronousExecution) {
 
   // Check that running synchronously now doesn't do anything
 
-  runner.RunAllTasksNow(/*was_posted=*/false);
+  runner.RunAllTasksNow();
   EXPECT_EQ(task_count, 2);
   EXPECT_EQ(observer_calls, 1);
 }
@@ -298,10 +287,10 @@ TEST_F(StartupTaskRunnerTest, AsynchronousExecutionFailedTask) {
   EXPECT_EQ(GetLastTask(), 0);
   runner.StartRunningTasksAsync();
 
-  // No tasks should have run yet, since the message loop hasn't run.
+  // No tasks should have run yet, since we the message loop hasn't run.
   EXPECT_EQ(GetLastTask(), 0);
 
-  // Fake the actual message loop. Each time a task is run, a new task should
+  // Fake the actual message loop. Each time a task is run a new task should
   // be added to the queue, hence updating "task". The loop should actually run
   // at most twice (once for the failed task plus possibly once for the
   // observer), the "4" is a backstop.
@@ -314,7 +303,7 @@ TEST_F(StartupTaskRunnerTest, AsynchronousExecutionFailedTask) {
   EXPECT_EQ(observer_result, 1);
 
   // Check that running synchronously now doesn't do anything
-  runner.RunAllTasksNow(/*was_posted=*/false);
+  runner.RunAllTasksNow();
   EXPECT_EQ(observer_calls, 1);
   EXPECT_EQ(task_count, 1);
 }

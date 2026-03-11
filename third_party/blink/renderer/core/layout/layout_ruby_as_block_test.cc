@@ -17,7 +17,7 @@ TEST_F(LayoutRubyAsBlockTest, TextCombineCrash) {
       <ruby id="target" style="display:block ruby; text-combine-upright:all;"></ruby>
       )HTML");
   auto* ruby = GetElementById("target");
-  ruby->SetInnerHTMLWithoutTrustedTypes("<ol></ol>a");
+  ruby->setInnerHTML("<ol></ol>a");
   UpdateAllLifecyclePhasesForTest();
   // Pass if no crashes.
 }

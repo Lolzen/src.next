@@ -43,7 +43,3 @@ AccountsPolicyManagerFactory::BuildServiceInstanceForBrowserContext(
   Profile* profile = Profile::FromBrowserContext(context);
   return std::make_unique<AccountsPolicyManager>(profile);
 }
-
-bool AccountsPolicyManagerFactory::ServiceIsCreatedWithBrowserContext() const {
-  return true;
-}

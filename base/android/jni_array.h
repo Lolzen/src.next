@@ -34,7 +34,6 @@ BASE_EXPORT size_t SafeGetArrayLength(JNIEnv* env,
 }
 
 // Returns a new Java byte array converted from the given bytes array.
-// PRECONDITIONS: `bytes` must point to `len` valid bytes.
 UNSAFE_BUFFER_USAGE BASE_EXPORT ScopedJavaLocalRef<jbyteArray>
 ToJavaByteArray(JNIEnv* env, const uint8_t* bytes, size_t len);
 
@@ -187,7 +186,7 @@ BASE_EXPORT void JavaLongArrayToInt64Vector(
 BASE_EXPORT void JavaLongArrayToLongVector(
     JNIEnv* env,
     const JavaRef<jlongArray>& long_array,
-    std::vector<int64_t>* out);
+    std::vector<jlong>* out);
 
 // Replaces the content of |out| with the Java floats in |float_array|.
 BASE_EXPORT void JavaFloatArrayToFloatVector(

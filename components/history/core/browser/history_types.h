@@ -19,6 +19,7 @@
 #include "base/containers/flat_map.h"
 #include "base/functional/callback_forward.h"
 #include "base/time/time.h"
+#include "components/favicon_base/favicon_types.h"
 #include "components/history/core/browser/history_context.h"
 #include "components/history/core/browser/url_row.h"
 #include "components/query_parser/query_parser.h"
@@ -53,8 +54,6 @@ enum VisitSource {
   SOURCE_FIREFOX_IMPORTED = 3,
   SOURCE_IE_IMPORTED = 4,
   SOURCE_SAFARI_IMPORTED = 5,
-  SOURCE_ACTOR = 6,
-  SOURCE_OS_MIGRATION_IMPORTED = 7,
 };
 
 // Corresponds to the "id" column of the "visits" SQL table.
@@ -190,9 +189,6 @@ class VisitRow {
   // by an app. This is set only on Android if the Custom Tab knows which app
   // launched it; otherwise remains null.
   std::optional<std::string> app_id;
-  // The source of the visit
-  // TODO(crbug.com/464528977): Wrap source with std::optional.
-  history::VisitSource source = history::SOURCE_BROWSED;
   // We allow the implicit copy constructor and operator=.
 };
 
@@ -251,10 +247,10 @@ struct VisitedLinkRow {
   // partition key).
   int visit_count = 0;
 
-  friend bool operator==(const VisitedLinkRow&,
-                         const VisitedLinkRow&) = default;
-  friend auto operator<=>(const VisitedLinkRow&,
-                          const VisitedLinkRow&) = default;
+ private:
+  friend bool operator==(const VisitedLinkRow& lhs, const VisitedLinkRow& rhs);
+  friend bool operator!=(const VisitedLinkRow& lhs, const VisitedLinkRow& rhs);
+  friend bool operator<(const VisitedLinkRow& lhs, const VisitedLinkRow& rhs);
 };
 using VisitedLinkRows = std::vector<VisitedLinkRow>;
 
@@ -266,9 +262,6 @@ using VisitedLinkRows = std::vector<VisitedLinkRow>;
 class QueryResults {
  public:
   using URLResultVector = std::vector<URLResult>;
-
-  // Mimic STL containers.
-  using value_type = URLResult;
 
   QueryResults();
 
@@ -352,13 +345,6 @@ class QueryResults {
 
 // QueryOptions ----------------------------------------------------------------
 
-// Used to specify how to handle visits that had an HTTP response code of 404,
-// when making History queries that involve visits.
-enum class VisitQuery404sPolicy {
-  kInclude404s = 0,
-  kExclude404s,
-};
-
 struct QueryOptions {
   QueryOptions();
   QueryOptions(const QueryOptions&);
@@ -387,12 +373,6 @@ struct QueryOptions {
   // the most recent first, so older results may not be returned if there is not
   // enough room. When 0, this will return everything.
   int max_count = 0;
-
-  // Temporarily defaulted to `kExclude404s`; this may change in the future.
-  // Callers are strongly encouraged to explicitly set a value, unless they are
-  // certain that the handling of 404 visits is irrelevant for their use case.
-  VisitQuery404sPolicy policy_for_404_visits =
-      VisitQuery404sPolicy::kExclude404s;
 
   enum DuplicateHandling {
     // Omit visits for which there is a more recent visit to the same URL.
@@ -433,14 +413,6 @@ struct QueryOptions {
   // If nullopt, search doesn't take app_id into consideration.
   std::optional<std::string> app_id;
 
-  // If true, visits with a source of SOURCE_ACTOR are included.
-  // Defaults to false, filtering them out.
-  bool include_actor_visits = false;
-
-  // If true, visits with a source other than SOURCE_ACTOR are included.
-  // Defaults to true.
-  bool include_user_visits = true;
-
   // Helpers to get the effective parameters values, since a value of 0 means
   // "unspecified".
   int EffectiveMaxCount() const;
@@ -451,7 +423,8 @@ struct QueryOptions {
 // QueryURLResult -------------------------------------------------------------
 
 // QueryURLResult encapsulates the result of a call to
-// `HistoryBackend::QueryURL()`.
+// `HistoryBackend::QueryURL()` or
+// `HistoryBackend::GetMostRecentVisitsForGurl()`.
 struct QueryURLResult {
   QueryURLResult();
   QueryURLResult(const QueryURLResult&);
@@ -460,27 +433,8 @@ struct QueryURLResult {
   QueryURLResult& operator=(QueryURLResult&&) noexcept;
   ~QueryURLResult();
 
-  // Indicates whether the call was successful. If false, then `row` is
-  // undefined.
-  bool success = false;
-  URLRow row;
-};
-
-// QueryURLAndVisitsResult ----------------------------------------------------
-
-// QueryURLAndVisitsResult encapsulates the result of a call to
-// `HistoryBackend::QueryURLAndVisits()` or
-// `HistoryBackend::GetMostRecentVisitsForGurl()`.
-struct QueryURLAndVisitsResult {
-  QueryURLAndVisitsResult();
-  QueryURLAndVisitsResult(const QueryURLAndVisitsResult&);
-  QueryURLAndVisitsResult(QueryURLAndVisitsResult&&) noexcept;
-  QueryURLAndVisitsResult& operator=(const QueryURLAndVisitsResult&);
-  QueryURLAndVisitsResult& operator=(QueryURLAndVisitsResult&&) noexcept;
-  ~QueryURLAndVisitsResult();
-
   // Indicates whether the call was successful. If false, then both `row` and
-  // `visits` are undefined.
+  // `visits` fields are undefined.
   bool success = false;
   URLRow row;
   VisitVector visits;
@@ -601,6 +555,7 @@ struct Opener {
 using MostVisitedURLList = std::vector<MostVisitedURL>;
 using KeywordSearchTermVisitList =
     std::vector<std::unique_ptr<KeywordSearchTermVisit>>;
+using FilteredURLList = std::vector<FilteredURL>;
 
 struct MostVisitedURLWithRank {
   MostVisitedURL url;
@@ -637,7 +592,8 @@ using SyncDeviceInfoMap = std::map<
 // Statistics -----------------------------------------------------------------
 
 // HistoryCountResult encapsulates the result of a call to
-// HistoryBackend::GetHistoryCount.
+// HistoryBackend::GetHistoryCount or
+// HistoryBackend::CountUniqueHostsVisitedLastMonth.
 struct HistoryCountResult {
   // Indicates whether the call was successful or not. If false, then `count`
   // is undefined.
@@ -678,9 +634,11 @@ struct DomainMetricSet {
 // unique midnight in that date range.
 using DomainDiversityResults = std::vector<DomainMetricSet>;
 
-// The callback to process all domain diversity metrics.
-using DomainDiversityCallback =
-    base::OnceCallback<void(DomainDiversityResults)>;
+// The callback to process all domain diversity metrics. The parameter is a pair
+// of results, where the first member counts only local visits, and the second
+// counts both local and foreign (synced) visits.
+using DomainDiversityCallback = base::OnceCallback<void(
+    std::pair<DomainDiversityResults, DomainDiversityResults>)>;
 
 // The bitmask to specify the types of metrics to compute in
 // HistoryBackend::GetDomainDiversity()
@@ -697,13 +655,11 @@ enum DomainMetricType : DomainMetricBitmaskType {
 struct HistoryLastVisitResult {
   // Indicates whether the call was successful or not. This can happen if there
   // are internal database errors or the query was called with invalid
-  // arguments. `success` will be true and both `last_visit` and
-  // `last_visited_url` will be null if the host was never visited before.
-  // `last_visit` and `last_visited_url` will always be null if `success` is
-  // false.
+  // arguments. `success` will be true and `last_visit` will be null if
+  // the host was never visited before. `last_visit` will always be null if
+  // `success` is false.
   bool success = false;
   base::Time last_visit;
-  GURL last_visited_url;
 };
 
 // DailyVisitsResult contains the result of counting visits to a host over a
@@ -927,8 +883,8 @@ struct VisitContextAnnotations {
   VisitContextAnnotations(const VisitContextAnnotations& other);
   ~VisitContextAnnotations();
 
-  friend bool operator==(const VisitContextAnnotations&,
-                         const VisitContextAnnotations&) = default;
+  bool operator==(const VisitContextAnnotations& other) const;
+  bool operator!=(const VisitContextAnnotations& other) const;
 
   // Values are persisted; do not reorder or reuse, and only add new values at
   // the end.
@@ -958,8 +914,8 @@ struct VisitContextAnnotations {
     // The HTTP response code of the navigation.
     int response_code = 0;
 
-    friend bool operator==(const OnVisitFields&,
-                           const OnVisitFields&) = default;
+    bool operator==(const OnVisitFields& other) const;
+    bool operator!=(const OnVisitFields& other) const;
   };
 
   OnVisitFields on_visit;
@@ -1286,47 +1242,6 @@ struct Cluster {
 
 // Navigation -----------------------------------------------------------------
 
-// The category of HTTP response code for a page visit.
-enum class VisitResponseCodeCategory {
-  // The HTTP response code for the page visit was something other than 404, or
-  // the visit had no response code (such as for synthetic visits).
-  kNot404 = 0,
-  // The HTTP response code for the page visit was 404.
-  k404,
-};
-
-enum class VisitContextEphemerality {
-  // The page visit is not ephemeral.
-  kNotEphemeral = 0,
-  // The page visit occurred in an ephemeral context (i.e., a credentialless
-  // iframe).
-  kEphemeral,
-};
-
-// Information associated with a new visit that is added to History.
-// VisitedURLInfo
-// ----------------------------------------------------------------
-struct VisitedURLInfo {
-  VisitedURLInfo();
-  VisitedURLInfo(URLRow url_row,
-                 VisitRow visit_row,
-                 VisitResponseCodeCategory response_code_category =
-                     VisitResponseCodeCategory::kNot404,
-                 std::optional<int64_t> local_navigation_id = std::nullopt);
-  VisitedURLInfo(const VisitedURLInfo& other);
-  ~VisitedURLInfo();
-
-  // The URLRow for which there was a new visit.
-  URLRow url_row;
-  // The VisitRow of the new visit.
-  VisitRow visit_row;
-  // Indicates whether or not this new visit had a 404 response.
-  VisitResponseCodeCategory response_code_category;
-  // Contains the unique navigation id from `content::NavigationHandle` and is
-  // populated only during local visits.
-  std::optional<int64_t> local_navigation_id;
-};
-
 // Marshalling structure for AddPage.
 struct HistoryAddPageArgs {
   // The default constructor is equivalent to:
@@ -1334,10 +1249,9 @@ struct HistoryAddPageArgs {
   //   HistoryAddPageArgs(
   //       GURL(), base::Time(), nullptr, 0, std::nullopt, GURL(),
   //       RedirectList(), ui::PAGE_TRANSITION_LINK,
-  //       false, SOURCE_BROWSED, VisitResponseCodeCategory::kNot404, false,
-  //       true, VisitContextEphemerality::kNotEphemeral, std::nullopt,
+  //       false, SOURCE_BROWSED, false, true, false,
   //       std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-  //       std::nullopt)
+  //       std::nullopt, std::nullopt)
   HistoryAddPageArgs();
   HistoryAddPageArgs(const GURL& url,
                      base::Time time,
@@ -1349,11 +1263,9 @@ struct HistoryAddPageArgs {
                      ui::PageTransition transition,
                      bool hidden,
                      VisitSource source,
-                     VisitResponseCodeCategory response_code_category,
                      bool did_replace_entry,
                      bool consider_for_ntp_most_visited,
-                     VisitContextEphemerality visit_context_ephemerality =
-                         VisitContextEphemerality::kNotEphemeral,
+                     bool is_ephemeral = false,
                      std::optional<std::u16string> title = std::nullopt,
                      std::optional<GURL> top_level_url = std::nullopt,
                      std::optional<GURL> frame_url = std::nullopt,
@@ -1361,8 +1273,7 @@ struct HistoryAddPageArgs {
                      std::optional<int64_t> bookmark_id = std::nullopt,
                      std::optional<std::string> app_id = std::nullopt,
                      std::optional<VisitContextAnnotations::OnVisitFields>
-                         context_annotations = std::nullopt,
-                     std::optional<int32_t> actor_task_id = std::nullopt);
+                         context_annotations = std::nullopt);
   HistoryAddPageArgs(const HistoryAddPageArgs& other);
   ~HistoryAddPageArgs();
 
@@ -1374,19 +1285,15 @@ struct HistoryAddPageArgs {
   GURL referrer;
   RedirectList redirects;
   ui::PageTransition transition;
-  // Whether the visit should be hidden from UI features. Should generally be
-  // `true` for visits in subframes and ad frames, and for visits that resulted
-  // in an error response (HTTP 4XX/5XX).
   bool hidden;
   VisitSource visit_source;
-  VisitResponseCodeCategory response_code_category;
   bool did_replace_entry;
   // Specifies whether a page visit should contribute to the Most Visited tiles
   // in the New Tab Page. Note that setting this to true (most common case)
   // doesn't guarantee it's relevant for Most Visited, since other requirements
   // exist (e.g. certain page transition types).
   bool consider_for_ntp_most_visited;
-  VisitContextEphemerality visit_context_ephemerality;
+  bool is_ephemeral;
   std::optional<std::u16string> title;
   // `top_level_url` is a GURL representing the top-level frame that this
   // navigation originated from.
@@ -1399,9 +1306,6 @@ struct HistoryAddPageArgs {
   std::optional<int64_t> bookmark_id;
   std::optional<std::string> app_id;
   std::optional<VisitContextAnnotations::OnVisitFields> context_annotations;
-  // `actor_task_id` represents the id of the acting actor task, if it exists.
-  // Id value generated at time of actor task creation.
-  std::optional<int32_t> actor_task_id;
 };
 
 }  // namespace history

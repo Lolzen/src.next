@@ -10,6 +10,10 @@
 
 #include "base/feature_list.h"
 
+namespace variations::cros_early_boot::evaluate_seed {
+class EarlyBootFeatureVisitor;
+}
+
 namespace gin {
 class V8FeatureVisitor;
 }
@@ -40,6 +44,7 @@ class FeatureVisitor {
                      const std::string& group_name) = 0;
 
  private:
+  friend variations::cros_early_boot::evaluate_seed::EarlyBootFeatureVisitor;
   friend gin::V8FeatureVisitor;
   friend TestFeatureVisitor;
 

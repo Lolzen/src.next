@@ -20,4 +20,5 @@
 
 # *** START OF LIST ***
 ../androidx/build.gradle:androidx
-autorolled/build.gradle:autorolled
+# Commented out until the first roll is done.
+./autorolled/build.gradle:autorolled

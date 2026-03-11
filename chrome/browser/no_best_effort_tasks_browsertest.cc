@@ -11,7 +11,6 @@
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
-#include "base/test/values_test_util.h"
 #include "build/build_config.h"
 #include "build/buildflag.h"
 #include "chrome/browser/chrome_content_browser_client.h"
@@ -19,7 +18,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/test/base/chrome_test_utils.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
@@ -33,10 +31,10 @@
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/browser/extensions/scoped_test_mv2_enabler.h"
+#include "chrome/browser/extensions/unpacked_installer.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/test_extension_registry_observer.h"
-#include "extensions/browser/unpacked_installer.h"
 #include "extensions/common/extension.h"
 #endif
 
@@ -146,11 +144,11 @@ IN_PROC_BROWSER_TEST_F(NoBestEffortTasksTest,
 }
 
 // Verify that it is possible to load and paint a file:// URL without running
-// BEST_EFFORT tasks. Regression test for https://crbug.com/40631718.
+// BEST_EFFORT tasks. Regression test for https://crbug.com/973244.
 // TODO(crbug.com/40932711): Disabled due to excessive flakiness.
 IN_PROC_BROWSER_TEST_F(NoBestEffortTasksTest, DISABLED_LoadAndPaintFileScheme) {
   constexpr base::FilePath::CharType kFile[] = FILE_PATH_LITERAL("links.html");
-  GURL file_url(chrome_test_utils::GetTestUrl(
+  GURL file_url(ui_test_utils::GetTestUrl(
       base::FilePath(base::FilePath::kCurrentDirectory),
       base::FilePath(kFile)));
   ASSERT_TRUE(file_url.SchemeIs(url::kFileScheme));
@@ -167,11 +165,10 @@ IN_PROC_BROWSER_TEST_F(NoBestEffortTasksTest, DISABLED_LoadAndPaintFileScheme) {
 }
 
 // Verify that an extension can be loaded and perform basic messaging without
-// running BEST_EFFORT tasks. Regression test for
-// http://crbug.com/40302452#c112.
+// running BEST_EFFORT tasks. Regression test for http://crbug.com/177163#c112.
 //
 // NOTE: If this test times out, it might help to look at how
-// http://crbug.com/41436919 was resolved.
+// http://crbug.com/924416 was resolved.
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 IN_PROC_BROWSER_TEST_F(NoBestEffortTasksTest, LoadExtensionAndSendMessages) {
   // TODO(https://crbug.com/40804030): Remove this when updated to use MV3.
@@ -226,9 +223,9 @@ IN_PROC_BROWSER_TEST_F(NoBestEffortTasksTest, LoadExtensionAndSendMessages) {
     const auto result =
         content::EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
                         request_reply_javascript);
-    if (result.is_ok()) {
+    if (result.error.empty()) {
       LOG(INFO) << "Got a response from the extension.";
-      EXPECT_TRUE(result.ExtractDict().FindBool("pong").value_or(false));
+      EXPECT_TRUE(result.value.GetDict().FindBool("pong").value_or(false));
       break;
     }
     // An error indicates the extension's message listener isn't up yet. Wait a
@@ -243,7 +240,7 @@ IN_PROC_BROWSER_TEST_F(NoBestEffortTasksTest, LoadExtensionAndSendMessages) {
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 // Verify that Blob XMLHttpRequest finishes without running BEST_EFFORT tasks.
-// Regression test for https://crbug.com/40638518.
+// Regression test for https://crbug.com/989868.
 IN_PROC_BROWSER_TEST_F(NoBestEffortTasksTest, BlobXMLHttpRequest) {
   ASSERT_TRUE(embedded_test_server()->Start());
   ASSERT_TRUE(ui_test_utils::NavigateToURL(

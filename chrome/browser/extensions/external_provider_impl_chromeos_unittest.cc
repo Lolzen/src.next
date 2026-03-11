@@ -73,19 +73,13 @@ class ExternalProviderImplChromeOSTest : public ExtensionServiceTestBase {
 
   void InitServiceWithExternalProvidersAndUserType(bool standalone,
                                                    bool is_child) {
-    ExtensionServiceInitParams params;
-    params.prefs_content = "";
-    // Avoid using the real SyncService instance, to avoid conflicting
-    // with sync startup notifications, specifically clearing of
-    // existing account data upon startup when there is no sync metadata.
-    params.use_test_sync_service = true;
-    InitializeExtensionService(std::move(params));
+    InitializeEmptyExtensionService();
 
     if (is_child) {
-      testing_profile()->SetIsSupervisedProfile();
+      profile_->SetIsSupervisedProfile();
     }
 
-    service()->Init();
+    service_->Init();
 
     if (standalone) {
       external_externsions_overrides_ =
@@ -95,8 +89,7 @@ class ExternalProviderImplChromeOSTest : public ExtensionServiceTestBase {
     } else {
       external_externsions_overrides_ =
           std::make_unique<base::ScopedPathOverride>(
-              chrome::DIR_EXTERNAL_EXTENSIONS,
-              data_dir().Append("external_app"));
+              chrome::DIR_EXTERNAL_EXTENSIONS, data_dir().Append("external"));
     }
 
     // This switch is set when creating a TestingProfile, but needs to be
@@ -106,7 +99,7 @@ class ExternalProviderImplChromeOSTest : public ExtensionServiceTestBase {
 
     ProviderCollection providers;
     ExternalProviderImpl::CreateExternalProviders(external_provider_manager(),
-                                                  profile(), &providers);
+                                                  profile_.get(), &providers);
 
     for (std::unique_ptr<ExternalProviderInterface>& provider : providers) {
       external_provider_manager()->AddProviderForTesting(std::move(provider));
@@ -147,7 +140,7 @@ class ExternalProviderImplChromeOSTest : public ExtensionServiceTestBase {
 
     ProviderCollection providers;
     ExternalProviderImpl::CreateExternalProviders(external_provider_manager(),
-                                                  profile(), &providers);
+                                                  profile_.get(), &providers);
 
     EXPECT_EQ(providers.size(), expected_count);
   }
@@ -251,8 +244,7 @@ TEST_F(ExternalProviderImplChromeOSTest, PolicyDisabled) {
                                     signin::ConsentLevel::kSync);
 
   // Sync is dsabled by policy.
-  profile()->GetPrefs()->SetBoolean(syncer::prefs::internal::kSyncManaged,
-                                    true);
+  profile_->GetPrefs()->SetBoolean(syncer::prefs::internal::kSyncManaged, true);
 
   TestExtensionRegistryObserver observer(registry(), kStandaloneAppId);
 
@@ -300,20 +292,14 @@ TEST_F(ExternalProviderImplChromeOSTest, PriorityCompleted) {
   EXPECT_TRUE(registry()->GetInstalledExtension(kStandaloneAppId));
 }
 
-// The tests below runs with a set up that does not well mirror the production
-// behavior, especially around User and Profile handling. The gap unfortunately
-// causes production behavior, so temporarily disabled.
-// TODO(crbug.com/460295399): Re-enable these tests with fixing the test base
-// fixture.
-
 // Validate the external providers enabled in the Chrome App Kiosk session. The
 // expected number should be 3.
 // - |policy_provider|.
 // - |kiosk_app_provider|.
 // - |secondary_kiosk_app_provider|.
-TEST_F(ExternalProviderImplChromeOSTest, DISABLED_ChromeAppKiosk) {
+TEST_F(ExternalProviderImplChromeOSTest, ChromeAppKiosk) {
   const AccountId kiosk_account_id(AccountId::FromUserEmail(kTestUserAccount));
-  fake_user_manager()->AddKioskChromeAppUser(kiosk_account_id);
+  fake_user_manager()->AddKioskAppUser(kiosk_account_id);
   fake_user_manager()->LoginUser(kiosk_account_id);
 
   ValidateExternalProviderCountInAppMode(3u);
@@ -322,9 +308,9 @@ TEST_F(ExternalProviderImplChromeOSTest, DISABLED_ChromeAppKiosk) {
 // Validate the external providers enabled in the Web App Kiosk session. The
 // expected number should be only 1.
 // - |policy_provider|.
-TEST_F(ExternalProviderImplChromeOSTest, DISABLED_WebAppKiosk) {
+TEST_F(ExternalProviderImplChromeOSTest, WebAppKiosk) {
   const AccountId kiosk_account_id(AccountId::FromUserEmail(kTestUserAccount));
-  fake_user_manager()->AddKioskWebAppUser(kiosk_account_id);
+  fake_user_manager()->AddWebKioskAppUser(kiosk_account_id);
   fake_user_manager()->LoginUser(kiosk_account_id);
 
   ValidateExternalProviderCountInAppMode(1u);

@@ -102,28 +102,26 @@ static TransformOperation::OperationType GetTransformOperationType(
   }
 }
 
-bool TransformBuilder::IsResolvableAtParseTime(const CSSValueList& value_list) {
+bool TransformBuilder::HasRelativeLengths(const CSSValueList& value_list) {
   for (auto& value : value_list) {
     const auto* transform_value = To<CSSFunctionValue>(value.Get());
 
     for (const CSSValue* item : *transform_value) {
       const auto& primitive_value = To<CSSPrimitiveValue>(*item);
-      if (const auto* math_value =
-              DynamicTo<CSSMathFunctionValue>(primitive_value)) {
-        if (math_value->MayHaveRelativeUnit() ||
-            math_value->IsElementDependent()) {
-          return false;
+      if (primitive_value.IsCalculated()) {
+        if (To<CSSMathFunctionValue>(primitive_value).MayHaveRelativeUnit()) {
+          return true;
         }
       } else {
         CSSPrimitiveValue::UnitType unit_type =
             To<CSSNumericLiteralValue>(primitive_value).GetType();
         if (CSSPrimitiveValue::IsRelativeUnit(unit_type)) {
-          return false;
+          return true;
         }
       }
     }
   }
-  return true;
+  return false;
 }
 
 namespace {

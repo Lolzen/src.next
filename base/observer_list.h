@@ -55,12 +55,12 @@
 //       virtual void OnBar(MyWidget* w, int x, int y) = 0;
 //     };
 //
-//     void AddObserver(Observer* observer) {
-//       observers_.AddObserver(observer);
+//     void AddObserver(Observer* obs) {
+//       observers_.AddObserver(obs);
 //     }
 //
-//     void RemoveObserver(Observer* observer) {
-//       observers_.RemoveObserver(observer);
+//     void RemoveObserver(Observer* obs) {
+//       observers_.RemoveObserver(obs);
 //     }
 //
 //     void NotifyFoo() {
@@ -70,9 +70,9 @@
 //     void NotifyBar(int x, int y) {
 //       // Use manual iteration when Notify() is not suitable, e.g.
 //       // if passing different args to different observers is needed.
-//       for (Observer& observer : observers_) {
-//         gfx::Point local_point = GetLocalPoint(observer, x, y);
-//         observer.OnBar(this, local_point.x(), local_point.y());
+//       for (Observer& obs : observers_) {
+//         gfx::Point local_point = GetLocalPoint(obs, x, y);
+//         obs.OnBar(this, local_point.x(), local_point.y());
 //       }
 //     }
 //
@@ -96,8 +96,8 @@ enum class ObserverListPolicy {
   EXISTING_ONLY,
 };
 
-// When `check_empty` is true, assert that the list is empty on destruction.
-// When `allow_reentrancy` is false, iterating through the list while already in
+// When check_empty is true, assert that the list is empty on destruction.
+// When allow_reentrancy is false, iterating throught the list while already in
 // the iteration loop will result in DCHECK failure.
 // TODO(oshima): Change the default to non reentrant. https://crbug.com/812109
 template <class ObserverType,
@@ -202,6 +202,8 @@ class ObserverList {
              (list_.get() == other.list_.get() && index_ == other.index_);
     }
 
+    bool operator!=(const Iter& other) const { return !(*this == other); }
+
     Iter& operator++() {
       if (list_) {
         ++index_;
@@ -291,48 +293,44 @@ class ObserverList {
     while (!live_iterators_.empty()) {
       live_iterators_.head()->value()->Invalidate();
     }
-    if constexpr (check_empty) {
+    if (check_empty) {
       Compact();
-      // Note that observer stack traces are only available for DCHECK-enabled
-      // builds (use dcheck_always_on=true).
       // TODO(crbug.com/40063488): Turn into a CHECK once very prevalent
       // failures are weeded out.
       DUMP_WILL_BE_CHECK(observers_.empty())
-#if DCHECK_IS_ON()
-          << GetObserversCreationStackString()
-#endif
-          ;
+          << "\n"
+          << GetObserversCreationStackString();
     }
   }
 
   // Add an observer to this list. An observer should not be added to the same
   // list more than once.
   //
-  // Precondition: observer != nullptr
-  // Precondition: !HasObserver(observer)
-  void AddObserver(ObserverType* observer) {
-    DCHECK(observer);
+  // Precondition: obs != nullptr
+  // Precondition: !HasObserver(obs)
+  void AddObserver(ObserverType* obs) {
+    DCHECK(obs);
     // TODO(crbug.com/40063488): Turn this into a CHECK once very prevalent
     // failures are weeded out.
-    if (HasObserver(observer)) {
+    if (HasObserver(obs)) {
       DUMP_WILL_BE_NOTREACHED() << "Observers can only be added once!";
       return;
     }
-    ++observers_count_;
-    observers_.emplace_back(ObserverStorageType(observer));
+    observers_count_++;
+    observers_.emplace_back(ObserverStorageType(obs));
   }
 
   // Removes the given observer from this list. Does nothing if this observer is
   // not in this list.
-  void RemoveObserver(const ObserverType* observer) {
-    DCHECK(observer);
+  void RemoveObserver(const ObserverType* obs) {
+    DCHECK(obs);
     const auto it = std::ranges::find_if(
-        observers_, [observer](const auto& o) { return o.IsEqual(observer); });
+        observers_, [obs](const auto& o) { return o.IsEqual(obs); });
     if (it == observers_.end()) {
       return;
     }
     if (!it->IsMarkedForRemoval()) {
-      --observers_count_;
+      observers_count_--;
     }
     if (live_iterators_.empty()) {
       observers_.erase(it);
@@ -343,15 +341,15 @@ class ObserverList {
   }
 
   // Determine whether a particular observer is in the list.
-  bool HasObserver(const ObserverType* observer) const {
+  bool HasObserver(const ObserverType* obs) const {
     // Client code passing null could be confused by the treatment of observers
     // removed mid-iteration. TODO(crbug.com/40590447): This should
     // probably DCHECK, but some client code currently does pass null.
-    if (observer == nullptr) {
+    if (obs == nullptr) {
       return false;
     }
-    return std::ranges::find_if(observers_, [observer](const auto& o) {
-             return o.IsEqual(observer);
+    return std::ranges::find_if(observers_, [obs](const auto& o) {
+             return o.IsEqual(obs);
            }) != observers_.end();
   }
 
@@ -412,11 +410,9 @@ class ObserverList {
                   [](const auto& o) { return o.IsMarkedForRemoval(); });
   }
 
+  std::string GetObserversCreationStackString() const {
 #if DCHECK_IS_ON()
-  std::string GetObserversCreationStackString() const
-    requires check_empty
-  {
-    std::string result("\n");
+    std::string result;
 #if BUILDFLAG(IS_IOS)
     result += "Use go/observer-list-empty to interpret.\n";
 #endif
@@ -425,8 +421,10 @@ class ObserverList {
       result += "\n";
     }
     return result;
-  }
+#else
+    return "For observer stack traces, build with `dcheck_always_on=true`.";
 #endif  // DCHECK_IS_ON()
+  }
 
   std::vector<ObserverStorageType> observers_;
 

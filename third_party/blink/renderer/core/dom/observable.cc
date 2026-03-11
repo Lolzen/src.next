@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -199,19 +200,22 @@ class OperatorReduceInternalObserver final : public ObservableInternalObserver {
       return;
     }
 
-    auto result = reducer_->InvokeAndCatch(
+    ScriptState::Scope scope(script_state);
+    v8::TryCatch try_catch(script_state->GetIsolate());
+    const v8::Maybe<ScriptValue> result = reducer_->Invoke(
         /*thisArg=*/nullptr, /*accumulator=*/accumulator_->Value(),
         /*currentValue=*/value, /*index=*/idx_++);
-    if (!result.has_value()) {
+    if (try_catch.HasCaught()) {
       abort_algorithm_handle_.Clear();
-      resolver_->Reject(result.error());
-      controller_->abort(script_state, result.error());
+      ScriptValue exception(script_state->GetIsolate(), try_catch.Exception());
+      resolver_->Reject(exception);
+      controller_->abort(script_state, exception);
       return;
     }
 
     // Since we handled the exception case above, `result` must not be
     // `v8::Nothing`.
-    accumulator_ = MakeGarbageCollected<ScriptValueHolder>(result.value());
+    accumulator_ = MakeGarbageCollected<ScriptValueHolder>(result.ToChecked());
   }
 
   void Error(ScriptState* script_state, ScriptValue error_value) override {
@@ -282,15 +286,22 @@ class OperatorFindInternalObserver final : public ObservableInternalObserver {
       return;
     }
 
-    const auto matches = predicate_->InvokeAndCatch(nullptr, value, idx_++);
-    if (!matches.has_value()) {
+    ScriptState::Scope scope(script_state);
+    v8::TryCatch try_catch(script_state->GetIsolate());
+    const v8::Maybe<bool> maybe_matches =
+        predicate_->Invoke(nullptr, value, idx_++);
+    if (try_catch.HasCaught()) {
       abort_algorithm_handle_.Clear();
-      resolver_->Reject(matches.error());
-      controller_->abort(script_state, matches.error());
+      ScriptValue exception(script_state->GetIsolate(), try_catch.Exception());
+      resolver_->Reject(exception);
+      controller_->abort(script_state, exception);
       return;
     }
 
-    if (matches.value()) {
+    // Since we handled the exception case above, `maybe_matches` must not be
+    // `v8::Nothing`.
+    const bool matches = maybe_matches.ToChecked();
+    if (matches) {
       abort_algorithm_handle_.Clear();
       resolver_->Resolve(value);
       controller_->abort(resolver_->GetScriptState());
@@ -355,15 +366,22 @@ class OperatorEveryInternalObserver final : public ObservableInternalObserver {
       return;
     }
 
-    const auto matches = predicate_->InvokeAndCatch(nullptr, value, idx_++);
-    if (!matches.has_value()) {
+    ScriptState::Scope scope(script_state);
+    v8::TryCatch try_catch(script_state->GetIsolate());
+    const v8::Maybe<bool> maybe_matches =
+        predicate_->Invoke(nullptr, value, idx_++);
+    if (try_catch.HasCaught()) {
       abort_algorithm_handle_.Clear();
-      resolver_->Reject(matches.error());
-      controller_->abort(script_state, matches.error());
+      ScriptValue exception(script_state->GetIsolate(), try_catch.Exception());
+      resolver_->Reject(exception);
+      controller_->abort(script_state, exception);
       return;
     }
 
-    if (!matches.value()) {
+    // Since we handled the exception case above, `maybe_matches` must not be
+    // `v8::Nothing`.
+    const bool matches = maybe_matches.ToChecked();
+    if (!matches) {
       abort_algorithm_handle_.Clear();
       resolver_->Resolve(false);
       controller_->abort(resolver_->GetScriptState());
@@ -427,15 +445,22 @@ class OperatorSomeInternalObserver final : public ObservableInternalObserver {
       return;
     }
 
-    auto matches = predicate_->InvokeAndCatch(nullptr, value, idx_++);
-    if (!matches.has_value()) {
+    ScriptState::Scope scope(script_state);
+    v8::TryCatch try_catch(script_state->GetIsolate());
+    const v8::Maybe<bool> maybe_matches =
+        predicate_->Invoke(nullptr, value, idx_++);
+    if (try_catch.HasCaught()) {
       abort_algorithm_handle_.Clear();
-      resolver_->Reject(matches.error());
-      controller_->abort(script_state, matches.error());
+      ScriptValue exception(script_state->GetIsolate(), try_catch.Exception());
+      resolver_->Reject(exception);
+      controller_->abort(script_state, exception);
       return;
     }
 
-    if (matches.value()) {
+    // Since we handled the exception case above, `maybe_matches` must not be
+    // `v8::Nothing`.
+    const bool matches = maybe_matches.ToChecked();
+    if (matches) {
       abort_algorithm_handle_.Clear();
       resolver_->Resolve(true);
       controller_->abort(resolver_->GetScriptState());
@@ -595,12 +620,15 @@ class OperatorForEachInternalObserver final
       return;
     }
 
+    ScriptState::Scope scope(script_state);
+    v8::TryCatch try_catch(script_state->GetIsolate());
     // Invoking `callback_` can detach the context, but that's OK, nothing below
     // this invocation relies on an attached/valid context.
-    auto result = callback_->InvokeAndCatch(nullptr, value, idx_++);
-    if (!result.has_value()) {
-      resolver_->Reject(result.error());
-      controller_->abort(script_state, result.error());
+    std::ignore = callback_->Invoke(nullptr, value, idx_++);
+    if (try_catch.HasCaught()) {
+      ScriptValue exception(script_state->GetIsolate(), try_catch.Exception());
+      resolver_->Reject(exception);
+      controller_->abort(script_state, exception);
     }
   }
   void Error(ScriptState* script_state, ScriptValue error_value) override {
@@ -746,29 +774,32 @@ class OperatorCatchSubscribeDelegate final
         return;
       }
 
+      ScriptState::Scope scope(script_state_);
+      v8::TryCatch try_catch(script_state_->GetIsolate());
       // This is the return value of the `catch_callback_`, which must be
       // convertible to an `Observable` object.
-      auto mapped_value = catch_callback_->InvokeAndCatch(nullptr, error);
-      if (!mapped_value.has_value()) {
-        outer_subscriber_->error(script_state_, mapped_value.error());
+      v8::Maybe<ScriptValue> mapped_value =
+          catch_callback_->Invoke(nullptr, error);
+      if (try_catch.HasCaught()) {
+        outer_subscriber_->error(
+            script_state_,
+            ScriptValue(script_state_->GetIsolate(), try_catch.Exception()));
         return;
       }
 
-      ScriptState::Scope scope(script_state_);
-      v8::TryCatch try_catch(script_state_->GetIsolate());
       // Since we handled the exception case above, `mapped_value` must not be
       // `v8::Nothing`.
       Observable* inner_observable =
-          Observable::from(script_state_, mapped_value.value(),
+          Observable::from(script_state_, mapped_value.ToChecked(),
                            PassThroughException(script_state_->GetIsolate()));
       if (try_catch.HasCaught()) {
-        v8::Local<v8::Value> exception =
-            TryRethrowScope::TakeException(try_catch);
-        ApplyContextToException(script_state_, exception,
-                                v8::ExceptionContext::kOperation, "Observable",
-                                "catch");
+        ApplyContextToException(
+            script_state_, try_catch.Exception(),
+            ExceptionContext(v8::ExceptionContext::kOperation, "Observable",
+                             "catch"));
         outer_subscriber_->error(
-            script_state_, ScriptValue(script_state_->GetIsolate(), exception));
+            script_state_,
+            ScriptValue(script_state_->GetIsolate(), try_catch.Exception()));
         return;
       }
 
@@ -931,9 +962,13 @@ class OperatorInspectSubscribeDelegate final
         return;
       }
 
-      auto result = subscribe_callback_->InvokeAndCatch(nullptr);
-      if (!result.has_value()) {
-        subscriber->error(script_state, result.error());
+      ScriptState::Scope scope(script_state);
+      v8::TryCatch try_catch(script_state->GetIsolate());
+      std::ignore = subscribe_callback_->Invoke(nullptr);
+      if (try_catch.HasCaught()) {
+        ScriptValue exception(script_state->GetIsolate(),
+                              try_catch.Exception());
+        subscriber->error(script_state, exception);
         return;
       }
     }
@@ -1051,13 +1086,17 @@ class OperatorInspectSubscribeDelegate final
         return;
       }
 
+      ScriptState::Scope scope(script_state_);
+      v8::TryCatch try_catch(script_state_->GetIsolate());
       // Invoking `callback_` can detach the context, but that's OK, nothing
       // below this invocation relies on an attached/valid context.
-      auto result = next_callback_->InvokeAndCatch(nullptr, value);
-      if (!result.has_value()) {
+      std::ignore = next_callback_->Invoke(nullptr, value);
+      if (try_catch.HasCaught()) {
+        ScriptValue exception(script_state_->GetIsolate(),
+                              try_catch.Exception());
         // See the documentation in `Error()` for what this does.
         ResetAbortAlgorithm();
-        subscriber_->error(script_state_, result.error());
+        subscriber_->error(script_state_, exception);
       }
 
       subscriber_->next(value);
@@ -1081,9 +1120,13 @@ class OperatorInspectSubscribeDelegate final
         return;
       }
 
-      auto result = error_callback_->InvokeAndCatch(nullptr, error);
-      if (!result.has_value()) {
-        subscriber_->error(script_state_, result.error());
+      ScriptState::Scope scope(script_state_);
+      v8::TryCatch try_catch(script_state_->GetIsolate());
+      std::ignore = error_callback_->Invoke(nullptr, error);
+      if (try_catch.HasCaught()) {
+        ScriptValue exception(script_state_->GetIsolate(),
+                              try_catch.Exception());
+        subscriber_->error(script_state_, exception);
       }
 
       subscriber_->error(script_state_, error);
@@ -1101,9 +1144,13 @@ class OperatorInspectSubscribeDelegate final
         return;
       }
 
-      auto result = complete_callback_->InvokeAndCatch(nullptr);
-      if (!result.has_value()) {
-        subscriber_->error(script_state_, result.error());
+      ScriptState::Scope scope(script_state_);
+      v8::TryCatch try_catch(script_state_->GetIsolate());
+      std::ignore = complete_callback_->Invoke(nullptr);
+      if (try_catch.HasCaught()) {
+        ScriptValue exception(script_state_->GetIsolate(),
+                              try_catch.Exception());
+        subscriber_->error(script_state_, exception);
       }
 
       subscriber_->complete(script_state_);
@@ -1217,27 +1264,30 @@ class OperatorSwitchMapSubscribeDelegate final
         return;
       }
 
-      auto result = mapper_->InvokeAndCatch(nullptr, value, ++idx_);
-      if (!result.has_value()) {
-        outer_subscriber_->error(script_state_, result.error());
+      ScriptState::Scope scope(script_state_);
+      v8::TryCatch try_catch(script_state_->GetIsolate());
+      v8::Maybe<ScriptValue> mapped_value =
+          mapper_->Invoke(nullptr, value, ++idx_);
+      if (try_catch.HasCaught()) {
+        outer_subscriber_->error(
+            script_state_,
+            ScriptValue(script_state_->GetIsolate(), try_catch.Exception()));
         return;
       }
 
       // Since we handled the exception case above, `mapped_value` must not be
       // `v8::Nothing`.
-      v8::TryCatch try_catch(script_state_->GetIsolate());
       Observable* inner_observable =
-          Observable::from(script_state_, result.value(),
+          Observable::from(script_state_, mapped_value.ToChecked(),
                            PassThroughException(script_state_->GetIsolate()));
       if (try_catch.HasCaught()) {
-        ScriptState::Scope scope(script_state_);
-        v8::Local<v8::Value> exception =
-            TryRethrowScope::TakeException(try_catch);
-        ApplyContextToException(script_state_, exception,
-                                v8::ExceptionContext::kOperation, "Observable",
-                                "map");
+        ApplyContextToException(
+            script_state_, try_catch.Exception(),
+            ExceptionContext(v8::ExceptionContext::kOperation, "Observable",
+                             "map"));
         outer_subscriber_->error(
-            script_state_, ScriptValue(script_state_->GetIsolate(), exception));
+            script_state_,
+            ScriptValue(script_state_->GetIsolate(), try_catch.Exception()));
         return;
       }
 
@@ -1447,25 +1497,30 @@ class OperatorFlatMapSubscribeDelegate final
         return;
       }
 
-      auto mapped_value = mapper_->InvokeAndCatch(nullptr, value, ++idx_);
-      if (!mapped_value.has_value()) {
-        outer_subscriber_->error(script_state_, mapped_value.error());
+      ScriptState::Scope scope(script_state_);
+      v8::TryCatch try_catch(script_state_->GetIsolate());
+      v8::Maybe<ScriptValue> mapped_value =
+          mapper_->Invoke(nullptr, value, ++idx_);
+      if (try_catch.HasCaught()) {
+        outer_subscriber_->error(
+            script_state_,
+            ScriptValue(script_state_->GetIsolate(), try_catch.Exception()));
         return;
       }
 
-      v8::TryCatch try_catch(script_state_->GetIsolate());
+      // Since we handled the exception case above, `mapped_value` must not be
+      // `v8::Nothing`.
       Observable* inner_observable =
-          Observable::from(script_state_, mapped_value.value(),
+          Observable::from(script_state_, mapped_value.ToChecked(),
                            PassThroughException(script_state_->GetIsolate()));
       if (try_catch.HasCaught()) {
-        ScriptState::Scope scope(script_state_);
-        v8::Local<v8::Value> exception =
-            TryRethrowScope::TakeException(try_catch);
-        ApplyContextToException(script_state_, exception,
-                                v8::ExceptionContext::kOperation, "Observable",
-                                "flatMap");
+        ApplyContextToException(
+            script_state_, try_catch.Exception(),
+            ExceptionContext(v8::ExceptionContext::kOperation, "Observable",
+                             "flatMap"));
         outer_subscriber_->error(
-            script_state_, ScriptValue(script_state_->GetIsolate(), exception));
+            script_state_,
+            ScriptValue(script_state_->GetIsolate(), try_catch.Exception()));
         return;
       }
 
@@ -1549,7 +1604,7 @@ class OperatorFlatMapSubscribeDelegate final
     // this). These values are queued and processed one-by-one; they each get
     // passed into `mapper_`.
     //
-    // TODO(crbug.com/40282760): This should be a `blink::Deque` or `HeapDeque`,
+    // TODO(crbug.com/40282760): This should be a `WTF::Deque` or `HeapDeque`,
     // but neither support holding a `ScriptValue` type at the moment. This
     // needs some investigation, so we can avoid using `HeapVector` here, which
     // has O(n) performance when removing values from the front.
@@ -1652,10 +1707,8 @@ class OperatorFromAsyncIterableSubscribeDelegate final
       if (try_catch.HasCaught()) {
         // Don't ApplyContextToException(), because FromIterable() might return
         // a user-defined exception, which we shouldn't modify.
-        subscriber->error(
-            script_state,
-            ScriptValue(script_state->GetIsolate(),
-                        TryRethrowScope::TakeException(try_catch)));
+        subscriber->error(script_state, ScriptValue(script_state->GetIsolate(),
+                                                    try_catch.Exception()));
         return;
       }
 
@@ -1721,14 +1774,14 @@ class OperatorFromAsyncIterableSubscribeDelegate final
         // Assert: |iteratorRecord|'s [[Done]] is true.
         CHECK(is_done_because_exception_was_thrown);
 
-        v8::Local<v8::Value> exception =
-            TryRethrowScope::TakeException(try_catch);
         // Set |nextPromise| to a promise rejected with |nextRecord|'s
         // [[Value]].
-        ApplyContextToException(script_state_, exception,
-                                v8::ExceptionContext::kOperation, "Observable",
-                                "from");
-        next_promise = ScriptPromise<IDLAny>::Reject(script_state, exception);
+        ApplyContextToException(
+            script_state_, try_catch.Exception(),
+            ExceptionContext(v8::ExceptionContext::kOperation, "Observable",
+                             "from"));
+        next_promise =
+            ScriptPromise<IDLAny>::Reject(script_state, try_catch.Exception());
       } else {
         // "Otherwise, if |nextRecord| is normal completion, then set
         // |nextPromise| to a promise resolved with |nextRecord|'s [[Value]].
@@ -1861,7 +1914,7 @@ class OperatorFromAsyncIterableSubscribeDelegate final
         // with |done|'s [[Value]] and abort these steps."
         if (try_catch.HasCaught()) {
           ScriptValue exception(script_state->GetIsolate(),
-                                TryRethrowScope::TakeException(try_catch));
+                                try_catch.Exception());
           delegate_->ClearAbortAlgorithm();
           subscriber_->error(script_state, exception);
           return;
@@ -1888,7 +1941,7 @@ class OperatorFromAsyncIterableSubscribeDelegate final
         // with |value|'s [[Value]] and abort these steps."
         if (try_catch.HasCaught()) {
           ScriptValue exception(script_state->GetIsolate(),
-                                TryRethrowScope::TakeException(try_catch));
+                                try_catch.Exception());
           delegate_->ClearAbortAlgorithm();
           subscriber_->error(script_state, exception);
           return;
@@ -1985,9 +2038,8 @@ class OperatorFromIterableSubscribeDelegate final
       if (try_catch.HasCaught()) {
         // Don't ApplyContextToException(), because FromIterable() might return
         // a user-defined exception, which we shouldn't modify.
-        subscriber->error(
-            script_state,
-            ScriptValue(isolate, TryRethrowScope::TakeException(try_catch)));
+        subscriber->error(script_state,
+                          ScriptValue(isolate, try_catch.Exception()));
         return;
       }
 
@@ -2004,9 +2056,10 @@ class OperatorFromIterableSubscribeDelegate final
         v8::Local<v8::Value> type_error = V8ThrowException::CreateTypeError(
             script_state->GetIsolate(),
             "@@iterator must not be undefined or null");
-        ApplyContextToException(script_state_, type_error,
-                                v8::ExceptionContext::kOperation, "Observable",
-                                "subscribe");
+        ApplyContextToException(
+            script_state_, type_error,
+            ExceptionContext(v8::ExceptionContext::kOperation, "Observable",
+                             "subscribe"));
         subscriber->error(script_state,
                           ScriptValue(script_state->GetIsolate(), type_error));
         return;
@@ -2039,9 +2092,8 @@ class OperatorFromIterableSubscribeDelegate final
         // Don't ApplyContextToException(), because Next() might return
         // a user-defined exception, which we shouldn't modify.
         ClearAbortAlgorithm();
-        subscriber->error(
-            script_state,
-            ScriptValue(isolate, TryRethrowScope::TakeException(try_catch)));
+        subscriber->error(script_state,
+                          ScriptValue(isolate, try_catch.Exception()));
         return;
       }
 
@@ -2275,13 +2327,19 @@ class OperatorFilterSubscribeDelegate final
         return;
       }
 
-      auto matches = predicate_->InvokeAndCatch(nullptr, value, idx_++);
-      if (!matches.has_value()) {
-        subscriber_->error(script_state_, matches.error());
+      ScriptState::Scope scope(script_state_);
+      v8::TryCatch try_catch(script_state_->GetIsolate());
+      v8::Maybe<bool> matches = predicate_->Invoke(nullptr, value, idx_++);
+      if (try_catch.HasCaught()) {
+        subscriber_->error(
+            script_state_,
+            ScriptValue(script_state_->GetIsolate(), try_catch.Exception()));
         return;
       }
 
-      if (matches.value()) {
+      // Since we handled the exception case above, `matches` must not be
+      // `v8::Nothing`.
+      if (matches.ToChecked()) {
         subscriber_->next(value);
       }
     }
@@ -2353,13 +2411,20 @@ class OperatorMapSubscribeDelegate final
         return;
       }
 
-      auto mapped_value = mapper_->InvokeAndCatch(nullptr, value, idx_++);
-      if (!mapped_value.has_value()) {
-        subscriber_->error(script_state_, mapped_value.error());
+      ScriptState::Scope scope(script_state_);
+      v8::TryCatch try_catch(script_state_->GetIsolate());
+      v8::Maybe<ScriptValue> mapped_value =
+          mapper_->Invoke(nullptr, value, idx_++);
+      if (try_catch.HasCaught()) {
+        subscriber_->error(
+            script_state_,
+            ScriptValue(script_state_->GetIsolate(), try_catch.Exception()));
         return;
       }
 
-      subscriber_->next(mapped_value.value());
+      // Since we handled the exception case above, `mapped_value` must not be
+      // `v8::Nothing`.
+      subscriber_->next(mapped_value.ToChecked());
     }
     void Error(ScriptState*, ScriptValue error) override {
       subscriber_->error(script_state_, error);
@@ -2522,6 +2587,7 @@ Observable::Observable(ExecutionContext* execution_context,
       subscribe_callback_(subscribe_callback) {
   DCHECK(subscribe_callback_);
   DCHECK(!subscribe_delegate_);
+  DCHECK(RuntimeEnabledFeatures::ObservableAPIEnabled(execution_context));
 }
 
 Observable::Observable(ExecutionContext* execution_context,
@@ -2530,6 +2596,7 @@ Observable::Observable(ExecutionContext* execution_context,
       subscribe_delegate_(subscribe_delegate) {
   DCHECK(!subscribe_callback_);
   DCHECK(subscribe_delegate_);
+  DCHECK(RuntimeEnabledFeatures::ObservableAPIEnabled(execution_context));
 }
 
 void Observable::subscribe(ScriptState* script_state,
@@ -2556,16 +2623,7 @@ void Observable::SubscribeInternal(
   // context, because this might involve reporting an exception with the global,
   // which relies on a valid `ScriptState`.
   if (!script_state->ContextIsValid()) {
-    // Note that in this path, we used to have the following CHECK:
-    //
-    // CHECK(!GetExecutionContext());
-    //
-    // ... since this is condition is expected to hold. However, see the commit
-    // description of https://crrev.com/c/7017449, which lists a whole host of
-    // Clusterfuzz bugs and subtle repros that undermine this assumption.
-    // Ideally, we'd have time to go back and use rr or Pernosco to figure out
-    // why they are so hard to reproduce manually, and understand exactly what
-    // conditions are required to break this assumption.
+    CHECK(!GetExecutionContext());
     return;
   }
 
@@ -2643,15 +2701,19 @@ void Observable::SubscribeInternal(
   // control. Therefore, `subscribe()` will never synchronously throw an
   // exception.
 
-  auto result = subscribe_callback_->InvokeAndCatch(nullptr, weak_subscriber_);
-  if (!result.has_value()) {
+  ScriptState::Scope scope(script_state);
+  v8::TryCatch try_catch(script_state->GetIsolate());
+  std::ignore = subscribe_callback_->Invoke(nullptr, weak_subscriber_);
+  if (try_catch.HasCaught()) {
     // There are two cases where we might have a JS exception on the stack here:
     //   1. The `subscribe_callback_` immediately started pushing values to the
     //      observer, and somewhere along the way an exception was thrown. In
     //      this case, `weak_subscriber_` is non-null, and still active. Report
     //      the exception to it.
     if (weak_subscriber_->active()) {
-      weak_subscriber_->error(script_state, result.error());
+      weak_subscriber_->error(
+          script_state,
+          ScriptValue(script_state->GetIsolate(), try_catch.Exception()));
     } else {
       // 2. The `subscriber_callback_` immediately closed the subscription, and
       //    during this, an error was thrown (an exception-throwing `complete()`
@@ -2659,11 +2721,11 @@ void Observable::SubscribeInternal(
       //    but inactive. Report the exception to the global instead of the
       //    subscriber.
       if (!script_state->ContextIsValid()) {
+        CHECK(!GetExecutionContext());
         return;
       }
-      ScriptState::Scope scope(script_state);
       V8ScriptRunner::ReportException(script_state->GetIsolate(),
-                                      result.error().V8Value());
+                                      try_catch.Exception());
     }
   }
 }
@@ -2906,43 +2968,26 @@ Observable* Observable::finally(ScriptState*, V8VoidFunction* callback) {
   return return_observable;
 }
 
-namespace {
-
-// Creates and sets up a promise resolver used for the promise returned by
-// Observable methods, taking abort signals passed in options into account
-// and rejecting the promise as necessary.
-template <typename PromisedType>
-std::tuple<ScriptPromiseResolver<PromisedType>*,
-           AbortSignal::AlgorithmHandle*,
-           bool /*aborted=*/>
-CreatePromiseResolverForObservable(ScriptState* script_state,
-                                   SubscribeOptions* options) {
-  ScriptPromiseResolver<PromisedType>* resolver =
-      MakeGarbageCollected<ScriptPromiseResolver<PromisedType>>(script_state);
-  AbortSignal::AlgorithmHandle* algorithm_handle = nullptr;
-  if (options->hasSignal()) {
-    if (options->signal()->aborted()) [[unlikely]] {
-      resolver->Reject(options->signal()->reason(script_state));
-      return std::make_tuple(resolver, nullptr, true);
-    }
-    algorithm_handle = options->signal()->AddAlgorithm(
-        MakeGarbageCollected<RejectPromiseAbortAlgorithm>(resolver,
-                                                          options->signal()));
-  }
-  resolver->SuppressDetachCheck();
-  return std::make_tuple(resolver, algorithm_handle, false);
-}
-
-}  // namespace
-
 ScriptPromise<IDLSequence<IDLAny>> Observable::toArray(
     ScriptState* script_state,
     SubscribeOptions* options) {
-  auto [resolver, algorithm_handle, aborted] =
-      CreatePromiseResolverForObservable<IDLSequence<IDLAny>>(script_state,
-                                                              options);
-  if (aborted) {
-    return resolver->Promise();
+  ScriptPromiseResolver<IDLSequence<IDLAny>>* resolver =
+      MakeGarbageCollected<ScriptPromiseResolver<IDLSequence<IDLAny>>>(
+          script_state);
+  ScriptPromise<IDLSequence<IDLAny>> promise = resolver->Promise();
+
+  AbortSignal::AlgorithmHandle* algorithm_handle = nullptr;
+
+  if (options->hasSignal()) {
+    if (options->signal()->aborted()) {
+      resolver->Reject(options->signal()->reason(script_state));
+
+      return promise;
+    }
+
+    algorithm_handle = options->signal()->AddAlgorithm(
+        MakeGarbageCollected<RejectPromiseAbortAlgorithm>(resolver,
+                                                          options->signal()));
   }
 
   ToArrayInternalObserver* internal_observer =
@@ -2951,12 +2996,16 @@ ScriptPromise<IDLSequence<IDLAny>> Observable::toArray(
   SubscribeInternal(script_state, /*observer_union=*/nullptr, internal_observer,
                     options);
 
-  return resolver->Promise();
+  return promise;
 }
 
 ScriptPromise<IDLUndefined> Observable::forEach(ScriptState* script_state,
                                                 V8Visitor* callback,
                                                 SubscribeOptions* options) {
+  ScriptPromiseResolver<IDLUndefined>* resolver =
+      MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(script_state);
+  ScriptPromise<IDLUndefined> promise = resolver->Promise();
+
   AbortController* visitor_callback_controller =
       AbortController::Create(script_state);
   HeapVector<Member<AbortSignal>> signals;
@@ -2980,12 +3029,15 @@ ScriptPromise<IDLUndefined> Observable::forEach(ScriptState* script_state,
   internal_options->setSignal(
       MakeGarbageCollected<AbortSignal>(script_state, signals));
 
-  auto [resolver, algorithm_handle, aborted] =
-      CreatePromiseResolverForObservable<IDLUndefined>(script_state,
-                                                       internal_options);
-  if (aborted) {
-    return resolver->Promise();
+  if (internal_options->signal()->aborted()) {
+    resolver->Reject(internal_options->signal()->reason(script_state));
+    return promise;
   }
+
+  AbortSignal::AlgorithmHandle* algorithm_handle =
+      internal_options->signal()->AddAlgorithm(
+          MakeGarbageCollected<RejectPromiseAbortAlgorithm>(
+              resolver, internal_options->signal()));
 
   OperatorForEachInternalObserver* internal_observer =
       MakeGarbageCollected<OperatorForEachInternalObserver>(
@@ -2994,11 +3046,15 @@ ScriptPromise<IDLUndefined> Observable::forEach(ScriptState* script_state,
   SubscribeInternal(script_state, /*observer_union=*/nullptr, internal_observer,
                     internal_options);
 
-  return resolver->Promise();
+  return promise;
 }
 
 ScriptPromise<IDLAny> Observable::first(ScriptState* script_state,
                                         SubscribeOptions* options) {
+  ScriptPromiseResolver<IDLAny>* resolver =
+      MakeGarbageCollected<ScriptPromiseResolver<IDLAny>>(script_state);
+  ScriptPromise<IDLAny> promise = resolver->Promise();
+
   AbortController* controller = AbortController::Create(script_state);
   HeapVector<Member<AbortSignal>> signals;
 
@@ -3021,12 +3077,15 @@ ScriptPromise<IDLAny> Observable::first(ScriptState* script_state,
   internal_options->setSignal(
       MakeGarbageCollected<AbortSignal>(script_state, signals));
 
-  auto [resolver, algorithm_handle, aborted] =
-      CreatePromiseResolverForObservable<IDLAny>(script_state,
-                                                 internal_options);
-  if (aborted) {
-    return resolver->Promise();
+  if (internal_options->signal()->aborted()) {
+    resolver->Reject(options->signal()->reason(script_state));
+    return promise;
   }
+
+  AbortSignal::AlgorithmHandle* algorithm_handle =
+      internal_options->signal()->AddAlgorithm(
+          MakeGarbageCollected<RejectPromiseAbortAlgorithm>(
+              resolver, internal_options->signal()));
 
   OperatorFirstInternalObserver* internal_observer =
       MakeGarbageCollected<OperatorFirstInternalObserver>(resolver, controller,
@@ -3035,15 +3094,26 @@ ScriptPromise<IDLAny> Observable::first(ScriptState* script_state,
   SubscribeInternal(script_state, /*observer_union=*/nullptr, internal_observer,
                     internal_options);
 
-  return resolver->Promise();
+  return promise;
 }
 
 ScriptPromise<IDLAny> Observable::last(ScriptState* script_state,
                                        SubscribeOptions* options) {
-  auto [resolver, algorithm_handle, aborted] =
-      CreatePromiseResolverForObservable<IDLAny>(script_state, options);
-  if (aborted) {
-    return resolver->Promise();
+  ScriptPromiseResolver<IDLAny>* resolver =
+      MakeGarbageCollected<ScriptPromiseResolver<IDLAny>>(script_state);
+  ScriptPromise<IDLAny> promise = resolver->Promise();
+
+  AbortSignal::AlgorithmHandle* algorithm_handle = nullptr;
+
+  if (options->hasSignal()) {
+    if (options->signal()->aborted()) {
+      resolver->Reject(options->signal()->reason(script_state));
+      return promise;
+    }
+
+    algorithm_handle = options->signal()->AddAlgorithm(
+        MakeGarbageCollected<RejectPromiseAbortAlgorithm>(resolver,
+                                                          options->signal()));
   }
 
   OperatorLastInternalObserver* internal_observer =
@@ -3053,12 +3123,16 @@ ScriptPromise<IDLAny> Observable::last(ScriptState* script_state,
   SubscribeInternal(script_state, /*observer_union=*/nullptr, internal_observer,
                     options);
 
-  return resolver->Promise();
+  return promise;
 }
 
 ScriptPromise<IDLBoolean> Observable::some(ScriptState* script_state,
                                            V8Predicate* predicate,
                                            SubscribeOptions* options) {
+  ScriptPromiseResolver<IDLBoolean>* resolver =
+      MakeGarbageCollected<ScriptPromiseResolver<IDLBoolean>>(script_state);
+  ScriptPromise<IDLBoolean> promise = resolver->Promise();
+
   AbortController* controller = AbortController::Create(script_state);
   HeapVector<Member<AbortSignal>> signals;
   signals.push_back(controller->signal());
@@ -3070,12 +3144,15 @@ ScriptPromise<IDLBoolean> Observable::some(ScriptState* script_state,
   internal_options->setSignal(
       MakeGarbageCollected<AbortSignal>(script_state, signals));
 
-  auto [resolver, algorithm_handle, aborted] =
-      CreatePromiseResolverForObservable<IDLBoolean>(script_state,
-                                                     internal_options);
-  if (aborted) {
-    return resolver->Promise();
+  if (internal_options->signal()->aborted()) {
+    resolver->Reject(options->signal()->reason(script_state));
+    return promise;
   }
+
+  AbortSignal::AlgorithmHandle* algorithm_handle =
+      internal_options->signal()->AddAlgorithm(
+          MakeGarbageCollected<RejectPromiseAbortAlgorithm>(
+              resolver, internal_options->signal()));
 
   OperatorSomeInternalObserver* internal_observer =
       MakeGarbageCollected<OperatorSomeInternalObserver>(
@@ -3083,12 +3160,16 @@ ScriptPromise<IDLBoolean> Observable::some(ScriptState* script_state,
   SubscribeInternal(script_state, /*observer_union=*/nullptr, internal_observer,
                     internal_options);
 
-  return resolver->Promise();
+  return promise;
 }
 
 ScriptPromise<IDLBoolean> Observable::every(ScriptState* script_state,
                                             V8Predicate* predicate,
                                             SubscribeOptions* options) {
+  ScriptPromiseResolver<IDLBoolean>* resolver =
+      MakeGarbageCollected<ScriptPromiseResolver<IDLBoolean>>(script_state);
+  ScriptPromise<IDLBoolean> promise = resolver->Promise();
+
   AbortController* controller = AbortController::Create(script_state);
   HeapVector<Member<AbortSignal>> signals;
   signals.push_back(controller->signal());
@@ -3100,12 +3181,15 @@ ScriptPromise<IDLBoolean> Observable::every(ScriptState* script_state,
   internal_options->setSignal(
       MakeGarbageCollected<AbortSignal>(script_state, signals));
 
-  auto [resolver, algorithm_handle, aborted] =
-      CreatePromiseResolverForObservable<IDLBoolean>(script_state,
-                                                     internal_options);
-  if (aborted) {
-    return resolver->Promise();
+  if (internal_options->signal()->aborted()) {
+    resolver->Reject(options->signal()->reason(script_state));
+    return promise;
   }
+
+  AbortSignal::AlgorithmHandle* algorithm_handle =
+      internal_options->signal()->AddAlgorithm(
+          MakeGarbageCollected<RejectPromiseAbortAlgorithm>(
+              resolver, internal_options->signal()));
 
   OperatorEveryInternalObserver* internal_observer =
       MakeGarbageCollected<OperatorEveryInternalObserver>(
@@ -3113,12 +3197,16 @@ ScriptPromise<IDLBoolean> Observable::every(ScriptState* script_state,
   SubscribeInternal(script_state, /*observer_union=*/nullptr, internal_observer,
                     internal_options);
 
-  return resolver->Promise();
+  return promise;
 }
 
 ScriptPromise<IDLAny> Observable::find(ScriptState* script_state,
                                        V8Predicate* predicate,
                                        SubscribeOptions* options) {
+  ScriptPromiseResolver<IDLAny>* resolver =
+      MakeGarbageCollected<ScriptPromiseResolver<IDLAny>>(script_state);
+  ScriptPromise<IDLAny> promise = resolver->Promise();
+
   AbortController* controller = AbortController::Create(script_state);
   HeapVector<Member<AbortSignal>> signals;
   signals.push_back(controller->signal());
@@ -3130,12 +3218,15 @@ ScriptPromise<IDLAny> Observable::find(ScriptState* script_state,
   internal_options->setSignal(
       MakeGarbageCollected<AbortSignal>(script_state, signals));
 
-  auto [resolver, algorithm_handle, aborted] =
-      CreatePromiseResolverForObservable<IDLAny>(script_state,
-                                                 internal_options);
-  if (aborted) {
-    return resolver->Promise();
+  if (internal_options->signal()->aborted()) {
+    resolver->Reject(options->signal()->reason(script_state));
+    return promise;
   }
+
+  AbortSignal::AlgorithmHandle* algorithm_handle =
+      internal_options->signal()->AddAlgorithm(
+          MakeGarbageCollected<RejectPromiseAbortAlgorithm>(
+              resolver, internal_options->signal()));
 
   OperatorFindInternalObserver* internal_observer =
       MakeGarbageCollected<OperatorFindInternalObserver>(
@@ -3143,7 +3234,7 @@ ScriptPromise<IDLAny> Observable::find(ScriptState* script_state,
   SubscribeInternal(script_state, /*observer_union=*/nullptr, internal_observer,
                     internal_options);
 
-  return resolver->Promise();
+  return promise;
 }
 
 ScriptPromise<IDLAny> Observable::reduce(ScriptState* script_state,
@@ -3168,6 +3259,10 @@ ScriptPromise<IDLAny> Observable::ReduceInternal(
     V8Reducer* reducer,
     std::optional<ScriptValue> initial_value,
     SubscribeOptions* options) {
+  ScriptPromiseResolver<IDLAny>* resolver =
+      MakeGarbageCollected<ScriptPromiseResolver<IDLAny>>(script_state);
+  ScriptPromise<IDLAny> promise = resolver->Promise();
+
   AbortController* controller = AbortController::Create(script_state);
   HeapVector<Member<AbortSignal>> signals;
   signals.push_back(controller->signal());
@@ -3179,12 +3274,15 @@ ScriptPromise<IDLAny> Observable::ReduceInternal(
   internal_options->setSignal(
       MakeGarbageCollected<AbortSignal>(script_state, signals));
 
-  auto [resolver, algorithm_handle, aborted] =
-      CreatePromiseResolverForObservable<IDLAny>(script_state,
-                                                 internal_options);
-  if (aborted) {
-    return resolver->Promise();
+  if (internal_options->signal()->aborted()) {
+    resolver->Reject(options->signal()->reason(script_state));
+    return promise;
   }
+
+  AbortSignal::AlgorithmHandle* algorithm_handle =
+      internal_options->signal()->AddAlgorithm(
+          MakeGarbageCollected<RejectPromiseAbortAlgorithm>(
+              resolver, internal_options->signal()));
 
   OperatorReduceInternalObserver* internal_observer =
       MakeGarbageCollected<OperatorReduceInternalObserver>(
@@ -3192,7 +3290,7 @@ ScriptPromise<IDLAny> Observable::ReduceInternal(
   SubscribeInternal(script_state, /*observer_union=*/nullptr, internal_observer,
                     internal_options);
 
-  return resolver->Promise();
+  return promise;
 }
 
 void Observable::Trace(Visitor* visitor) const {

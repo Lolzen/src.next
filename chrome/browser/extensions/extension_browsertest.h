@@ -8,15 +8,13 @@
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_path_override.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/extensions/extension_browser_test_util.h"
 #include "chrome/browser/extensions/extension_browsertest_platform_delegate.h"
-#include "chrome/browser/extensions/scoped_test_mv2_enabler.h"
+#include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/test/base/platform_browser_test.h"
 #include "extensions/browser/browsertest_util.h"
 #include "extensions/browser/disable_reason.h"
@@ -24,16 +22,16 @@
 #include "extensions/browser/extension_protocols.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_registry_observer.h"
-#include "extensions/browser/install_verifier.h"
 #include "extensions/browser/sandboxed_unpacker.h"
 #include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/features/feature_channel.h"
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/scoped_test_mv2_enabler.h"
+#endif
 
-class OwningTestTabModel;
 class Profile;
 
 namespace content {
@@ -47,11 +45,14 @@ class Extension;
 class ExtensionCache;
 class ExtensionHost;
 class ExtensionRegistrar;
-class ExtensionService;
 class ExtensionSet;
 class ExtensionTestNotificationObserver;
 class ProcessManager;
 class ScopedIgnoreContentVerifierForTest;
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+class ExtensionService;
+#endif
 
 // A cross-platform base class for extensions-related browser tests.
 // `PlatformBrowserTest` inherits from different test suites based on the
@@ -164,12 +165,6 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
       const base::FilePath& path,
       std::optional<int> expected_change);
 
-  // Same as InstallExtensionFromWebstore(), but sets the install as triggered
-  // by user download.
-  const Extension* InstallExtensionFromWebstoreTriggeredByUserDownload(
-      const base::FilePath& path,
-      std::optional<int> expected_change);
-
   const Extension* InstallExtensionWithUIAutoConfirm(
       const base::FilePath& path,
       std::optional<int> expected_change);
@@ -216,11 +211,10 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
   // default tab's web_contents(). However, if the test creates new tabs and
   // switches the active tab, this will return the WebContents of the new active
   // tab.
-  content::WebContents* GetActiveWebContents();
+  content::WebContents* GetActiveWebContents() const;
 
-  // Returns the WebContents at the specified index, or nullptr if there is
-  // none.
-  content::WebContents* GetWebContentsAt(int index);
+  // Returns incognito profile. Creates the profile if it doesn't exist.
+  Profile* GetOrCreateIncognitoProfile();
 
   // Pack the extension in `dir_path` into a crx file and return its path.
   // Return an empty FilePath if there were errors.
@@ -228,7 +222,7 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
       const base::FilePath& dir_path,
       int extra_run_flags = ExtensionCreator::kNoRunFlags);
 
-  // Pack the extension in `dir_path` into a crx file at `crx_path`, using the
+  // Pack the extension in `dir_path` into a crx file at |crx_path|, using the
   // key `pem_path`. If `pem_path` does not exist, create a new key at
   // `pem_out_path`.
   // Return the path to the crx file, or an empty FilePath if there were errors.
@@ -239,20 +233,9 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
       const base::FilePath& pem_out_path,
       int extra_run_flags = ExtensionCreator::kNoRunFlags);
 
-  // Navigates `web_contents` to a `url` in and waits until the load stops.
-  // Returns true on success.
-  [[nodiscard]] bool NavigateToURL(content::WebContents* web_contents,
-                                   const GURL& url);
-
-  // Navigates the active tab in `browser_window` to a `url` in and waits until
-  // the load stops. Returns true on success.
-  // NOTE: Only supported on Win/Mac/Linux/ChromeOS. Intentionally fails on
-  // Android.
-  [[nodiscard]] bool NavigateToURL(BrowserWindowInterface* browser_window,
-                                   const GURL& url);
-
-  // Puts the current tab title in |title|. Returns true on success.
-  bool GetCurrentTabTitle(std::u16string* title);
+  // Navigates to a `url` in the active web contents and waits until the
+  // navigation finishes. Returns true on success.
+  [[nodiscard]] bool NavigateToURL(const GURL& url);
 
   // Opens `url` in an incognito browser window with the incognito profile of
   // `profile`, blocking until the navigation finishes. Returns the WebContents
@@ -260,21 +243,12 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
   content::WebContents* PlatformOpenURLOffTheRecord(Profile* profile,
                                                     const GURL& url);
 
-  // Creates a browser window of `type` using the test's profile from
-  // GetProfile().
-  BrowserWindowInterface* CreateBrowserWindowWithType(
-      BrowserWindowInterface::Type type);
-
-  // Creates a new incognito browser window using the incognito profile owned
-  // by the test's profile from GetProfile().
-  BrowserWindowInterface* CreateIncognitoBrowserWindow();
-
   // Opens `url` in a new tab, blocking until the navigation finishes.
   content::RenderFrameHost* NavigateToURLInNewTab(const GURL& url);
 
   // Simulates a page calling window.open on an URL and waits for the
   // navigation.
-  // `should_succeed` indicates whether the navigation should succeed, in which
+  // |should_succeed| indicates whether the navigation should succeed, in which
   // case the last committed url should match the passed url and the page should
   // not be an error or interstitial page.
   void OpenWindow(content::WebContents* contents,
@@ -323,11 +297,11 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
       browsertest_util::ScriptUserActivation script_user_activation =
           browsertest_util::ScriptUserActivation::kDontActivate);
 
-  // Waits until `script` calls "window.domAutomationController.send(result)",
-  // where `result` is a string, and returns `result`. Fails the test and
-  // returns an empty base::Value if `extension_id` isn't installed in test's
+  // Waits until |script| calls "window.domAutomationController.send(result)",
+  // where |result| is a string, and returns |result|. Fails the test and
+  // returns an empty base::Value if |extension_id| isn't installed in test's
   // profile or doesn't have a background page, or if executing the script
-  // fails. The argument `script_user_activation` determines if the script
+  // fails. The argument |script_user_activation| determines if the script
   // should be executed after a user activation.
   std::string ExecuteScriptInBackgroundPageDeprecated(
       const extensions::ExtensionId& extension_id,
@@ -361,8 +335,6 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
   // These match the methods in ExtensionBrowserTestPlatformDelegate:
   const Extension* LoadAndLaunchApp(const base::FilePath& path,
                                     bool uses_guest_view = false);
-
-  // Waits for the number of visible page actions to change to `count`.
   bool WaitForPageActionVisibilityChangeTo(int count);
 
   // Lower case to match the style of InProcessBrowserTest.
@@ -370,11 +342,6 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
 
   // WebContents* of the default tab or nullptr if the default tab is destroyed.
   content::WebContents* web_contents();
-
-  // Returns the BrowserWindowInterface for the initially-created browser.
-  // TODO(crbug.com/465157755): Convert callers of NavigateToURL() to use this
-  // method.
-  BrowserWindowInterface* browser_window_interface();
 
   const ExtensionId& last_loaded_extension_id() {
     return last_loaded_extension_id_;
@@ -391,27 +358,10 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
     return platform_delegate_;
   }
 
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  // Note: ExtensionService is not available in desktop android builds.
   ExtensionService* extension_service();
-
-  // Creates a new secure test server that can be used in place of the default
-  // HTTP embedded_test_server defined in BrowserTestBase. The new test server
-  // can then be retrieved using the same embedded_test_server() method used
-  // to get the BrowserTestBase HTTP server.
-  void UseHttpsTestServer(
-      net::EmbeddedTestServer::ServerCertificate server_certificate =
-          net::EmbeddedTestServer::ServerCertificate::CERT_TEST_NAMES);
-
-  // This will return either the https test server or the
-  // default one specified in BrowserTestBase, depending on if an https test
-  // server was created by calling UseHttpsTestServer().
-  const net::EmbeddedTestServer* embedded_test_server() const {
-    return (https_test_server_) ? https_test_server_.get()
-                                : BrowserTestBase::embedded_test_server();
-  }
-  net::EmbeddedTestServer* embedded_test_server() {
-    return const_cast<net::EmbeddedTestServer*>(
-        const_cast<const ExtensionBrowserTest&>(*this).embedded_test_server());
-  }
+#endif
 
   // Set to "chrome/test/data/extensions". Derived classes may override.
   base::FilePath test_data_dir_;
@@ -439,8 +389,7 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
       content::WebContents* active_web_contents,
       Extension::InitFromValueFlags creation_flags,
       bool wait_for_idle,
-      bool grant_permissions,
-      bool was_triggered_by_user_download);
+      bool grant_permissions);
 
   ExtensionBrowserTestPlatformDelegate platform_delegate_;
 
@@ -452,12 +401,9 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
 
   ExtensionId last_loaded_extension_id_;
 
-#if BUILDFLAG(IS_ANDROID)
-  // Tab model used for incognito tab support.
-  std::unique_ptr<OwningTestTabModel> incognito_tab_model_;
-
-  // Feature flags overrides are only used on Android.
-  base::test::ScopedFeatureList feature_list_;
+#if BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
+  class TestTabModel;
+  std::unique_ptr<TestTabModel> tab_model_;
 #endif
 
   // Used for setting the default scoped current channel for extension browser
@@ -497,15 +443,13 @@ class ExtensionBrowserTest : public PlatformBrowserTest,
 
   ExtensionUpdater::ScopedSkipScheduledCheckForTest skip_scheduled_check_;
 
+#if BUILDFLAG(ENABLE_EXTENSIONS)
   // Allows MV2 extensions to be loaded.
   std::optional<ScopedTestMV2Enabler> mv2_enabler_;
+#endif
 
   std::unique_ptr<ExtensionTestNotificationObserver>
       test_notification_observer_;
-
-  // Secure test server, isn't created by default. Needs to be created using
-  // UseHttpsTestServer() and then called with embedded_test_server().
-  std::unique_ptr<net::EmbeddedTestServer> https_test_server_;
 
   // Listens to extension loaded notifications.
   base::ScopedObservation<ExtensionRegistry, ExtensionRegistryObserver>

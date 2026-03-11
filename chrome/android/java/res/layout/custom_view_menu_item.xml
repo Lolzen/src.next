@@ -19,15 +19,13 @@ found in the LICENSE file.
         android:layout_weight="1"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:minHeight="?attr/listItemHeight"
-        android:textAlignment="viewStart"
-        android:gravity="start|center_vertical" />
+        android:minHeight="?android:attr/listPreferredItemHeightSmall" />
 
     <org.chromium.ui.widget.ChromeImageView
         android:id="@+id/trailing_icon"
         android:layout_weight="0"
-        android:layout_width="?attr/listItemIconSize"
-        android:layout_height="?attr/listItemIconSize"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:importantForAccessibility="no"
         android:tint="@macro/default_icon_color_secondary"

@@ -4,7 +4,6 @@
 
 #include "third_party/blink/renderer/core/paint/cull_rect_updater.h"
 
-#include "base/trace_event/trace_event.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -102,13 +101,6 @@ bool ShouldUseInfiniteCullRect(
     return true;
   }
 
-  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled()) {
-    auto* element = DynamicTo<Element>(object.GetNode());
-    if (element && element->IsInCanvasSubtree()) {
-      return true;
-    }
-  }
-
   if (const auto* properties = object.FirstFragment().PaintProperties()) {
     // Cull rects and clips can't be propagated across a filter which moves
     // pixels, since the input of the filter may be outside the cull rect /
@@ -195,9 +187,8 @@ CullRectUpdater::CullRectUpdater(PaintLayer& starting_layer,
       expansion_ratio_(disable_expansion
                            ? 0.f
                            : ExpansionRatio(starting_layer.GetLayoutObject())) {
-  view_transition_supplement_ = starting_layer.GetLayoutObject()
-                                    .GetDocument()
-                                    .GetViewTransitionsIfExists();
+  view_transition_supplement_ = ViewTransitionSupplement::FromIfExists(
+      starting_layer.GetLayoutObject().GetDocument());
 }
 
 void CullRectUpdater::Update() {
@@ -215,13 +206,9 @@ void CullRectUpdater::UpdateForTesting(const CullRect& input_cull_rect) {
 
 void CullRectUpdater::UpdateInternal(const CullRect& input_cull_rect) {
   const auto& object = starting_layer_.GetLayoutObject();
-  if (object.GetFrameView()->ShouldThrottleRendering()) {
+  if (object.GetFrameView()->ShouldThrottleRendering())
     return;
-  }
   if (object.IsFragmentLessBox()) {
-    return;
-  }
-  if (!object.View()->FirstFragment().HasLocalBorderBoxProperties()) {
     return;
   }
 
@@ -554,7 +541,7 @@ void CullRectUpdater::PaintPropertiesChanged(
   if (object.HasLayer()) {
     bool subtree_should_use_infinite_cull_rect = false;
     auto* view_transition_supplement =
-        object.GetDocument().GetViewTransitionsIfExists();
+        ViewTransitionSupplement::FromIfExists(object.GetDocument());
     should_use_infinite_cull_rect = ShouldUseInfiniteCullRect(
         *To<LayoutBoxModelObject>(object).Layer(), view_transition_supplement,
         subtree_should_use_infinite_cull_rect);

@@ -35,8 +35,9 @@ std::string NativeLibraryLoadError::ToString() const {
   return message;
 }
 
-NativeLibrary LoadNativeLibrary(const FilePath& library_path,
-                                NativeLibraryLoadError* error) {
+NativeLibrary LoadNativeLibraryWithOptions(const FilePath& library_path,
+                                           const NativeLibraryOptions& options,
+                                           NativeLibraryLoadError* error) {
   FilePath computed_path;
   FilePath library_root_path =
       base::PathService::CheckedGet(DIR_ASSETS).Append("lib");

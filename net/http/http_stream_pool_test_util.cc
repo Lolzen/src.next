@@ -4,141 +4,39 @@
 
 #include "net/http/http_stream_pool_test_util.h"
 
-#include "base/location.h"
-#include "base/task/sequenced_task_runner.h"
-#include "base/test/bind.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/connection_endpoint_metadata.h"
 #include "net/base/features.h"
-#include "net/base/load_timing_internal_info.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_stream_pool.h"
-#include "net/http/http_stream_pool_attempt_manager.h"
 #include "net/http/http_stream_pool_group.h"
 #include "net/http/http_stream_pool_job.h"
-#include "net/log/net_log_util.h"
 #include "net/log/net_log_with_source.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/stream_socket.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
-#include "net/third_party/quiche/src/quiche/quic/core/quic_versions.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 
 namespace net {
 
 namespace {
 
-IPEndPoint MakeIPEndPoint(std::string_view addr, uint16_t port) {
+IPEndPoint MakeIPEndPoint(std::string_view addr, uint16_t port = 80) {
   return IPEndPoint(*IPAddress::FromIPLiteral(addr), port);
 }
 
 }  // namespace
 
-FakeServiceEndpointResolution::FakeServiceEndpointResolution() = default;
-
-FakeServiceEndpointResolution::~FakeServiceEndpointResolution() = default;
-
-FakeServiceEndpointResolution::FakeServiceEndpointResolution(
-    const FakeServiceEndpointResolution&) = default;
-
-FakeServiceEndpointResolution& FakeServiceEndpointResolution::operator=(
-    const FakeServiceEndpointResolution&) = default;
-
-FakeServiceEndpointResolution&
-FakeServiceEndpointResolution::CompleteStartSynchronously(int rv) {
-  start_result_ = rv;
-  endpoints_crypto_ready_ = true;
-  return *this;
-}
-
-FakeServiceEndpointResolution& FakeServiceEndpointResolution::set_start_result(
-    int start_result) {
-  start_result_ = start_result;
-  return *this;
-}
-
-FakeServiceEndpointResolution& FakeServiceEndpointResolution::set_endpoints(
-    std::vector<ServiceEndpoint> endpoints) {
-  endpoints_ = std::move(endpoints);
-  return *this;
-}
-
-FakeServiceEndpointResolution& FakeServiceEndpointResolution::add_endpoint(
-    ServiceEndpoint endpoint) {
-  endpoints_.emplace_back(std::move(endpoint));
-  return *this;
-}
-
-FakeServiceEndpointResolution& FakeServiceEndpointResolution::set_aliases(
-    std::set<std::string> aliases) {
-  aliases_ = std::move(aliases);
-  return *this;
-}
-
-FakeServiceEndpointResolution& FakeServiceEndpointResolution::set_crypto_ready(
-    bool endpoints_crypto_ready) {
-  endpoints_crypto_ready_ = endpoints_crypto_ready;
-  return *this;
-}
-
-FakeServiceEndpointResolution&
-FakeServiceEndpointResolution::set_resolve_error_info(
-    ResolveErrorInfo resolve_error_info) {
-  resolve_error_info_ = resolve_error_info;
-  return *this;
-}
-
-FakeServiceEndpointResolution& FakeServiceEndpointResolution::set_priority(
-    RequestPriority priority) {
-  priority_ = priority;
-  return *this;
-}
-
 FakeServiceEndpointRequest::FakeServiceEndpointRequest() = default;
 
 FakeServiceEndpointRequest::~FakeServiceEndpointRequest() = default;
 
-FakeServiceEndpointRequest& FakeServiceEndpointRequest::set_endpoints(
-    std::vector<ServiceEndpoint> endpoints) {
-  resolution_.set_endpoints(std::move(endpoints));
-  return *this;
-}
-
-FakeServiceEndpointRequest& FakeServiceEndpointRequest::add_endpoint(
-    ServiceEndpoint endpoint) {
-  resolution_.add_endpoint(std::move(endpoint));
-  return *this;
-}
-
-FakeServiceEndpointRequest& FakeServiceEndpointRequest::set_aliases(
-    std::set<std::string> aliases) {
-  resolution_.set_aliases(std::move(aliases));
-  return *this;
-}
-
-FakeServiceEndpointRequest& FakeServiceEndpointRequest::set_crypto_ready(
-    bool endpoints_crypto_ready) {
-  resolution_.set_crypto_ready(endpoints_crypto_ready);
-  return *this;
-}
-
-FakeServiceEndpointRequest& FakeServiceEndpointRequest::set_resolve_error_info(
-    ResolveErrorInfo resolve_error_info) {
-  resolution_.set_resolve_error_info(resolve_error_info);
-  return *this;
-}
-
-FakeServiceEndpointRequest& FakeServiceEndpointRequest::set_priority(
-    RequestPriority priority) {
-  resolution_.set_priority(priority);
-  return *this;
-}
-
 FakeServiceEndpointRequest&
 FakeServiceEndpointRequest::CompleteStartSynchronously(int rv) {
-  resolution_.CompleteStartSynchronously(rv);
+  start_result_ = rv;
+  endpoints_crypto_ready_ = true;
   return *this;
 }
 
@@ -152,7 +50,7 @@ FakeServiceEndpointRequest::CallOnServiceEndpointsUpdated() {
 FakeServiceEndpointRequest&
 FakeServiceEndpointRequest::CallOnServiceEndpointRequestFinished(int rv) {
   CHECK(delegate_);
-  resolution_.set_crypto_ready(true);
+  endpoints_crypto_ready_ = true;
   delegate_->OnServiceEndpointRequestFinished(rv);
   return *this;
 }
@@ -161,24 +59,24 @@ int FakeServiceEndpointRequest::Start(Delegate* delegate) {
   CHECK(!delegate_);
   CHECK(delegate);
   delegate_ = delegate;
-  return resolution_.start_result();
+  return start_result_;
 }
 
-base::span<const ServiceEndpoint>
+const std::vector<ServiceEndpoint>&
 FakeServiceEndpointRequest::GetEndpointResults() {
-  return resolution_.endpoints();
+  return endpoints_;
 }
 
 const std::set<std::string>& FakeServiceEndpointRequest::GetDnsAliasResults() {
-  return resolution_.aliases();
+  return aliases_;
 }
 
 bool FakeServiceEndpointRequest::EndpointsCryptoReady() {
-  return resolution_.endpoints_crypto_ready();
+  return endpoints_crypto_ready_;
 }
 
 ResolveErrorInfo FakeServiceEndpointRequest::GetResolveErrorInfo() {
-  return resolution_.resolve_error_info();
+  return resolve_error_info_;
 }
 
 const HostCache::EntryStaleness* FakeServiceEndpointRequest::GetStaleInfo()
@@ -192,31 +90,19 @@ bool FakeServiceEndpointRequest::IsStaleWhileRefresing() const {
 
 void FakeServiceEndpointRequest::ChangeRequestPriority(
     RequestPriority priority) {
-  resolution_.set_priority(priority);
+  priority_ = priority;
 }
 
 FakeServiceEndpointResolver::FakeServiceEndpointResolver() = default;
 
-FakeServiceEndpointResolver::~FakeServiceEndpointResolver() {
-  if (expect_all_fake_requests_consumed_) {
-    EXPECT_TRUE(requests_.empty());
-  }
-}
+FakeServiceEndpointResolver::~FakeServiceEndpointResolver() = default;
 
-base::WeakPtr<FakeServiceEndpointRequest>
-FakeServiceEndpointResolver::AddFakeRequest() {
+FakeServiceEndpointRequest* FakeServiceEndpointResolver::AddFakeRequest() {
   std::unique_ptr<FakeServiceEndpointRequest> request =
       std::make_unique<FakeServiceEndpointRequest>();
-  base::WeakPtr<FakeServiceEndpointRequest> weak_request =
-      request->weak_ptr_factory_.GetWeakPtr();
+  FakeServiceEndpointRequest* raw_request = request.get();
   requests_.emplace_back(std::move(request));
-  return weak_request;
-}
-
-FakeServiceEndpointResolution&
-FakeServiceEndpointResolver::ConfigureDefaultResolution() {
-  default_resolution_ = FakeServiceEndpointResolution();
-  return *default_resolution_;
+  return raw_request;
 }
 
 void FakeServiceEndpointResolver::OnShutdown() {}
@@ -245,15 +131,7 @@ FakeServiceEndpointResolver::CreateServiceEndpointRequest(
     NetworkAnonymizationKey network_anonymization_key,
     NetLogWithSource net_log,
     ResolveHostParameters parameters) {
-  if (requests_.empty() && default_resolution_.has_value()) {
-    std::unique_ptr<FakeServiceEndpointRequest> request =
-        std::make_unique<FakeServiceEndpointRequest>();
-    request->resolution_ = *default_resolution_;
-    request->set_priority(parameters.initial_priority);
-    return request;
-  }
-
-  CHECK(!requests_.empty()) << "No FakeServiceEndpoint";
+  CHECK(!requests_.empty());
   std::unique_ptr<FakeServiceEndpointRequest> request =
       std::move(requests_.front());
   requests_.pop_front();
@@ -271,13 +149,13 @@ ServiceEndpointBuilder::~ServiceEndpointBuilder() = default;
 
 ServiceEndpointBuilder& ServiceEndpointBuilder::add_v4(std::string_view addr,
                                                        uint16_t port) {
-  endpoint_.ipv4_endpoints.emplace_back(MakeIPEndPoint(addr, port));
+  endpoint_.ipv4_endpoints.emplace_back(MakeIPEndPoint(addr));
   return *this;
 }
 
 ServiceEndpointBuilder& ServiceEndpointBuilder::add_v6(std::string_view addr,
                                                        uint16_t port) {
-  endpoint_.ipv6_endpoints.emplace_back(MakeIPEndPoint(addr, port));
+  endpoint_.ipv6_endpoints.emplace_back(MakeIPEndPoint(addr));
   return *this;
 }
 
@@ -298,20 +176,9 @@ ServiceEndpointBuilder& ServiceEndpointBuilder::set_alpns(
   return *this;
 }
 
-ServiceEndpointBuilder& ServiceEndpointBuilder::set_alpn(
-    quic::ParsedQuicVersion quic_version) {
-  return set_alpns({quic::AlpnForVersion(quic_version)});
-}
-
 ServiceEndpointBuilder& ServiceEndpointBuilder::set_ech_config_list(
     std::vector<uint8_t> ech_config_list) {
   endpoint_.metadata.ech_config_list = std::move(ech_config_list);
-  return *this;
-}
-
-ServiceEndpointBuilder& ServiceEndpointBuilder::set_trust_anchor_ids(
-    std::vector<std::vector<uint8_t>> trust_anchor_ids) {
-  endpoint_.metadata.trust_anchor_ids = std::move(trust_anchor_ids);
   return *this;
 }
 
@@ -357,11 +224,8 @@ bool FakeStreamSocket::IsConnected() const {
   if (is_connected_override_.has_value()) {
     return *is_connected_override_;
   }
-  if (disconnect_after_is_connected_call_count_ > 0) {
-    --disconnect_after_is_connected_call_count_;
-    if (disconnect_after_is_connected_call_count_ == 0) {
-      is_connected_override_ = false;
-    }
+  if (disconnect_after_is_connected_call_) {
+    is_connected_override_ = false;
   }
   return connected_;
 }
@@ -383,16 +247,11 @@ bool FakeStreamSocket::GetSSLInfo(SSLInfo* ssl_info) {
   return false;
 }
 
-void FakeStreamSocket::DisconnectAfterIsConnectedCall(int count) {
+void FakeStreamSocket::DisconnectAfterIsConnectedCall() {
   connected_ = true;
   is_connected_override_ = std::nullopt;
-  disconnect_after_is_connected_call_count_ = count;
+  disconnect_after_is_connected_call_ = true;
 }
-
-StreamKeyBuilder::StreamKeyBuilder(std::string_view destination)
-    : destination_(url::SchemeHostPort(GURL(destination))) {}
-
-StreamKeyBuilder::~StreamKeyBuilder() = default;
 
 StreamKeyBuilder& StreamKeyBuilder::from_key(const HttpStreamKey& key) {
   destination_ = key.destination();
@@ -405,7 +264,7 @@ StreamKeyBuilder& StreamKeyBuilder::from_key(const HttpStreamKey& key) {
 HttpStreamKey StreamKeyBuilder::Build() const {
   return HttpStreamKey(destination_, privacy_mode_, SocketTag(),
                        NetworkAnonymizationKey(), secure_dns_policy_,
-                       disable_cert_network_fetches_, alt_service_);
+                       disable_cert_network_fetches_);
 }
 
 HttpStreamKey GroupIdToHttpStreamKey(
@@ -416,20 +275,13 @@ HttpStreamKey GroupIdToHttpStreamKey(
                        group_id.disable_cert_network_fetches());
 }
 
-void WaitForAttemptManagerComplete(
-    HttpStreamPool::AttemptManager* attempt_manager) {
+void WaitForAttemptManagerComplete(HttpStreamPool::Group& group) {
   base::RunLoop run_loop;
-  attempt_manager->SetOnCompleteCallbackForTesting(
-      base::BindLambdaForTesting([&]() {
-        // Add an extra PostTask to let any already posted tasks complete.
-        base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-            FROM_HERE, run_loop.QuitClosure());
-      }));
+  group.SetOnAttemptManagerCompleteCallbackForTesting(run_loop.QuitClosure());
   run_loop.Run();
 }
 
-TestJobDelegate::TestJobDelegate(std::optional<HttpStreamKey> stream_key)
-    : flow_(NetLogWithSourceToFlow(net_log_)) {
+TestJobDelegate::TestJobDelegate(std::optional<HttpStreamKey> stream_key) {
   if (stream_key.has_value()) {
     key_builder_.from_key(*stream_key);
   } else {
@@ -447,11 +299,9 @@ void TestJobDelegate::CreateAndStartJob(HttpStreamPool& pool) {
   job_->Start();
 }
 
-void TestJobDelegate::OnStreamReady(
-    HttpStreamPool::Job* job,
-    std::unique_ptr<HttpStream> stream,
-    NextProto negotiated_protocol,
-    std::optional<SessionSource> session_source) {
+void TestJobDelegate::OnStreamReady(HttpStreamPool::Job* job,
+                                    std::unique_ptr<HttpStream> stream,
+                                    NextProto negotiated_protocol) {
   negotiated_protocol_ = negotiated_protocol;
   SetResult(OK);
 }
@@ -469,7 +319,7 @@ TestJobDelegate::allowed_bad_certs() const {
   return allowed_bad_certs_;
 }
 
-bool TestJobDelegate::enable_ip_based_pooling_for_h2() const {
+bool TestJobDelegate::enable_ip_based_pooling() const {
   return true;
 }
 
@@ -477,8 +327,8 @@ bool TestJobDelegate::enable_alternative_services() const {
   return true;
 }
 
-NextProtoSet TestJobDelegate::allowed_alpns() const {
-  return NextProtoSet::All();
+bool TestJobDelegate::is_http1_allowed() const {
+  return true;
 }
 
 const ProxyInfo& TestJobDelegate::proxy_info() const {
@@ -487,10 +337,6 @@ const ProxyInfo& TestJobDelegate::proxy_info() const {
 
 const NetLogWithSource& TestJobDelegate::net_log() const {
   return net_log_;
-}
-
-const perfetto::Flow& TestJobDelegate::flow() const {
-  return flow_;
 }
 
 void TestJobDelegate::OnStreamFailed(HttpStreamPool::Job* job,

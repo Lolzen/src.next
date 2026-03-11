@@ -179,7 +179,7 @@ void DatasetDOMStringMap::SetItem(const String& name,
   if (!IsValidPropertyName(name)) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
-        StrCat({"'", name, "' is not a valid property name."}));
+        "'" + name + "' is not a valid property name.");
     return;
   }
 
